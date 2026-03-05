@@ -1,6 +1,6 @@
 # Contributing to Device Activity Tracker
 
-Thanks for your interest in this PoC!
+Maintained by **[deco31416](https://www.deco31416.com)** — Thanks for your interest in this PoC!
 
 ## How to contribute
 1. Fork and clone the repo

@@ -1,8 +1,8 @@
-<h1 align="center">Device Activity Tracker v2.1.0</h1>
-<p align="center">WhatsApp Activity Tracker — RTT Analysis · Real-Time Bitácora · Report Generation · Network Monitor</p>
+<h1 align="center">Device Activity Tracker v2.2.0</h1>
+<p align="center">WhatsApp Activity Tracker — RTT Analysis · Real-Time Bitácora · Behavior Intelligence · Report Generation · Network Monitor</p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.1.0-blue?style=flat" alt="Version 2.1.0"/>
+  <img src="https://img.shields.io/badge/version-2.2.0-blue?style=flat" alt="Version 2.2.0"/>
   <img src="https://img.shields.io/badge/Node.js-22+-339933?style=flat&logo=node.js&logoColor=white" alt="Node.js"/>
   <img src="https://img.shields.io/badge/TypeScript-5.7+-3178C6?style=flat&logo=typescript&logoColor=white" alt="TypeScript"/>
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat&logo=react&logoColor=black" alt="React"/>
@@ -17,7 +17,7 @@
 
 ## Overview
 
-Fork of [gommzystudio/device-activity-tracker](https://github.com/gommzystudio/device-activity-tracker) with major enhancements: MongoDB persistence, contact history with auto-restore, human-readable activity bitácora, comprehensive report generation (JSON/HTML/PDF), profile enrichment, and a full Network Monitor module.
+Originally forked from [gommzystudio/device-activity-tracker](https://github.com/gommzystudio/device-activity-tracker). Extensively redesigned, improved, and scaled by **[deco31416](https://www.deco31416.com)** — adding MongoDB persistence, contact history with auto-restore, human-readable activity bitácora, comprehensive report generation (JSON/HTML/PDF), profile enrichment, behavior intelligence analytics (OSINT), custom contact aliases, and a full Network Monitor module.
 
 Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to Monitor Users on Mobile Instant Messengers"** by Gabriel K. Gegenhuber et al. (University of Vienna & SBA Research).
 
@@ -26,6 +26,7 @@ Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to M
 | Module | Description |
 |--------|-------------|
 | **📱 WhatsApp Tracker** | Measures RTT of delivery receipts to detect device activity (online/standby/offline) |
+| **🧠 Behavior Intelligence** | OSINT analytics: routine detection, availability model, session stats, heatmap, habit profiling |
 | **📋 Activity Bitácora** | Human-readable timeline with military time (local + UTC), designed for non-technical stakeholders |
 | **📊 Reports & Stats** | Comprehensive report generation with profile, stats, patterns, and export to JSON/HTML/PDF |
 | **💾 Contact History** | Persistent contacts across restarts with auto-restore and one-click re-tracking |
@@ -62,10 +63,27 @@ Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to M
 - 🔄 One-click re-activation from history
 - ⚡ Auto-restore: active contacts resume tracking automatically on reconnection
 
+### Behavior Intelligence (NEW in v2.2)
+- 🧠 OSINT analytics engine based on Schnitzler et al. (NDSS 2023)
+- 📅 **Daily Routine Detection** — wake/sleep estimation, session count, peak hours
+- 🎯 **Availability Probability** — 24-hour online probability curve per contact
+- ⏱️ **Session Statistics** — total/avg/median/max sessions, intensity score (0-100)
+- 📊 **Weekly Heatmap** — 7×24 day×hour activity matrix with color intensity
+- 🦉 **Habit Profiling** — Night Owl/Early Bird/Regular/Irregular classification, timezone inference
+- 🔗 **Multi-Contact Correlation** — Pearson correlation, simultaneous online detection, follow-delay
+- 📈 All analytics accessible via Intel tab and REST API (`/api/intel/*`)
+
+### Custom Name / Alias (NEW in v2.2)
+- ✏️ Per-contact custom alias with inline editing (pencil icon)
+- 🏷️ Alias input when adding new contacts
+- 💾 Persisted in MongoDB with REST API (`PUT /api/contact/:jid/custom-name`)
+- 📡 Real-time sync across all connected clients
+- 🔤 Display priority: customName > pushName (WhatsApp) > number
+
 ### Stats & Profile Panels
 - 📊 State distribution bar (% online/standby/offline)
 - 📈 Activity timeline with state transitions
-- 👤 Full profile: about, business info, push name, account type
+- 👤 Full profile: about, business info, push name, custom alias, account type
 - 🕐 Activity patterns: hourly bar chart, peak hour, avg session length, total online minutes
 
 ### Network Monitor
@@ -393,11 +411,25 @@ Based on research by Gegenhuber et al., University of Vienna & SBA Research:
 
 ---
 
+## Author
+
+**deco31416** — [deco31416@gmail.com](mailto:deco31416@gmail.com) · [www.deco31416.com](https://www.deco31416.com)
+
+All v2.x improvements, architecture redesign, MongoDB integration, Network Monitor, report system, and UI overhaul by **deco31416**.
+
+---
+
+## Acknowledgments
+
+- Original concept by [gommzystudio](https://github.com/gommzystudio/device-activity-tracker)
+- Research by Gegenhuber et al. (University of Vienna & SBA Research)
+- Built with [@whiskeysockets/baileys](https://github.com/WhiskeySockets/Baileys)
+
+---
+
 ## License
 
 MIT License — See [LICENSE](LICENSE) file.
-
-Built with [@whiskeysockets/baileys](https://github.com/WhiskeySockets/Baileys) | Forked from [gommzystudio](https://github.com/gommzystudio/device-activity-tracker)
 
 ---
 

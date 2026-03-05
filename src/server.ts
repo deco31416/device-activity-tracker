@@ -16,8 +16,9 @@ import makeWASocket, { DisconnectReason, useMultiFileAuthState } from '@whiskeys
 import { pino } from 'pino';
 import { Boom } from '@hapi/boom';
 import { WhatsAppTracker, ProbeMethod } from './tracker.js';
-import { connectDB, saveMeasurement, saveContact, removeContact, reactivateContact, getRecentMeasurements, getSavedContacts, getActiveContacts, getActivityHistory, getStateDistribution, updateContactProfile, getContactProfile, getOnlinePatterns, generateReport, disconnectDB } from './db.js';
+import { connectDB, saveMeasurement, saveContact, removeContact, reactivateContact, getRecentMeasurements, getSavedContacts, getActiveContacts, getActivityHistory, getStateDistribution, updateContactProfile, updateCustomName, getContactProfile, getOnlinePatterns, generateReport, disconnectDB } from './db.js';
 import { listInterfaces, startCapture, stopCapture, getCaptureStatus, getRecentPackets, updateFilter, exportJSON, exportCSV, CaptureFilter, PacketMeta } from './packet-capture.js';
+import { initAnalytics, getFullIntelligence, getDailyRoutine, getAvailabilityProfile, getSessionStats, getWeeklyHeatmap, getHabitProfile, getCorrelation } from './analytics.js';
 
 // Configuration
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
@@ -26,6 +27,7 @@ const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
 
 const app = express();
 app.use(cors({ origin: ALLOWED_ORIGINS }));
+app.use(express.json());
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
@@ -92,6 +94,67 @@ async function connectToWhatsApp() {
         console.log(`[SESSION] History sync - Chats: ${chats.length}, Contacts: ${contacts.length}, Messages: ${messages.length}, Latest: ${isLatest}`);
     });
 
+    // ── Listen to contacts.update for real push names and status changes ──
+    sock.ev.on('contacts.update', async (updates: any[]) => {
+        for (const update of updates) {
+            const jid = update.id;
+            if (!jid) continue;
+
+            // Only process contacts we are tracking
+            if (!trackers.has(jid)) continue;
+
+            const changes: any = {};
+
+            // Push name (the name the contact set in their WhatsApp profile)
+            if (update.notify) {
+                changes.pushName = update.notify;
+                console.log(`[CONTACTS] Push name for ${jid}: "${update.notify}"`);
+            }
+
+            // Status/about text
+            if (update.status !== undefined) {
+                changes.about = update.status || null;
+                console.log(`[CONTACTS] About for ${jid}: "${update.status}"`);
+            }
+
+            // Profile picture update
+            if (update.imgUrl !== undefined) {
+                // imgUrl can be 'changed' or 'removed' - fetch fresh pic
+                try {
+                    const freshPic = await sock.profilePictureUrl(jid, 'image');
+                    changes.profilePic = freshPic || null;
+                    io.emit('profile-pic', { jid, url: freshPic || null });
+                } catch (_e) {
+                    changes.profilePic = null;
+                }
+            }
+
+            if (Object.keys(changes).length > 0) {
+                await updateContactProfile(jid, changes);
+                // Emit the updated fields to all clients
+                io.emit('contact-profile-update', { jid, ...changes });
+            }
+        }
+    });
+
+    // ── Listen to contacts.upsert for initial contact data ──
+    sock.ev.on('contacts.upsert', async (newContacts: any[]) => {
+        for (const contact of newContacts) {
+            const jid = contact.id;
+            if (!jid || !trackers.has(jid)) continue;
+
+            const changes: any = {};
+            if (contact.notify) changes.pushName = contact.notify;
+            if (contact.status) changes.about = contact.status;
+
+            if (Object.keys(changes).length > 0) {
+                await updateContactProfile(jid, changes);
+                io.emit('contact-profile-update', { jid, ...changes });
+                console.log(`[CONTACTS UPSERT] Updated ${jid}:`, changes);
+            }
+        }
+    });
+
     sock.ev.on('messages.update', (updates: any) => {
         for (const update of updates) {
             console.log(`[MSG UPDATE] JID: ${update.key.remoteJid}, ID: ${update.key.id}, Status: ${update.update.status}, FromMe: ${update.key.fromMe}`);
@@ -99,9 +162,10 @@ async function connectToWhatsApp() {
     });
 }
 
-// Initialize DB and WhatsApp
+// Initialize DB, Analytics, and WhatsApp
 (async () => {
     await connectDB();
+    await initAnalytics();
     connectToWhatsApp();
 })();
 
@@ -152,11 +216,12 @@ async function autoRestoreContacts() {
                 restored++;
 
                 // Emit contact info to connected clients
-                io.emit('contact-added', { jid: contact.jid, number: contact.number });
+                const displayName = contact.customName || contact.pushName || contact.contactName || contact.number;
+                io.emit('contact-added', { jid: contact.jid, number: contact.number, customName: contact.customName || null, pushName: contact.pushName || null });
                 if (contact.profilePic) io.emit('profile-pic', { jid: contact.jid, url: contact.profilePic });
-                if (contact.contactName) io.emit('contact-name', { jid: contact.jid, name: contact.contactName });
+                io.emit('contact-name', { jid: contact.jid, name: displayName });
 
-                console.log(`[AUTO-RESTORE] ✓ ${contact.number} (${contact.contactName})`);
+                console.log(`[AUTO-RESTORE] ✓ ${contact.number} (${displayName})`);
             } catch (err) {
                 console.error(`[AUTO-RESTORE] ✗ Failed to restore ${contact.jid}:`, err);
             }
@@ -260,6 +325,7 @@ app.get('/api/profile/:jid', async (req, res) => {
             jid,
             number: stored?.number || jid.replace('@s.whatsapp.net', ''),
             contactName: stored?.contactName || null,
+            customName: stored?.customName || null,
             profilePic: freshPic || stored?.profilePic || null,
             about: freshAbout || stored?.about || null,
             aboutSetAt: freshAboutSetAt || stored?.aboutSetAt || null,
@@ -328,7 +394,67 @@ app.get('/api/report/:jid/download', async (req, res) => {
     }
 });
 
+// ── Behavior Intelligence REST endpoints ─────────────────────
+
+app.get('/api/intel/:jid', async (req, res) => {
+    try {
+        const days = parseInt(req.query.days as string) || 14;
+        const intel = await getFullIntelligence(req.params.jid, days);
+        res.json(intel);
+    } catch (err) {
+        console.error('[API] Intel error:', err);
+        res.status(500).json({ error: 'Failed to generate intelligence report' });
+    }
+});
+
+app.get('/api/intel/:jid/routine', async (req, res) => {
+    const days = parseInt(req.query.days as string) || 14;
+    res.json(await getDailyRoutine(req.params.jid, days));
+});
+
+app.get('/api/intel/:jid/availability', async (req, res) => {
+    const days = parseInt(req.query.days as string) || 14;
+    res.json(await getAvailabilityProfile(req.params.jid, days));
+});
+
+app.get('/api/intel/:jid/sessions', async (req, res) => {
+    const days = parseInt(req.query.days as string) || 14;
+    res.json(await getSessionStats(req.params.jid, days));
+});
+
+app.get('/api/intel/:jid/heatmap', async (req, res) => {
+    const weeks = parseInt(req.query.weeks as string) || 4;
+    res.json(await getWeeklyHeatmap(req.params.jid, weeks));
+});
+
+app.get('/api/intel/:jid/habits', async (req, res) => {
+    const days = parseInt(req.query.days as string) || 14;
+    res.json(await getHabitProfile(req.params.jid, days));
+});
+
+app.get('/api/intel/correlation', async (req, res) => {
+    const { jid1, jid2, days } = req.query;
+    if (!jid1 || !jid2) return res.status(400).json({ error: 'jid1 and jid2 required' });
+    const d = parseInt(days as string) || 7;
+    res.json(await getCorrelation(jid1 as string, jid2 as string, d));
+});
+
 // ── Network Monitor REST endpoints ────────────────────────────
+
+app.put('/api/contact/:jid/custom-name', async (req, res) => {
+    try {
+        const jid = req.params.jid;
+        const { customName } = req.body || {};
+        const trimmed = typeof customName === 'string' ? customName.trim() || null : null;
+        console.log(`[CUSTOM NAME REST] ${jid} → "${trimmed}"`);
+        await updateCustomName(jid, trimmed);
+        io.emit('custom-name-updated', { jid, customName: trimmed });
+        res.json({ ok: true, jid, customName: trimmed });
+    } catch (err) {
+        console.error('[API] Error setting custom name:', err);
+        res.status(500).json({ error: 'Failed to set custom name' });
+    }
+});
 
 app.get('/api/network/interfaces', (_req, res) => {
     res.json(listInterfaces());
@@ -382,10 +508,11 @@ io.on('connection', (socket) => {
     });
 
     // Add contact - WhatsApp only
-    socket.on('add-contact', async (data: string | { number: string }) => {
+    socket.on('add-contact', async (data: string | { number: string; customName?: string }) => {
         const number = typeof data === 'string' ? data : data.number;
+        const customName = (typeof data === 'object' && data.customName?.trim()) ? data.customName.trim() : null;
 
-        console.log(`Request to track: ${number}`);
+        console.log(`Request to track: ${number}${customName ? ` (alias: ${customName})` : ''}`);
         const cleanNumber = number.replace(/\D/g, '');
 
         const targetJid = cleanNumber + '@s.whatsapp.net';
@@ -430,25 +557,32 @@ io.on('connection', (socket) => {
                 const ppUrl = await tracker.getProfilePicture();
 
                 let contactName = cleanNumber;
+                let pushNameFromWA: string | null = null;
                 try {
                     const contactInfo = await sock.onWhatsApp(result.jid);
                     if (contactInfo && contactInfo[0]?.notify) {
+                        pushNameFromWA = contactInfo[0].notify;
                         contactName = contactInfo[0].notify;
                     }
                 } catch (err) {
                     console.log('[NAME] Could not fetch contact name, using number');
                 }
 
+                // Display name priority: customName > pushName > number
+                const displayName = customName || pushNameFromWA || cleanNumber;
+
                 socket.emit('contact-added', {
                     jid: result.jid,
-                    number: cleanNumber
+                    number: cleanNumber,
+                    customName: customName,
+                    pushName: pushNameFromWA,
                 });
 
                 io.emit('profile-pic', { jid: result.jid, url: ppUrl });
-                io.emit('contact-name', { jid: result.jid, name: contactName });
+                io.emit('contact-name', { jid: result.jid, name: displayName });
 
-                // Persist contact to MongoDB
-                saveContact(result.jid, cleanNumber, contactName, ppUrl);
+                // Persist contact to MongoDB (with custom name)
+                saveContact(result.jid, cleanNumber, contactName, ppUrl, customName);
 
                 // Fetch and persist enriched profile (about, business, etc.)
                 (async () => {
@@ -481,10 +615,21 @@ io.on('connection', (socket) => {
                             }
                         } catch (_e) { /* not a business account */ }
 
-                        // Get push name from WhatsApp
+                        // Get push name from WhatsApp (use the one we already got, or try again)
+                        pushName = pushNameFromWA;
+                        if (!pushName) {
+                            try {
+                                const waInfo = await sock.onWhatsApp(result.jid);
+                                pushName = waInfo?.[0]?.notify || null;
+                            } catch (_e) {}
+                        }
+
+                        // Also try to get pushName from the store/cache
                         try {
-                            const waInfo = await sock.onWhatsApp(result.jid);
-                            pushName = waInfo?.[0]?.notify || null;
+                            const storeContacts = sock.store?.contacts || {};
+                            if (storeContacts[result.jid]?.notify) {
+                                pushName = storeContacts[result.jid].notify;
+                            }
                         } catch (_e) {}
 
                         await updateContactProfile(result.jid, {
@@ -504,6 +649,7 @@ io.on('connection', (socket) => {
                             isBusinessAccount: !!businessProfile,
                             businessProfile,
                             pushName,
+                            customName,
                         });
 
                         console.log(`[PROFILE] Enriched profile saved for ${result.jid}`);
@@ -529,6 +675,16 @@ io.on('connection', (socket) => {
             socket.emit('contact-removed', jid);
             removeContact(jid);
         }
+    });
+
+    // Set/update custom name (alias) for a contact
+    socket.on('set-custom-name', async (data: { jid: string; customName: string | null }) => {
+        const { jid, customName } = data;
+        const trimmed = customName?.trim() || null;
+        console.log(`[CUSTOM NAME] ${jid} → "${trimmed}"`);
+        await updateCustomName(jid, trimmed);
+        // Broadcast to all clients so the name updates everywhere
+        io.emit('custom-name-updated', { jid, customName: trimmed });
     });
 
     // Re-activate a previously tracked contact from history

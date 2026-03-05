@@ -30,6 +30,7 @@ export interface ContactDoc {
     jid: string;
     number: string;
     contactName: string;
+    customName: string | null;
     profilePic: string | null;
     about: string | null;
     aboutSetAt: Date | null;
@@ -125,19 +126,23 @@ export async function saveMeasurement(data: Omit<MeasurementDoc, 'timestamp'>): 
 /**
  * Save/update contact info
  */
-export async function saveContact(jid: string, number: string, contactName?: string, profilePic?: string | null): Promise<void> {
+export async function saveContact(jid: string, number: string, contactName?: string, profilePic?: string | null, customName?: string | null): Promise<void> {
     if (!db) return;
     try {
+        const setFields: any = {
+            jid,
+            number,
+            ...(contactName && { contactName }),
+            ...(profilePic !== undefined && { profilePic }),
+            lastSeen: new Date()
+        };
+        // Only set customName if explicitly provided (not undefined)
+        if (customName !== undefined) setFields.customName = customName;
+
         await contacts.updateOne(
             { jid },
             {
-                $set: {
-                    jid,
-                    number,
-                    ...(contactName && { contactName }),
-                    ...(profilePic !== undefined && { profilePic }),
-                    lastSeen: new Date()
-                },
+                $set: setFields,
                 $setOnInsert: {
                     addedAt: new Date(),
                     about: null,
@@ -146,6 +151,7 @@ export async function saveContact(jid: string, number: string, contactName?: str
                     businessProfile: null,
                     verifiedOnWhatsApp: true,
                     pushName: null,
+                    customName: customName || null,
                     lastProfileUpdate: null,
                     isActive: true,
                 }
@@ -154,6 +160,21 @@ export async function saveContact(jid: string, number: string, contactName?: str
         );
     } catch (err) {
         console.error('[DB] Error saving contact:', err);
+    }
+}
+
+/**
+ * Update custom name (alias) for a contact
+ */
+export async function updateCustomName(jid: string, customName: string | null): Promise<void> {
+    if (!db) return;
+    try {
+        await contacts.updateOne(
+            { jid },
+            { $set: { customName, lastSeen: new Date() } }
+        );
+    } catch (err) {
+        console.error('[DB] Error updating custom name:', err);
     }
 }
 

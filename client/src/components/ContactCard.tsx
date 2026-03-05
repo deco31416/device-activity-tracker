@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, BarChart, Bar, Cell } from 'recharts';
-import { Square, Activity, Wifi, Smartphone, Monitor, Clock, Database, BarChart3, History, TrendingUp, User, Briefcase, Globe, Mail, MapPin, Sun, Moon, Zap, FileDown, FileText, Code, ChevronLeft, ChevronRight, Download } from 'lucide-react';
+import { Square, Activity, Wifi, Smartphone, Monitor, Clock, Database, BarChart3, History, TrendingUp, User, Briefcase, Globe, Mail, MapPin, Sun, Moon, Zap, FileDown, FileText, Code, ChevronLeft, ChevronRight, Download, Pencil, Check, X, Brain, Target, CalendarDays, Timer, Coffee, Shield } from 'lucide-react';
 import clsx from 'clsx';
+import { socket } from '../App';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
 
@@ -42,6 +43,7 @@ interface ProfileData {
     jid: string;
     number: string;
     contactName: string | null;
+    customName: string | null;
     profilePic: string | null;
     about: string | null;
     aboutSetAt: string | null;
@@ -67,9 +69,77 @@ interface PatternsData {
     totalOnlineMinutes: number;
 }
 
+/* ── Intelligence types ── */
+
+interface IntelSession {
+    totalSessions: number;
+    avgDurationSec: number;
+    medianDurationSec: number;
+    maxDurationSec: number;
+    minDurationSec: number;
+    avgSessionsPerDay: number;
+    totalOnlineMin: number;
+    avgDailyOnlineMin: number;
+    intensityScore: number;
+}
+
+interface IntelAvailability {
+    hourly: number[];
+    activeHours: number[];
+    inactiveHours: number[];
+    globalScore: number;
+    daysAnalyzed: number;
+}
+
+interface IntelHeatmap {
+    matrix: number[][];
+    dayLabels: string[];
+    peakDay: number;
+    peakHour: number;
+    peakScore: number;
+    totalDataPoints: number;
+    weeksAnalyzed: number;
+}
+
+interface IntelRoutineDay {
+    date: string;
+    wakeTime: string | null;
+    sleepTime: string | null;
+    sessions: number;
+    totalOnlineMin: number;
+    peakHour: number;
+}
+
+interface IntelHabits {
+    estimatedWakeTime: string | null;
+    estimatedSleepTime: string | null;
+    estimatedTimezone: string;
+    workHoursOnline: number;
+    eveningOnline: number;
+    nightOwlScore: number;
+    consistencyScore: number;
+    avgResponseGapSec: number;
+    dominantPattern: string;
+    weekdayVsWeekend: {
+        weekdayAvgMin: number;
+        weekendAvgMin: number;
+        difference: string;
+    };
+}
+
+interface IntelData {
+    routine: IntelRoutineDay[];
+    availability: IntelAvailability;
+    sessionStats: IntelSession;
+    heatmap: IntelHeatmap;
+    habits: IntelHabits;
+}
+
 interface ContactCardProps {
     jid: string;
     displayNumber: string;
+    customName: string | null;
+    pushName: string | null;
     data: TrackerData[];
     devices: DeviceInfo[];
     deviceCount: number;
@@ -82,6 +152,8 @@ interface ContactCardProps {
 export function ContactCard({
     jid,
     displayNumber,
+    customName: initialCustomName,
+    pushName: initialPushName,
     data,
     devices,
     deviceCount,
@@ -94,10 +166,65 @@ export function ContactCard({
     const [activity, setActivity] = useState<ActivityEntry[]>([]);
     const [profile, setProfile] = useState<ProfileData | null>(null);
     const [patterns, setPatterns] = useState<PatternsData | null>(null);
-    const [activePanel, setActivePanel] = useState<'chart' | 'stats' | 'activity' | 'profile'>('chart');
+    const [activePanel, setActivePanel] = useState<'chart' | 'stats' | 'activity' | 'profile' | 'intel'>('chart');
     const [profileLoading, setProfileLoading] = useState(false);
     const [logPage, setLogPage] = useState(1);
     const LOG_PAGE_SIZE = 15;
+
+    // Intelligence data
+    const [intel, setIntel] = useState<IntelData | null>(null);
+    const [intelLoading, setIntelLoading] = useState(false);
+
+    // Custom name (alias) editing
+    const [customName, setCustomName] = useState<string | null>(initialCustomName);
+    const [editingName, setEditingName] = useState(false);
+    const [editNameValue, setEditNameValue] = useState('');
+
+    // Listen for custom name updates from server
+    useEffect(() => {
+        function onCustomNameUpdated(data: { jid: string; customName: string | null }) {
+            if (data.jid === jid) {
+                setCustomName(data.customName);
+            }
+        }
+        function onProfileUpdate(data: { jid: string; pushName?: string }) {
+            if (data.jid === jid && data.pushName !== undefined) {
+                setProfile(prev => prev ? { ...prev, pushName: data.pushName! } : prev);
+            }
+        }
+        socket.on('custom-name-updated', onCustomNameUpdated);
+        socket.on('contact-profile-update', onProfileUpdate);
+        return () => {
+            socket.off('custom-name-updated', onCustomNameUpdated);
+            socket.off('contact-profile-update', onProfileUpdate);
+        };
+    }, [jid]);
+
+    const handleSaveCustomName = async () => {
+        const trimmed = editNameValue.trim() || null;
+        setCustomName(trimmed);
+        setEditingName(false);
+        // Use REST API (reliable) + socket broadcast as fallback
+        try {
+            await fetch(`${API_URL}/api/contact/${encodeURIComponent(jid)}/custom-name`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ customName: trimmed }),
+            });
+        } catch {
+            // Fallback to socket if REST fails
+            socket.emit('set-custom-name', { jid, customName: trimmed });
+        }
+    };
+
+    const handleStartEditName = () => {
+        setEditNameValue(customName || '');
+        setEditingName(true);
+    };
+
+    // Resolved display name: customName > pushName (from profile) > pushName (from props) > number
+    const resolvedPushName = profile?.pushName || initialPushName || null;
+    const resolvedName = customName || resolvedPushName || displayNumber;
 
     const lastData = data[data.length - 1];
     const currentStatus = devices.length > 0
@@ -140,13 +267,17 @@ export function ContactCard({
             .then(r => r.json())
             .then((data) => {
                 setProfile(data);
+                // Sync custom name from DB if we don't have one yet
+                if (data.customName && !customName) {
+                    setCustomName(data.customName);
+                }
                 setProfileLoading(false);
             })
             .catch((err) => {
                 console.error(err);
                 setProfileLoading(false);
             });
-    }, [jid]);
+    }, [jid, customName]);
 
     const fetchPatterns = useCallback(() => {
         fetch(`${API_URL}/api/patterns/${encodeURIComponent(jid)}`)
@@ -166,13 +297,24 @@ export function ContactCard({
         return () => clearInterval(interval);
     }, [fetchStats, fetchActivity]);
 
+    const fetchIntel = useCallback(() => {
+        setIntelLoading(true);
+        fetch(`${API_URL}/api/intel/${encodeURIComponent(jid)}?days=14`)
+            .then(r => r.json())
+            .then((data) => { setIntel(data); setIntelLoading(false); })
+            .catch((err) => { console.error(err); setIntelLoading(false); });
+    }, [jid]);
+
     // Load profile and patterns when those tabs are activated
     useEffect(() => {
         if (activePanel === 'profile') {
             fetchProfile();
             fetchPatterns();
         }
-    }, [activePanel, fetchProfile, fetchPatterns]);
+        if (activePanel === 'intel') {
+            fetchIntel();
+        }
+    }, [activePanel, fetchProfile, fetchPatterns, fetchIntel]);
 
     const formatTime = (ts: string | null) => {
         if (!ts) return '—';
@@ -210,6 +352,15 @@ export function ContactCard({
         const h = Math.floor(s / 3600);
         const m = Math.floor((s % 3600) / 60);
         return `${h}h ${m}m`;
+    };
+
+    /** Compact seconds formatter for Intel panels */
+    const fmtSec = (s: number) => {
+        if (s < 60) return `${s}s`;
+        if (s < 3600) return `${Math.floor(s / 60)}m`;
+        const h = Math.floor(s / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        return m > 0 ? `${h}h${m}m` : `${h}h`;
     };
 
     // ── Bitácora helpers ──────────────────────────────────────
@@ -310,7 +461,7 @@ tr:hover{background:#141b2d}
 <div class="meta">Contacto: ${privacyMode ? '***' : displayNumber} · Generado: ${new Date().toLocaleString('es-MX')} · Total eventos: ${bitacoraEntries.length}</div>
 <table><thead><tr><th>Fecha</th><th>Hora (Local / UTC)</th><th>Estado</th><th>Descripción</th></tr></thead>
 <tbody>${rows}</tbody></table>
-<div class="footer">Device Activity Tracker v2.0.0 · @deco31416</div>
+<div class="footer">Device Activity Tracker v2.2.0 · @deco31416 · www.deco31416.com</div>
 </body></html>`;
         const blob = new Blob([html], { type: 'text/html' });
         downloadBlob(blob, `bitacora-${displayNumber}-${new Date().toISOString().slice(0, 10)}.html`);
@@ -389,9 +540,22 @@ th{background:#f1f5f9;padding:8px;text-align:left;font-size:10px;text-transform:
 
                     <div>
                         <div className="flex items-center gap-2">
-                            <h3 className="text-sm font-semibold text-txt-primary">{blurredNumber}</h3>
-                            {profile?.pushName && !privacyMode && (
-                                <span className="text-[11px] text-txt-muted">({profile.pushName})</span>
+                            <h3 className="text-sm font-semibold text-txt-primary">
+                                {privacyMode ? blurredNumber : resolvedName}
+                            </h3>
+                            {/* Show number below if name is different from number */}
+                            {!privacyMode && resolvedName !== displayNumber && (
+                                <span className="text-[11px] text-txt-muted">({displayNumber})</span>
+                            )}
+                            {/* Editable name icon */}
+                            {!privacyMode && (
+                                <button
+                                    onClick={handleStartEditName}
+                                    className="text-txt-dim hover:text-accent transition-colors p-0.5"
+                                    title="Editar alias"
+                                >
+                                    <Pencil size={11} />
+                                </button>
                             )}
                             {profile?.isBusinessAccount && (
                                 <span className="badge-neutral !text-[9px] !py-0 !px-1.5 flex items-center gap-0.5">
@@ -399,6 +563,29 @@ th{background:#f1f5f9;padding:8px;text-align:left;font-size:10px;text-transform:
                                 </span>
                             )}
                         </div>
+                        {/* Inline edit mode */}
+                        {editingName && (
+                            <div className="flex items-center gap-1.5 mt-1">
+                                <input
+                                    type="text"
+                                    className="input-field !py-0.5 !px-2 !text-xs w-40"
+                                    value={editNameValue}
+                                    onChange={(e) => setEditNameValue(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') handleSaveCustomName();
+                                        if (e.key === 'Escape') setEditingName(false);
+                                    }}
+                                    placeholder="Alias personalizado..."
+                                    autoFocus
+                                />
+                                <button onClick={handleSaveCustomName} className="text-success hover:text-success/80 p-0.5" title="Guardar">
+                                    <Check size={14} />
+                                </button>
+                                <button onClick={() => setEditingName(false)} className="text-danger hover:text-danger/80 p-0.5" title="Cancelar">
+                                    <X size={14} />
+                                </button>
+                            </div>
+                        )}
                         <div className="flex items-center gap-2">
                             <span className={statusConfig.badge}>
                                 {currentStatus}
@@ -473,9 +660,16 @@ th{background:#f1f5f9;padding:8px;text-align:left;font-size:10px;text-transform:
                                 )} />
                             </div>
 
-                            <h4 className="text-base font-bold text-txt-primary mb-1">{blurredNumber}</h4>
-                            {profile?.pushName && !privacyMode && (
-                                <p className="text-xs text-txt-muted mb-1">{profile.pushName}</p>
+                            <h4 className="text-base font-bold text-txt-primary mb-0.5">
+                                {privacyMode ? blurredNumber : resolvedName}
+                            </h4>
+                            {/* Show number if name is different */}
+                            {!privacyMode && resolvedName !== displayNumber && (
+                                <p className="text-[11px] text-txt-dim mb-0.5">{displayNumber}</p>
+                            )}
+                            {/* Show push name if custom name is being used */}
+                            {!privacyMode && customName && resolvedPushName && (
+                                <p className="text-xs text-txt-muted mb-0.5">WA: {resolvedPushName}</p>
                             )}
                             {profile?.about && !privacyMode && (
                                 <p className="text-[11px] text-txt-dim italic mb-3 px-2 truncate">"{profile.about}"</p>
@@ -620,6 +814,7 @@ th{background:#f1f5f9;padding:8px;text-align:left;font-size:10px;text-transform:
                                 { key: 'chart', label: 'RTT Chart', icon: <BarChart3 size={13} /> },
                                 { key: 'activity', label: 'Activity', icon: <History size={13} /> },
                                 { key: 'stats', label: 'Stats', icon: <Database size={13} /> },
+                                { key: 'intel', label: 'Intel', icon: <Brain size={13} /> },
                                 { key: 'profile', label: 'Profile', icon: <User size={13} /> },
                             ] as const).map(tab => (
                                 <button
@@ -933,6 +1128,355 @@ th{background:#f1f5f9;padding:8px;text-align:left;font-size:10px;text-transform:
                             </div>
                         )}
 
+                        {/* ═══ Intelligence Panel ═══ */}
+                        {activePanel === 'intel' && (
+                            <div className="space-y-4">
+                                {intelLoading && !intel ? (
+                                    <div className="bg-surface-overlay rounded-xl border border-surface-border p-8 text-center">
+                                        <div className="animate-pulse">
+                                            <Brain size={32} className="mx-auto text-accent mb-2" />
+                                            <p className="text-txt-muted text-sm">Analizando patrones de comportamiento...</p>
+                                        </div>
+                                    </div>
+                                ) : intel ? (
+                                    <>
+                                        {/* ── Habit Profile Summary ── */}
+                                        <div className="bg-surface-overlay rounded-xl border border-accent/20 p-5">
+                                            <h5 className="text-xs font-semibold text-accent uppercase tracking-wider mb-4 flex items-center gap-1.5">
+                                                <Brain size={13} /> Perfil de Comportamiento
+                                            </h5>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                {/* Pattern badge */}
+                                                <div className="col-span-2 flex items-center gap-3 bg-surface-hover rounded-lg p-3 border border-surface-border">
+                                                    <div className={clsx(
+                                                        "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
+                                                        intel.habits.dominantPattern === 'night_owl' ? 'bg-indigo-500/20 text-indigo-400' :
+                                                        intel.habits.dominantPattern === 'early_bird' ? 'bg-amber-500/20 text-amber-400' :
+                                                        intel.habits.dominantPattern === 'regular' ? 'bg-success/20 text-success' :
+                                                        'bg-warning/20 text-warning'
+                                                    )}>
+                                                        {intel.habits.dominantPattern === 'night_owl' ? <Moon size={20} /> :
+                                                         intel.habits.dominantPattern === 'early_bird' ? <Sun size={20} /> :
+                                                         intel.habits.dominantPattern === 'regular' ? <Shield size={20} /> :
+                                                         <Zap size={20} />}
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-xs font-bold text-txt-primary">
+                                                            {intel.habits.dominantPattern === 'night_owl' ? 'Noctámbulo 🦉' :
+                                                             intel.habits.dominantPattern === 'early_bird' ? 'Madrugador 🐦' :
+                                                             intel.habits.dominantPattern === 'regular' ? 'Rutinario 📐' :
+                                                             'Irregular ⚡'}
+                                                        </p>
+                                                        <p className="text-[10px] text-txt-dim">
+                                                            Consistencia: {intel.habits.consistencyScore}% · TZ estimada: {intel.habits.estimatedTimezone}
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                <div className="bg-surface-hover rounded-lg p-3 text-center">
+                                                    <Sun size={14} className="mx-auto text-amber-400 mb-1" />
+                                                    <p className="text-sm font-bold text-txt-primary">{intel.habits.estimatedWakeTime || '—'}</p>
+                                                    <p className="text-[10px] text-txt-dim">Despertar (UTC)</p>
+                                                </div>
+                                                <div className="bg-surface-hover rounded-lg p-3 text-center">
+                                                    <Moon size={14} className="mx-auto text-indigo-400 mb-1" />
+                                                    <p className="text-sm font-bold text-txt-primary">{intel.habits.estimatedSleepTime || '—'}</p>
+                                                    <p className="text-[10px] text-txt-dim">Dormir (UTC)</p>
+                                                </div>
+                                                <div className="bg-surface-hover rounded-lg p-3 text-center">
+                                                    <Briefcase size={14} className="mx-auto text-success mb-1" />
+                                                    <p className="text-sm font-bold text-txt-primary">{intel.habits.workHoursOnline}%</p>
+                                                    <p className="text-[10px] text-txt-dim">Horario laboral</p>
+                                                </div>
+                                                <div className="bg-surface-hover rounded-lg p-3 text-center">
+                                                    <Moon size={14} className="mx-auto text-purple-400 mb-1" />
+                                                    <p className="text-sm font-bold text-txt-primary">{intel.habits.nightOwlScore}%</p>
+                                                    <p className="text-[10px] text-txt-dim">Score nocturno</p>
+                                                </div>
+                                                <div className="bg-surface-hover rounded-lg p-3 text-center">
+                                                    <Timer size={14} className="mx-auto text-warning mb-1" />
+                                                    <p className="text-sm font-bold text-txt-primary">{fmtSec(intel.habits.avgResponseGapSec)}</p>
+                                                    <p className="text-[10px] text-txt-dim">Gap promedio</p>
+                                                </div>
+                                                <div className="bg-surface-hover rounded-lg p-3 text-center">
+                                                    <Coffee size={14} className="mx-auto text-orange-400 mb-1" />
+                                                    <p className="text-sm font-bold text-txt-primary">{intel.habits.eveningOnline}%</p>
+                                                    <p className="text-[10px] text-txt-dim">Noche activo</p>
+                                                </div>
+
+                                                {/* Weekday vs Weekend */}
+                                                <div className="col-span-2 bg-surface-hover rounded-lg p-3 border border-surface-border">
+                                                    <p className="text-[10px] text-txt-dim uppercase tracking-wider mb-2">Semana vs Fin de semana</p>
+                                                    <div className="flex items-center justify-between text-xs">
+                                                        <div className="text-center flex-1">
+                                                            <p className="font-bold text-txt-primary">{intel.habits.weekdayVsWeekend.weekdayAvgMin}m</p>
+                                                            <p className="text-txt-dim">Lun-Vie avg</p>
+                                                        </div>
+                                                        <div className="text-center px-3">
+                                                            <span className={clsx(
+                                                                "text-[10px] font-semibold px-2 py-0.5 rounded-full",
+                                                                intel.habits.weekdayVsWeekend.difference === 'more_weekend' ? 'bg-indigo-500/20 text-indigo-400' :
+                                                                intel.habits.weekdayVsWeekend.difference === 'more_weekday' ? 'bg-success/20 text-success' :
+                                                                'bg-surface-border text-txt-muted'
+                                                            )}>
+                                                                {intel.habits.weekdayVsWeekend.difference === 'more_weekend' ? '▲ Finde' :
+                                                                 intel.habits.weekdayVsWeekend.difference === 'more_weekday' ? '▲ Semana' : '≈ Similar'}
+                                                            </span>
+                                                        </div>
+                                                        <div className="text-center flex-1">
+                                                            <p className="font-bold text-txt-primary">{intel.habits.weekdayVsWeekend.weekendAvgMin}m</p>
+                                                            <p className="text-txt-dim">Sáb-Dom avg</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* ── Weekly Heatmap 7×24 ── */}
+                                        <div className="bg-surface-overlay rounded-xl border border-surface-border p-5">
+                                            <h5 className="text-xs font-semibold text-txt-muted uppercase tracking-wider mb-4 flex items-center gap-1.5">
+                                                <CalendarDays size={13} /> Heatmap Semanal
+                                                <span className="text-[9px] font-normal text-txt-dim ml-auto">
+                                                    {intel.heatmap.weeksAnalyzed} semanas · {intel.heatmap.totalDataPoints.toLocaleString()} datos
+                                                </span>
+                                            </h5>
+                                            <div className="overflow-x-auto">
+                                                <div className="min-w-[600px]">
+                                                    {/* Hour labels */}
+                                                    <div className="flex mb-1">
+                                                        <div className="w-10 shrink-0" />
+                                                        {Array.from({ length: 24 }, (_, h) => (
+                                                            <div key={h} className="flex-1 text-center text-[8px] text-txt-dim">
+                                                                {h % 3 === 0 ? `${h}h` : ''}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    {/* Day rows */}
+                                                    {intel.heatmap.matrix.map((row, d) => (
+                                                        <div key={d} className="flex items-center mb-0.5">
+                                                            <div className="w-10 shrink-0 text-[9px] text-txt-dim font-medium">
+                                                                {intel.heatmap.dayLabels[d]}
+                                                            </div>
+                                                            {row.map((val, h) => {
+                                                                const isPeak = d === intel.heatmap.peakDay && h === intel.heatmap.peakHour;
+                                                                return (
+                                                                    <div
+                                                                        key={h}
+                                                                        className={clsx(
+                                                                            "flex-1 h-5 rounded-[2px] mx-[0.5px] transition-colors",
+                                                                            isPeak && "ring-1 ring-accent"
+                                                                        )}
+                                                                        style={{
+                                                                            backgroundColor: val > 0
+                                                                                ? `rgba(124,58,237,${Math.min(val * 1.2, 1)})`
+                                                                                : 'rgba(15,22,41,0.5)'
+                                                                        }}
+                                                                        title={`${intel.heatmap.dayLabels[d]} ${h}:00 — ${Math.round(val * 100)}% online`}
+                                                                    />
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    ))}
+                                                    {/* Color legend */}
+                                                    <div className="flex items-center justify-between mt-2 px-10">
+                                                        <span className="text-[8px] text-txt-dim">0%</span>
+                                                        <div className="flex gap-0.5">
+                                                            {[0, 0.2, 0.4, 0.6, 0.8, 1].map((v, i) => (
+                                                                <div
+                                                                    key={i}
+                                                                    className="w-5 h-2.5 rounded-sm"
+                                                                    style={{ backgroundColor: v > 0 ? `rgba(124,58,237,${v})` : 'rgba(15,22,41,0.5)' }}
+                                                                />
+                                                            ))}
+                                                        </div>
+                                                        <span className="text-[8px] text-txt-dim">100%</span>
+                                                    </div>
+                                                    <p className="text-center text-[9px] text-txt-dim mt-1">
+                                                        Pico: {intel.heatmap.dayLabels[intel.heatmap.peakDay]} {intel.heatmap.peakHour}:00 ({Math.round(intel.heatmap.peakScore * 100)}%)
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* ── Session Statistics ── */}
+                                        <div className="bg-surface-overlay rounded-xl border border-surface-border p-5">
+                                            <h5 className="text-xs font-semibold text-txt-muted uppercase tracking-wider mb-4 flex items-center gap-1.5">
+                                                <Timer size={13} /> Estadísticas de Sesión
+                                            </h5>
+                                            <div className="grid grid-cols-3 gap-3 mb-3">
+                                                <div className="bg-surface-hover rounded-lg p-3 text-center">
+                                                    <p className="text-lg font-bold text-txt-primary">{intel.sessionStats.totalSessions}</p>
+                                                    <p className="text-[10px] text-txt-dim">Sesiones</p>
+                                                </div>
+                                                <div className="bg-surface-hover rounded-lg p-3 text-center">
+                                                    <p className="text-lg font-bold text-txt-primary">{fmtSec(intel.sessionStats.avgDurationSec)}</p>
+                                                    <p className="text-[10px] text-txt-dim">Duración avg</p>
+                                                </div>
+                                                <div className="bg-surface-hover rounded-lg p-3 text-center">
+                                                    <p className="text-lg font-bold text-txt-primary">{intel.sessionStats.avgSessionsPerDay}</p>
+                                                    <p className="text-[10px] text-txt-dim">Sesiones/día</p>
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div className="flex items-center gap-2 text-xs">
+                                                    <span className="text-txt-dim">Mediana:</span>
+                                                    <span className="font-semibold text-txt-primary">{fmtSec(intel.sessionStats.medianDurationSec)}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2 text-xs">
+                                                    <span className="text-txt-dim">Máxima:</span>
+                                                    <span className="font-semibold text-warning">{fmtSec(intel.sessionStats.maxDurationSec)}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2 text-xs">
+                                                    <span className="text-txt-dim">Total online:</span>
+                                                    <span className="font-semibold text-success">{intel.sessionStats.totalOnlineMin}m</span>
+                                                </div>
+                                                <div className="flex items-center gap-2 text-xs">
+                                                    <span className="text-txt-dim">Diario avg:</span>
+                                                    <span className="font-semibold text-txt-primary">{intel.sessionStats.avgDailyOnlineMin}m</span>
+                                                </div>
+                                            </div>
+                                            {/* Intensity bar */}
+                                            <div className="mt-4 pt-3 border-t border-surface-border">
+                                                <div className="flex items-center justify-between text-[10px] mb-1">
+                                                    <span className="text-txt-dim uppercase tracking-wider">Intensidad de uso</span>
+                                                    <span className={clsx(
+                                                        "font-bold",
+                                                        intel.sessionStats.intensityScore > 70 ? 'text-danger' :
+                                                        intel.sessionStats.intensityScore > 40 ? 'text-warning' : 'text-success'
+                                                    )}>
+                                                        {intel.sessionStats.intensityScore}%
+                                                    </span>
+                                                </div>
+                                                <div className="w-full h-2 bg-surface-hover rounded-full overflow-hidden">
+                                                    <div
+                                                        className={clsx(
+                                                            "h-full rounded-full transition-all",
+                                                            intel.sessionStats.intensityScore > 70 ? 'bg-danger' :
+                                                            intel.sessionStats.intensityScore > 40 ? 'bg-warning' : 'bg-success'
+                                                        )}
+                                                        style={{ width: `${intel.sessionStats.intensityScore}%` }}
+                                                    />
+                                                </div>
+                                                <div className="flex justify-between text-[8px] text-txt-dim mt-0.5">
+                                                    <span>Casual</span>
+                                                    <span>Moderado</span>
+                                                    <span>Intensivo</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* ── Availability Probability ── */}
+                                        <div className="bg-surface-overlay rounded-xl border border-surface-border p-5">
+                                            <h5 className="text-xs font-semibold text-txt-muted uppercase tracking-wider mb-4 flex items-center gap-1.5">
+                                                <Target size={13} /> Probabilidad de Disponibilidad
+                                                <span className="text-[9px] font-normal text-txt-dim ml-auto">
+                                                    {intel.availability.daysAnalyzed} días analizados
+                                                </span>
+                                            </h5>
+                                            {/* Hourly probability bar chart */}
+                                            <div className="flex items-end gap-[2px] h-24 mb-2">
+                                                {intel.availability.hourly.map((prob, h) => (
+                                                    <div
+                                                        key={h}
+                                                        className="flex-1 rounded-t-sm transition-all"
+                                                        style={{
+                                                            height: `${Math.max(prob * 100, 2)}%`,
+                                                            backgroundColor: prob > 0.7 ? '#22c55e' :
+                                                                             prob > 0.4 ? '#eab308' :
+                                                                             prob > 0.1 ? '#6366f1' : 'rgba(15,22,41,0.5)',
+                                                        }}
+                                                        title={`${h}:00 — ${Math.round(prob * 100)}% probabilidad`}
+                                                    />
+                                                ))}
+                                            </div>
+                                            <div className="flex justify-between text-[8px] text-txt-dim">
+                                                <span>0h</span>
+                                                <span>6h</span>
+                                                <span>12h</span>
+                                                <span>18h</span>
+                                                <span>23h</span>
+                                            </div>
+                                            <div className="flex items-center justify-center gap-4 mt-2 text-[9px] text-txt-dim">
+                                                <span className="flex items-center gap-1">
+                                                    <span className="w-2 h-2 rounded-sm bg-success" /> Alta (&gt;70%)
+                                                </span>
+                                                <span className="flex items-center gap-1">
+                                                    <span className="w-2 h-2 rounded-sm bg-warning" /> Media (40-70%)
+                                                </span>
+                                                <span className="flex items-center gap-1">
+                                                    <span className="w-2 h-2 rounded-sm bg-indigo-500" /> Baja (10-40%)
+                                                </span>
+                                            </div>
+                                            {/* Active/inactive hours */}
+                                            <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-surface-border">
+                                                <div>
+                                                    <p className="text-[9px] text-success uppercase tracking-wider mb-1">Horas activas (&gt;50%)</p>
+                                                    <p className="text-xs font-mono text-txt-primary">
+                                                        {intel.availability.activeHours.length > 0
+                                                            ? intel.availability.activeHours.map(h => `${h}h`).join(', ')
+                                                            : 'Ninguna'}
+                                                    </p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[9px] text-danger uppercase tracking-wider mb-1">Horas inactivas (&lt;10%)</p>
+                                                    <p className="text-xs font-mono text-txt-primary">
+                                                        {intel.availability.inactiveHours.length > 0
+                                                            ? intel.availability.inactiveHours.map(h => `${h}h`).join(', ')
+                                                            : 'Ninguna'}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* ── Daily Routine (last days) ── */}
+                                        {intel.routine.length > 0 && (
+                                            <div className="bg-surface-overlay rounded-xl border border-surface-border p-5">
+                                                <h5 className="text-xs font-semibold text-txt-muted uppercase tracking-wider mb-4 flex items-center gap-1.5">
+                                                    <CalendarDays size={13} /> Rutina Diaria (últimos {intel.routine.length} días)
+                                                </h5>
+                                                <div className="overflow-x-auto">
+                                                    <table className="w-full text-xs">
+                                                        <thead>
+                                                            <tr className="text-[10px] text-txt-dim uppercase tracking-wider border-b border-surface-border">
+                                                                <th className="text-left py-2 pr-3">Fecha</th>
+                                                                <th className="text-center py-2 px-2">Despertar</th>
+                                                                <th className="text-center py-2 px-2">Dormir</th>
+                                                                <th className="text-center py-2 px-2">Sesiones</th>
+                                                                <th className="text-center py-2 px-2">Online</th>
+                                                                <th className="text-center py-2 pl-2">Pico</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {intel.routine.slice(-10).reverse().map((day) => (
+                                                                <tr key={day.date} className="border-b border-surface-border/50 hover:bg-surface-hover/50">
+                                                                    <td className="py-1.5 pr-3 font-mono text-txt-secondary">{day.date.slice(5)}</td>
+                                                                    <td className="text-center py-1.5 px-2">
+                                                                        <span className="text-amber-400 font-mono">{day.wakeTime || '—'}</span>
+                                                                    </td>
+                                                                    <td className="text-center py-1.5 px-2">
+                                                                        <span className="text-indigo-400 font-mono">{day.sleepTime || '—'}</span>
+                                                                    </td>
+                                                                    <td className="text-center py-1.5 px-2 text-txt-primary font-semibold">{day.sessions}</td>
+                                                                    <td className="text-center py-1.5 px-2 text-success font-semibold">{day.totalOnlineMin}m</td>
+                                                                    <td className="text-center py-1.5 pl-2 text-txt-muted">{day.peakHour}h</td>
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
+                                ) : (
+                                    <div className="text-center py-8">
+                                        <Brain size={32} className="mx-auto text-txt-dim mb-2" />
+                                        <p className="text-txt-muted text-sm">Sin datos de inteligencia</p>
+                                        <p className="text-txt-dim text-xs mt-1">Se requieren al menos unas horas de tracking para generar análisis</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         {/* ═══ Profile Panel ═══ */}
                         {activePanel === 'profile' && (
                             <div className="space-y-4">
@@ -951,9 +1495,52 @@ th{background:#f1f5f9;padding:8px;text-align:left;font-size:10px;text-transform:
                                                 <User size={13} /> Perfil del Contacto
                                             </h5>
                                             <div className="grid grid-cols-2 gap-4">
+                                                {/* Custom Name / Alias - editable */}
+                                                <div className="col-span-2 bg-surface-hover rounded-lg p-3 border border-accent/20">
+                                                    <p className="text-[10px] text-accent uppercase tracking-wider font-semibold mb-1.5 flex items-center gap-1">
+                                                        <Pencil size={10} /> Alias personalizado
+                                                    </p>
+                                                    {editingName ? (
+                                                        <div className="flex items-center gap-2">
+                                                            <input
+                                                                type="text"
+                                                                className="input-field !py-1 !px-2.5 !text-sm flex-1"
+                                                                value={editNameValue}
+                                                                onChange={(e) => setEditNameValue(e.target.value)}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') handleSaveCustomName();
+                                                                    if (e.key === 'Escape') setEditingName(false);
+                                                                }}
+                                                                placeholder="Nombre personalizado..."
+                                                                autoFocus
+                                                            />
+                                                            <button onClick={handleSaveCustomName} className="text-success hover:text-success/80 p-1" title="Guardar">
+                                                                <Check size={16} />
+                                                            </button>
+                                                            <button onClick={() => setEditingName(false)} className="text-danger hover:text-danger/80 p-1" title="Cancelar">
+                                                                <X size={16} />
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex items-center justify-between">
+                                                            <span className="text-sm font-medium text-txt-primary">
+                                                                {privacyMode ? '••••' : (customName || '— Sin alias —')}
+                                                            </span>
+                                                            {!privacyMode && (
+                                                                <button
+                                                                    onClick={handleStartEditName}
+                                                                    className="btn-ghost !text-[10px] !py-1 !px-2 flex items-center gap-1"
+                                                                >
+                                                                    <Pencil size={10} /> {customName ? 'Editar' : 'Asignar'}
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+
                                                 <ProfileItem label="Número" value={privacyMode ? blurredNumber : (profile?.number || displayNumber)} />
-                                                <ProfileItem label="Push Name" value={privacyMode ? '••••' : (profile?.pushName || '—')} />
-                                                <ProfileItem label="Nombre guardado" value={privacyMode ? '••••' : (profile?.contactName || '—')} />
+                                                <ProfileItem label="Push Name (WA)" value={privacyMode ? '••••' : (profile?.pushName || 'No disponible')} />
+                                                <ProfileItem label="Nombre de contacto" value={privacyMode ? '••••' : (profile?.contactName || displayNumber)} />
                                                 <ProfileItem
                                                     label="Tipo de cuenta"
                                                     value={profile?.isBusinessAccount ? 'Business' : 'Personal'}
@@ -961,7 +1548,7 @@ th{background:#f1f5f9;padding:8px;text-align:left;font-size:10px;text-transform:
                                                 />
                                                 <div className="col-span-2">
                                                     <ProfileItem
-                                                        label="About / Status"
+                                                        label="About / Status (WA)"
                                                         value={privacyMode ? '••••••••' : (profile?.about || 'No disponible (privacidad)')}
                                                     />
                                                     {profile?.aboutSetAt && (

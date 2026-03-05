@@ -4,6 +4,61 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [2.2.0] — 2026-03-05
+
+### ✨ New Features
+
+#### Behavior Intelligence Module (OSINT Analytics Engine)
+- New `analytics.ts` engine (~660 lines) for behavioral profiling from WhatsApp activity metadata
+- **Daily Routine Detection** — wake/sleep time estimation per day, session count, peak hour
+- **Availability Probability Model** — 24-hour probability curve of being online (per-hour, aggregated over days)
+- **Session Statistics** — total sessions, avg/median/max duration, sessions-per-day, intensity score
+- **Weekly Heatmap** — 7×24 day-of-week × hour-of-day activity matrix with peak slot detection
+- **Habit Profiling** — dominant pattern classification (Night Owl 🦉 / Early Bird 🐦 / Regular 📐 / Irregular ⚡), timezone estimation, weekday vs weekend comparison, night owl score, consistency score
+- **Multi-Contact Correlation** — Pearson correlation of hourly patterns, simultaneous online detection, follow-delay estimation, relationship classification (strong/moderate/weak/none)
+- Based on Schnitzler et al., "Hope of Delivery: Extracting User Locations From Mobile Instant Messengers", NDSS 2023
+
+#### Intel Tab (UI)
+- New **Intel** tab in ContactCard with 5 visual sections:
+  - 🧠 Behavior Profile summary (pattern badge, wake/sleep, work hours, night owl score, consistency)
+  - 📅 Weekly Heatmap (7×24 interactive color grid with peak indicator)
+  - ⏱️ Session Statistics (counts, durations, intensity bar)
+  - 🎯 Availability Probability (hourly bar chart with color-coded thresholds)
+  - 📋 Daily Routine table (last 10 days with wake/sleep/sessions/online/peak)
+
+#### Custom Name / Alias System
+- Per-contact custom alias stored in MongoDB (`customName` field)
+- Inline editing via pencil icon (✏️) in contact card header
+- Editable alias section in Profile tab
+- Alias input field when adding new contacts
+- Display priority: customName > pushName (WhatsApp) > number
+- New REST endpoint: `PUT /api/contact/:jid/custom-name`
+- New socket event: `set-custom-name` with broadcast to all clients
+- HTTP-first persistence with socket fallback for reliability
+
+#### WhatsApp Data Enrichment
+- Real-time `contacts.update` listener for push name and status changes
+- Real-time `contacts.upsert` listener for initial contact data
+- Automatic profile picture refresh on change detection
+- Improved push name extraction from WhatsApp store/cache
+- Profile updates broadcast to all connected clients in real-time
+
+### 🔧 Changes
+- 7 new REST API endpoints for intelligence: `/api/intel/:jid`, `/routine`, `/availability`, `/sessions`, `/heatmap`, `/habits`, `/api/intel/correlation`
+- Auto-restore now includes `customName` and `pushName` in restoration emission
+- Display name resolution improved: customName > pushName > contactName > number
+- Added `express.json()` middleware for JSON body parsing on REST endpoints
+- New Lucide icons: Brain, Target, CalendarDays, Timer, Coffee, Shield, Pencil, Check, X
+- ContactCard `handleSaveCustomName()` uses HTTP PUT as primary with socket emit fallback
+- History panel shows resolved name (customName || pushName || contactName || number)
+
+### 🗄️ Database Schema Changes
+- `ContactDoc.customName: string | null` — user-assigned alias for each contact
+- New `updateCustomName()` function in db.ts
+- `saveContact()` now accepts optional `customName` parameter
+
+---
+
 ## [2.1.0] — 2026-03-05
 
 ### ✨ New Features
@@ -103,8 +158,12 @@ All notable changes to this project will be documented in this file.
 
 ## [1.0.0] — Original
 
-Original by [gommzystudio](https://github.com/gommzystudio/device-activity-tracker):
+Original concept by [gommzystudio](https://github.com/gommzystudio/device-activity-tracker):
 - WhatsApp & Signal RTT-based activity tracking
 - React web interface with real-time charts
 - CLI interface
 - Docker support
+
+---
+
+> **All v2.x improvements by [deco31416](https://www.deco31416.com)** — [deco31416@gmail.com](mailto:deco31416@gmail.com)

@@ -16,6 +16,8 @@ interface SavedContact {
     jid: string;
     number: string;
     contactName: string;
+    customName: string | null;
+    pushName: string | null;
     profilePic: string | null;
     about: string | null;
     isBusinessAccount: boolean;
@@ -44,6 +46,8 @@ interface ContactInfo {
     jid: string;
     displayNumber: string;
     contactName: string;
+    customName: string | null;
+    pushName: string | null;
     data: TrackerData[];
     devices: DeviceInfo[];
     deviceCount: number;
@@ -53,6 +57,7 @@ interface ContactInfo {
 
 export function Dashboard({ connectionState }: DashboardProps) {
     const [inputNumber, setInputNumber] = useState('');
+    const [inputAlias, setInputAlias] = useState('');
     const [contacts, setContacts] = useState<Map<string, ContactInfo>>(new Map());
     const [error, setError] = useState<string | null>(null);
     const [privacyMode, setPrivacyMode] = useState(false);
@@ -139,13 +144,15 @@ export function Dashboard({ connectionState }: DashboardProps) {
             });
         }
 
-        function onContactAdded(data: { jid: string, number: string }) {
+        function onContactAdded(data: { jid: string, number: string, customName?: string | null, pushName?: string | null }) {
             setContacts(prev => {
                 const next = new Map(prev);
                 next.set(data.jid, {
                     jid: data.jid,
                     displayNumber: data.number,
                     contactName: data.number,
+                    customName: data.customName || null,
+                    pushName: data.pushName || null,
                     data: [],
                     devices: [],
                     deviceCount: 0,
@@ -155,6 +162,7 @@ export function Dashboard({ connectionState }: DashboardProps) {
                 return next;
             });
             setInputNumber('');
+            setInputAlias('');
         }
 
         function onContactRemoved(jid: string) {
@@ -184,6 +192,8 @@ export function Dashboard({ connectionState }: DashboardProps) {
                             jid: id,
                             displayNumber,
                             contactName: displayNumber,
+                            customName: null,
+                            pushName: null,
                             data: [],
                             devices: [],
                             deviceCount: 0,
@@ -196,6 +206,30 @@ export function Dashboard({ connectionState }: DashboardProps) {
             });
         }
 
+        function onCustomNameUpdated(data: { jid: string; customName: string | null }) {
+            setContacts(prev => {
+                const next = new Map(prev);
+                const contact = next.get(data.jid);
+                if (contact) {
+                    next.set(data.jid, { ...contact, customName: data.customName });
+                }
+                return next;
+            });
+        }
+
+        function onContactProfileUpdate(data: { jid: string; pushName?: string; about?: string }) {
+            setContacts(prev => {
+                const next = new Map(prev);
+                const contact = next.get(data.jid);
+                if (contact) {
+                    const updated = { ...contact };
+                    if (data.pushName !== undefined) updated.pushName = data.pushName;
+                    next.set(data.jid, updated);
+                }
+                return next;
+            });
+        }
+
         socket.on('tracker-update', onTrackerUpdate);
         socket.on('profile-pic', onProfilePic);
         socket.on('contact-name', onContactName);
@@ -204,6 +238,8 @@ export function Dashboard({ connectionState }: DashboardProps) {
         socket.on('error', onError);
         socket.on('probe-method', onProbeMethod);
         socket.on('tracked-contacts', onTrackedContacts);
+        socket.on('custom-name-updated', onCustomNameUpdated);
+        socket.on('contact-profile-update', onContactProfileUpdate);
 
         socket.emit('get-tracked-contacts');
 
@@ -216,12 +252,14 @@ export function Dashboard({ connectionState }: DashboardProps) {
             socket.off('error', onError);
             socket.off('probe-method', onProbeMethod);
             socket.off('tracked-contacts', onTrackedContacts);
+            socket.off('custom-name-updated', onCustomNameUpdated);
+            socket.off('contact-profile-update', onContactProfileUpdate);
         };
     }, []);
 
     const handleAdd = () => {
         if (!inputNumber) return;
-        socket.emit('add-contact', { number: inputNumber });
+        socket.emit('add-contact', { number: inputNumber, customName: inputAlias || undefined });
     };
 
     const handleRemove = (jid: string) => {
@@ -315,10 +353,18 @@ export function Dashboard({ connectionState }: DashboardProps) {
                 <div className="flex gap-3">
                     <input
                         type="text"
-                        placeholder="Enter phone number (e.g. 491701234567)"
+                        placeholder="Phone number (e.g. 491701234567)"
                         className="input-field flex-1"
                         value={inputNumber}
                         onChange={(e) => setInputNumber(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && handleAdd()}
+                    />
+                    <input
+                        type="text"
+                        placeholder="Alias (optional)"
+                        className="input-field w-44"
+                        value={inputAlias}
+                        onChange={(e) => setInputAlias(e.target.value)}
                         onKeyPress={(e) => e.key === 'Enter' && handleAdd()}
                     />
                     <button onClick={handleAdd} className="btn-primary flex items-center gap-2">
@@ -395,7 +441,7 @@ export function Dashboard({ connectionState }: DashboardProps) {
                                             </div>
                                             <div>
                                                 <p className="text-xs font-medium text-txt-primary">
-                                                    {sc.contactName || sc.number}
+                                                    {sc.customName || sc.pushName || sc.contactName || sc.number}
                                                     {sc.isBusinessAccount && (
                                                         <span className="ml-1.5 text-[9px] text-accent">● Business</span>
                                                     )}
@@ -441,7 +487,9 @@ export function Dashboard({ connectionState }: DashboardProps) {
                         <ContactCard
                             key={contact.jid}
                             jid={contact.jid}
-                            displayNumber={contact.contactName}
+                            displayNumber={contact.displayNumber}
+                            customName={contact.customName}
+                            pushName={contact.pushName}
                             data={contact.data}
                             devices={contact.devices}
                             deviceCount={contact.deviceCount}
