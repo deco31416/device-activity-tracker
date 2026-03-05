@@ -179,7 +179,7 @@ export class WhatsAppTracker {
         if (this.onUpdate) {
             this.onUpdate({
                 devices: [],
-                deviceCount: this.trackedJids.size,
+                deviceCount: this.deviceMetrics.size,
                 presence: this.lastPresence,
                 median: 0,
                 threshold: 0
@@ -567,7 +567,7 @@ export class WhatsAppTracker {
 
         const data = {
             devices,
-            deviceCount: this.trackedJids.size,
+            deviceCount: devices.length,
             presence: this.lastPresence,
             // Global stats for charts
             median: globalMedian,
