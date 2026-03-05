@@ -1,19 +1,20 @@
 {
   "name": "@deco31416/device-activity-tracker",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "type": "module",
-  "description": "A proof-of-concept tool demonstrating privacy vulnerabilities in messaging apps through RTT-based activity analysis",
+  "description": "WhatsApp activity tracker with RTT analysis, real-time bitácora, contact history, report generation, and network monitoring",
   "main": "dist/index.js",
   "keywords": [
     "whatsapp",
-    "signal",
     "privacy",
     "security",
     "research",
     "tracking",
     "rtt",
     "device-activity",
-    "proof-of-concept"
+    "mongodb",
+    "report-generation",
+    "real-time-monitoring"
   ],
   "author": {
     "name": "deco31416",
@@ -31,16 +32,19 @@
   "scripts": {
     "build": "tsc",
     "start": "npx tsx src/index.ts",
-    "start:server": "npm run start:signal-api && npx tsx src/server.ts",
-    "start:signal-api": "npx tsx src/scripts/init-signal.ts",
+    "start:server": "npx tsx src/server.ts",
     "start:client": "cd client && npm start",
-    "dev": "npm run start:server",
+    "dev": "npx tsx src/server.ts",
     "postinstall": "cd client && npm install"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^7.0.0-rc.9",
+    "@whiskeysockets/baileys": "github:WhiskeySockets/Baileys",
+    "cap": "^0.2.1",
     "cors": "^2.8.5",
+    "dotenv": "^17.3.1",
     "express": "^5.0.1",
+    "geoip-lite": "^2.0.0",
+    "mongodb": "^7.1.0",
     "pino": "^10.1.0",
     "qrcode-terminal": "^0.12.0",
     "socket.io": "^4.8.1",
@@ -49,6 +53,7 @@
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
+    "@types/geoip-lite": "^1.4.4",
     "@types/qrcode-terminal": "^0.12.2",
     "@types/ws": "^8.18.1",
     "tailwindcss": "^3.4.18",

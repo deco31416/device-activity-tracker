@@ -7,6 +7,7 @@
  * For educational and research purposes only.
  */
 
+import 'dotenv/config';
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
@@ -15,11 +16,10 @@ import makeWASocket, { DisconnectReason, useMultiFileAuthState } from '@whiskeys
 import { pino } from 'pino';
 import { Boom } from '@hapi/boom';
 import { WhatsAppTracker, ProbeMethod } from './tracker.js';
-import { SignalTracker, getSignalAccounts, checkSignalNumber } from './signal-tracker.js';
+import { connectDB, saveMeasurement, saveContact, removeContact, reactivateContact, getRecentMeasurements, getSavedContacts, getActiveContacts, getActivityHistory, getStateDistribution, updateContactProfile, getContactProfile, getOnlinePatterns, generateReport, disconnectDB } from './db.js';
+import { listInterfaces, startCapture, stopCapture, getCaptureStatus, getRecentPackets, updateFilter, exportJSON, exportCSV, CaptureFilter, PacketMeta } from './packet-capture.js';
 
 // Configuration
-const SIGNAL_API_URL = process.env.SIGNAL_API_URL || 'http://localhost:8080';
-
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',')
     : ['http://localhost:3000', 'http://localhost:3001', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001'];
@@ -37,27 +37,21 @@ const io = new Server(httpServer, {
 
 let sock: any;
 let isWhatsAppConnected = false;
-let isSignalConnected = false;
-let signalAccountNumber: string | null = null;
 let globalProbeMethod: ProbeMethod = 'delete'; // Default to delete method
 let currentWhatsAppQr: string | null = null; // Store current QR code for new clients
 
-// Platform type for contacts
-type Platform = 'whatsapp' | 'signal';
-
 interface TrackerEntry {
-    tracker: WhatsAppTracker | SignalTracker;
-    platform: Platform;
+    tracker: WhatsAppTracker;
 }
 
-const trackers: Map<string, TrackerEntry> = new Map(); // JID/Number -> Tracker entry
+const trackers: Map<string, TrackerEntry> = new Map(); // JID -> Tracker entry
 
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 
     sock = makeWASocket({
         auth: state,
-        logger: pino({ level: 'silent' }),
+        logger: pino({ level: 'warn' }),
         markOnlineOnConnect: true,
         printQRInTerminal: false,
     });
@@ -74,16 +68,21 @@ async function connectToWhatsApp() {
         if (connection === 'close') {
             isWhatsAppConnected = false;
             currentWhatsAppQr = null; // Clear QR on close
-            const shouldReconnect = (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('connection closed, reconnecting ', shouldReconnect);
+            const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+            console.log(`connection closed (status: ${statusCode}), reconnecting: ${shouldReconnect}`);
             if (shouldReconnect) {
-                connectToWhatsApp();
+                // Delay before reconnecting to avoid rapid loop
+                setTimeout(() => connectToWhatsApp(), 3000);
             }
         } else if (connection === 'open') {
             isWhatsAppConnected = true;
             currentWhatsAppQr = null; // Clear QR on successful connection
             console.log('opened connection');
             io.emit('connection-open');
+
+            // Auto-restore saved contacts from MongoDB
+            autoRestoreContacts();
         }
     });
 
@@ -100,135 +99,263 @@ async function connectToWhatsApp() {
     });
 }
 
-connectToWhatsApp();
+// Initialize DB and WhatsApp
+(async () => {
+    await connectDB();
+    connectToWhatsApp();
+})();
 
-// Signal linking state
-let signalLinkingInProgress = false;
-let signalApiAvailable = false;
-let currentSignalQrUrl: string | null = null;
-
-// Check Signal API availability
-async function checkSignalApiAvailable(): Promise<boolean> {
+/**
+ * Auto-restore: resume tracking for all active contacts saved in MongoDB.
+ * Called when WhatsApp connection is established (or re-established).
+ */
+async function autoRestoreContacts() {
     try {
-        const response = await fetch(`${SIGNAL_API_URL}/v1/about`, {
-            signal: AbortSignal.timeout(2000)
-        });
-        return response.ok;
-    } catch {
-        return false;
-    }
-}
-
-// Check Signal connection status
-async function checkSignalConnection() {
-    try {
-        const available = await checkSignalApiAvailable();
-        if (available !== signalApiAvailable) {
-            signalApiAvailable = available;
-            console.log(`[SIGNAL] API available: ${available}`);
-            io.emit('signal-api-status', { available });
-        }
-
-        if (!available) {
-            if (isSignalConnected) {
-                isSignalConnected = false;
-                signalAccountNumber = null;
-                io.emit('signal-disconnected');
-            }
+        const saved = await getActiveContacts();
+        if (saved.length === 0) {
+            console.log('[AUTO-RESTORE] No saved contacts to restore');
             return;
         }
 
-        const accounts = await getSignalAccounts(SIGNAL_API_URL);
-        if (accounts.length > 0) {
-            if (!isSignalConnected) {
-                isSignalConnected = true;
-                signalAccountNumber = accounts[0];
-                signalLinkingInProgress = false;
-                console.log(`[SIGNAL] Connected with account: ${signalAccountNumber}`);
-                io.emit('signal-connection-open', { number: signalAccountNumber });
+        console.log(`[AUTO-RESTORE] Restoring ${saved.length} contact(s)...`);
+        let restored = 0;
+
+        for (const contact of saved) {
+            if (trackers.has(contact.jid)) {
+                console.log(`[AUTO-RESTORE] ${contact.jid} already tracked, skipping`);
+                continue;
             }
-        } else {
-            if (isSignalConnected) {
-                isSignalConnected = false;
-                signalAccountNumber = null;
-                console.log('[SIGNAL] Disconnected');
-                io.emit('signal-disconnected');
-            }
-            // No accounts - need to link, start QR code process
-            if (!signalLinkingInProgress) {
-                startSignalLinking();
+
+            try {
+                const tracker = new WhatsAppTracker(sock, contact.jid);
+                tracker.setProbeMethod(globalProbeMethod);
+                trackers.set(contact.jid, { tracker });
+
+                tracker.onUpdate = (updateData) => {
+                    io.emit('tracker-update', { jid: contact.jid, ...updateData });
+
+                    if (updateData.median !== undefined && updateData.devices) {
+                        saveMeasurement({
+                            jid: contact.jid,
+                            rtt: updateData.devices[0]?.rtt ?? 0,
+                            avg: updateData.devices[0]?.avg ?? 0,
+                            median: updateData.median,
+                            threshold: updateData.threshold ?? 0,
+                            state: updateData.devices.find((d: any) => d.state.includes('Online'))?.state || updateData.devices[0]?.state || 'Unknown',
+                            devices: updateData.devices,
+                            deviceCount: updateData.deviceCount ?? 0
+                        });
+                    }
+                };
+
+                tracker.startTracking();
+                restored++;
+
+                // Emit contact info to connected clients
+                io.emit('contact-added', { jid: contact.jid, number: contact.number });
+                if (contact.profilePic) io.emit('profile-pic', { jid: contact.jid, url: contact.profilePic });
+                if (contact.contactName) io.emit('contact-name', { jid: contact.jid, name: contact.contactName });
+
+                console.log(`[AUTO-RESTORE] ✓ ${contact.number} (${contact.contactName})`);
+            } catch (err) {
+                console.error(`[AUTO-RESTORE] ✗ Failed to restore ${contact.jid}:`, err);
             }
         }
+
+        console.log(`[AUTO-RESTORE] Done: ${restored}/${saved.length} contacts restored`);
     } catch (err) {
-        console.log('[SIGNAL] Error checking connection:', err);
-        if (isSignalConnected) {
-            isSignalConnected = false;
-            signalAccountNumber = null;
-            io.emit('signal-disconnected');
-        }
+        console.error('[AUTO-RESTORE] Error:', err);
     }
 }
 
-// Start Signal device linking - signal-cli-rest-api returns QR as PNG image
-async function startSignalLinking() {
-    if (signalLinkingInProgress || isSignalConnected) return;
+// REST endpoint: get measurement history for a contact
+app.get('/api/history/:jid', async (req, res) => {
+    const jid = req.params.jid;
+    const limit = parseInt(req.query.limit as string) || 200;
+    const history = await getRecentMeasurements(jid, limit);
+    res.json(history);
+});
 
-    signalLinkingInProgress = true;
-    console.log('[SIGNAL] Starting device linking...');
+// REST endpoint: get all saved contacts
+app.get('/api/contacts', async (_req, res) => {
+    const savedContacts = await getSavedContacts();
+    res.json(savedContacts);
+});
 
+// REST endpoint: get activity history (state transitions)
+app.get('/api/activity/:jid', async (req, res) => {
+    const jid = req.params.jid;
+    const limit = parseInt(req.query.limit as string) || 50;
+    const history = await getActivityHistory(jid, limit);
+    res.json(history);
+});
+
+// REST endpoint: get state distribution stats
+app.get('/api/stats/:jid', async (req, res) => {
+    const jid = req.params.jid;
+    const stats = await getStateDistribution(jid);
+    res.json(stats);
+});
+
+// REST endpoint: get full contact profile from DB + WhatsApp
+app.get('/api/profile/:jid', async (req, res) => {
+    const jid = req.params.jid;
     try {
-        // Check if the QR endpoint is available
-        const response = await fetch(`${SIGNAL_API_URL}/v1/qrcodelink?device_name=activity-tracker`);
-        if (!response.ok) {
-            console.log('[SIGNAL] Failed to start linking:', response.status);
-            signalLinkingInProgress = false;
-            return;
-        }
+        // Get stored profile from MongoDB
+        const stored = await getContactProfile(jid);
 
-        // signal-cli-rest-api returns the QR code as a PNG image directly
-        // Send the URL to the frontend to display as an image
-        currentSignalQrUrl = `${SIGNAL_API_URL}/v1/qrcodelink?device_name=activity-tracker&t=${Date.now()}`;
-        console.log('[SIGNAL] Emitting QR image URL:', currentSignalQrUrl);
-        io.emit('signal-qr-image', currentSignalQrUrl);
+        // Try to fetch fresh data from WhatsApp if connected
+        let freshAbout: string | null = null;
+        let freshAboutSetAt: Date | null = null;
+        let freshBusiness: any = null;
+        let freshPic: string | null = null;
 
-        // Keep polling to check if linking completed
-        pollSignalLinkingStatus();
-    } catch (err) {
-        console.log('[SIGNAL] Error starting linking:', err);
-        signalLinkingInProgress = false;
-    }
-}
-
-// Poll to check if Signal linking has completed
-async function pollSignalLinkingStatus() {
-    const checkInterval = setInterval(async () => {
-        try {
-            const accounts = await getSignalAccounts(SIGNAL_API_URL);
-            if (accounts.length > 0) {
-                // Linking completed!
-                clearInterval(checkInterval);
-                signalLinkingInProgress = false;
-                currentSignalQrUrl = null;
-                isSignalConnected = true;
-                signalAccountNumber = accounts[0];
-                console.log(`[SIGNAL] Linking completed! Account: ${signalAccountNumber}`);
-                io.emit('signal-connection-open', { number: signalAccountNumber });
+        if (isWhatsAppConnected && sock) {
+            // Fetch "about" / status text
+            try {
+                const status = await sock.fetchStatus(jid);
+                if (status) {
+                    freshAbout = status.status || null;
+                    freshAboutSetAt = status.setAt ? new Date(status.setAt * 1000) : null;
+                }
+            } catch (e: any) {
+                console.log(`[PROFILE] Could not fetch status for ${jid}:`, e.message);
             }
-        } catch (err) {
-            // Keep polling
+
+            // Fetch business profile
+            try {
+                const bp = await sock.getBusinessProfile(jid);
+                if (bp) {
+                    freshBusiness = {
+                        description: bp.description || undefined,
+                        category: bp.category || undefined,
+                        website: (bp as any).website?.[0] || undefined,
+                        email: (bp as any).email || undefined,
+                        address: (bp as any).address || undefined,
+                    };
+                }
+            } catch (e: any) {
+                // Not a business account — that's fine
+            }
+
+            // Fetch profile pic (retry)
+            try {
+                freshPic = await sock.profilePictureUrl(jid, 'image') || null;
+            } catch (e: any) {
+                freshPic = null;
+            }
+
+            // Update DB with fresh data
+            await updateContactProfile(jid, {
+                about: freshAbout,
+                aboutSetAt: freshAboutSetAt,
+                isBusinessAccount: !!freshBusiness,
+                businessProfile: freshBusiness,
+                profilePic: freshPic,
+            });
         }
-    }, 2000);
 
-    // Stop polling after 5 minutes
-    setTimeout(() => {
-        clearInterval(checkInterval);
-        signalLinkingInProgress = false;
-    }, 300000);
-}
+        // Merge stored + fresh
+        const profile = {
+            jid,
+            number: stored?.number || jid.replace('@s.whatsapp.net', ''),
+            contactName: stored?.contactName || null,
+            profilePic: freshPic || stored?.profilePic || null,
+            about: freshAbout || stored?.about || null,
+            aboutSetAt: freshAboutSetAt || stored?.aboutSetAt || null,
+            isBusinessAccount: freshBusiness ? true : (stored?.isBusinessAccount || false),
+            businessProfile: freshBusiness || stored?.businessProfile || null,
+            pushName: stored?.pushName || null,
+            addedAt: stored?.addedAt || null,
+            lastSeen: stored?.lastSeen || null,
+            lastProfileUpdate: new Date(),
+            verifiedOnWhatsApp: stored?.verifiedOnWhatsApp ?? true,
+        };
 
-// Check Signal connection periodically
-checkSignalConnection();
-setInterval(checkSignalConnection, 5000);
+        res.json(profile);
+    } catch (err) {
+        console.error('[PROFILE] Error:', err);
+        res.status(500).json({ error: 'Failed to fetch profile' });
+    }
+});
+
+// REST endpoint: get online activity patterns
+app.get('/api/patterns/:jid', async (req, res) => {
+    const jid = req.params.jid;
+    const patterns = await getOnlinePatterns(jid);
+    res.json(patterns);
+});
+
+// REST endpoint: get all saved contacts (history — includes inactive)
+app.get('/api/contacts/history', async (_req, res) => {
+    const allContacts = await getSavedContacts();
+    // Sort: active first, then by lastSeen descending
+    allContacts.sort((a, b) => {
+        const aActive = a.isActive !== false;
+        const bActive = b.isActive !== false;
+        if (aActive !== bActive) return aActive ? -1 : 1;
+        return (b.lastSeen?.getTime() || 0) - (a.lastSeen?.getTime() || 0);
+    });
+    res.json(allContacts);
+});
+
+// REST endpoint: generate comprehensive report for a contact
+app.get('/api/report/:jid', async (req, res) => {
+    const jid = req.params.jid;
+    try {
+        const report = await generateReport(jid);
+        res.json(report);
+    } catch (err) {
+        console.error('[REPORT] Error generating report:', err);
+        res.status(500).json({ error: 'Failed to generate report' });
+    }
+});
+
+// REST endpoint: download report as formatted JSON file
+app.get('/api/report/:jid/download', async (req, res) => {
+    const jid = req.params.jid;
+    try {
+        const report = await generateReport(jid);
+        const number = jid.replace('@s.whatsapp.net', '');
+        const filename = `report-${number}-${new Date().toISOString().slice(0, 10)}.json`;
+
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.send(JSON.stringify(report, null, 2));
+    } catch (err) {
+        console.error('[REPORT] Error:', err);
+        res.status(500).json({ error: 'Failed to generate report' });
+    }
+});
+
+// ── Network Monitor REST endpoints ────────────────────────────
+
+app.get('/api/network/interfaces', (_req, res) => {
+    res.json(listInterfaces());
+});
+
+app.get('/api/network/status', (_req, res) => {
+    res.json(getCaptureStatus());
+});
+
+app.get('/api/network/packets', (req, res) => {
+    const limit = parseInt(req.query.limit as string) || 100;
+    res.json(getRecentPackets(limit));
+});
+
+app.get('/api/network/export/json', (req, res) => {
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename=packets-${Date.now()}.json`);
+    res.send(exportJSON(limit));
+});
+
+app.get('/api/network/export/csv', (req, res) => {
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=packets-${Date.now()}.csv`);
+    res.send(exportCSV(limit));
+});
 
 io.on('connection', (socket) => {
     console.log('Client connected');
@@ -242,156 +369,154 @@ io.on('connection', (socket) => {
         socket.emit('connection-open');
     }
 
-    if (isSignalConnected && signalAccountNumber) {
-        socket.emit('signal-connection-open', { number: signalAccountNumber });
-    }
-
-    // Send Signal API availability status
-    socket.emit('signal-api-status', { available: signalApiAvailable });
-
-    // Send current Signal QR code if linking is in progress
-    if (signalLinkingInProgress && currentSignalQrUrl) {
-        socket.emit('signal-qr-image', currentSignalQrUrl);
-    }
-
     // Send current probe method to client
     socket.emit('probe-method', globalProbeMethod);
 
-    // Send tracked contacts with platform info
-    const trackedContacts = Array.from(trackers.entries()).map(([id, entry]) => ({
-        id,
-        platform: entry.platform
-    }));
+    // Send tracked contacts
+    const trackedContacts = Array.from(trackers.keys());
 
     // Handle request to get tracked contacts (for page refresh)
     socket.on('get-tracked-contacts', () => {
-        const trackedContacts = Array.from(trackers.entries()).map(([id, entry]) => ({
-            id,
-            platform: entry.platform
-        }));
+        const trackedContacts = Array.from(trackers.keys());
         socket.emit('tracked-contacts', trackedContacts);
     });
 
-    // Add contact - supports both WhatsApp and Signal
-    socket.on('add-contact', async (data: string | { number: string; platform: Platform }) => {
-        // Support both old format (string) and new format (object)
-        const { number, platform } = typeof data === 'string'
-            ? { number: data, platform: 'whatsapp' as Platform }
-            : data;
+    // Add contact - WhatsApp only
+    socket.on('add-contact', async (data: string | { number: string }) => {
+        const number = typeof data === 'string' ? data : data.number;
 
-        console.log(`Request to track on ${platform}: ${number}`);
+        console.log(`Request to track: ${number}`);
         const cleanNumber = number.replace(/\D/g, '');
 
-        if (platform === 'signal') {
-            // Signal tracking
-            if (!isSignalConnected || !signalAccountNumber) {
-                socket.emit('error', { message: 'Signal is not connected. Please link Signal first.' });
-                return;
-            }
+        const targetJid = cleanNumber + '@s.whatsapp.net';
 
-            const signalId = `signal:${cleanNumber}`;
-            if (trackers.has(signalId)) {
-                socket.emit('error', { jid: signalId, message: 'Already tracking this contact on Signal' });
-                return;
-            }
+        if (trackers.has(targetJid)) {
+            socket.emit('error', { jid: targetJid, message: 'Already tracking this contact' });
+            return;
+        }
 
-            try {
-                const targetNumber = cleanNumber.startsWith('+') ? cleanNumber : `+${cleanNumber}`;
+        try {
+            const results = await sock.onWhatsApp(targetJid);
+            const result = results?.[0];
 
-                // Check if number is registered and discoverable on Signal
-                console.log(`[SIGNAL] Checking if ${targetNumber} is registered...`);
-                const checkResult = await checkSignalNumber(SIGNAL_API_URL, signalAccountNumber, targetNumber);
-
-                if (!checkResult.registered) {
-                    console.log(`[SIGNAL] Number ${targetNumber} is not discoverable: ${checkResult.error}`);
-                    socket.emit('error', {
-                        jid: signalId,
-                        message: checkResult.error || 'Number is not registered on Signal'
-                    });
-                    return;
-                }
-
-                console.log(`[SIGNAL] Number ${targetNumber} is registered, starting tracking...`);
-                const tracker = new SignalTracker(SIGNAL_API_URL, signalAccountNumber, targetNumber);
-
-                trackers.set(signalId, { tracker, platform: 'signal' });
+            if (result?.exists) {
+                const tracker = new WhatsAppTracker(sock, result.jid);
+                tracker.setProbeMethod(globalProbeMethod);
+                trackers.set(result.jid, { tracker });
 
                 tracker.onUpdate = (updateData) => {
                     io.emit('tracker-update', {
-                        jid: signalId,
-                        platform: 'signal',
+                        jid: result.jid,
                         ...updateData
                     });
+
+                    // Persist measurement to MongoDB
+                    if (updateData.median !== undefined && updateData.devices) {
+                        saveMeasurement({
+                            jid: result.jid,
+                            rtt: updateData.devices[0]?.rtt ?? 0,
+                            avg: updateData.devices[0]?.avg ?? 0,
+                            median: updateData.median,
+                            threshold: updateData.threshold ?? 0,
+                            state: updateData.devices.find((d: any) => d.state.includes('Online'))?.state || updateData.devices[0]?.state || 'Unknown',
+                            devices: updateData.devices,
+                            deviceCount: updateData.deviceCount ?? 0
+                        });
+                    }
                 };
 
                 tracker.startTracking();
 
+                const ppUrl = await tracker.getProfilePicture();
+
+                let contactName = cleanNumber;
+                try {
+                    const contactInfo = await sock.onWhatsApp(result.jid);
+                    if (contactInfo && contactInfo[0]?.notify) {
+                        contactName = contactInfo[0].notify;
+                    }
+                } catch (err) {
+                    console.log('[NAME] Could not fetch contact name, using number');
+                }
+
                 socket.emit('contact-added', {
-                    jid: signalId,
-                    number: cleanNumber,
-                    platform: 'signal'
+                    jid: result.jid,
+                    number: cleanNumber
                 });
 
-                io.emit('contact-name', { jid: signalId, name: cleanNumber });
-            } catch (err) {
-                console.error(err);
-                socket.emit('error', { message: 'Failed to start Signal tracking' });
-            }
-        } else {
-            // WhatsApp tracking (original logic)
-            const targetJid = cleanNumber + '@s.whatsapp.net';
+                io.emit('profile-pic', { jid: result.jid, url: ppUrl });
+                io.emit('contact-name', { jid: result.jid, name: contactName });
 
-            if (trackers.has(targetJid)) {
-                socket.emit('error', { jid: targetJid, message: 'Already tracking this contact' });
-                return;
-            }
+                // Persist contact to MongoDB
+                saveContact(result.jid, cleanNumber, contactName, ppUrl);
 
-            try {
-                const results = await sock.onWhatsApp(targetJid);
-                const result = results?.[0];
-
-                if (result?.exists) {
-                    const tracker = new WhatsAppTracker(sock, result.jid);
-                    tracker.setProbeMethod(globalProbeMethod);
-                    trackers.set(result.jid, { tracker, platform: 'whatsapp' });
-
-                    tracker.onUpdate = (updateData) => {
-                        io.emit('tracker-update', {
-                            jid: result.jid,
-                            platform: 'whatsapp',
-                            ...updateData
-                        });
-                    };
-
-                    tracker.startTracking();
-
-                    const ppUrl = await tracker.getProfilePicture();
-
-                    let contactName = cleanNumber;
+                // Fetch and persist enriched profile (about, business, etc.)
+                (async () => {
                     try {
-                        const contactInfo = await sock.onWhatsApp(result.jid);
-                        if (contactInfo && contactInfo[0]?.notify) {
-                            contactName = contactInfo[0].notify;
-                        }
+                        let about: string | null = null;
+                        let aboutSetAt: Date | null = null;
+                        let businessProfile: any = null;
+                        let pushName: string | null = null;
+
+                        // Fetch about/status
+                        try {
+                            const status = await sock.fetchStatus(result.jid);
+                            if (status) {
+                                about = status.status || null;
+                                aboutSetAt = status.setAt ? new Date(status.setAt * 1000) : null;
+                            }
+                        } catch (_e) { /* privacy settings may block */ }
+
+                        // Fetch business profile
+                        try {
+                            const bp = await sock.getBusinessProfile(result.jid);
+                            if (bp) {
+                                businessProfile = {
+                                    description: bp.description || undefined,
+                                    category: bp.category || undefined,
+                                    website: (bp as any).website?.[0] || undefined,
+                                    email: (bp as any).email || undefined,
+                                    address: (bp as any).address || undefined,
+                                };
+                            }
+                        } catch (_e) { /* not a business account */ }
+
+                        // Get push name from WhatsApp
+                        try {
+                            const waInfo = await sock.onWhatsApp(result.jid);
+                            pushName = waInfo?.[0]?.notify || null;
+                        } catch (_e) {}
+
+                        await updateContactProfile(result.jid, {
+                            about,
+                            aboutSetAt,
+                            isBusinessAccount: !!businessProfile,
+                            businessProfile,
+                            pushName,
+                            profilePic: ppUrl,
+                        });
+
+                        // Emit enriched profile to all clients
+                        io.emit('contact-profile', {
+                            jid: result.jid,
+                            about,
+                            aboutSetAt,
+                            isBusinessAccount: !!businessProfile,
+                            businessProfile,
+                            pushName,
+                        });
+
+                        console.log(`[PROFILE] Enriched profile saved for ${result.jid}`);
                     } catch (err) {
-                        console.log('[NAME] Could not fetch contact name, using number');
+                        console.log('[PROFILE] Could not enrich profile:', err);
                     }
-
-                    socket.emit('contact-added', {
-                        jid: result.jid,
-                        number: cleanNumber,
-                        platform: 'whatsapp'
-                    });
-
-                    io.emit('profile-pic', { jid: result.jid, url: ppUrl });
-                    io.emit('contact-name', { jid: result.jid, name: contactName });
-                } else {
-                    socket.emit('error', { jid: targetJid, message: 'Number not on WhatsApp' });
-                }
-            } catch (err) {
-                console.error(err);
-                socket.emit('error', { jid: targetJid, message: 'Verification failed' });
+                })();
+            } else {
+                socket.emit('error', { jid: targetJid, message: 'Number not on WhatsApp' });
             }
+        } catch (err) {
+            console.error(err);
+            socket.emit('error', { jid: targetJid, message: 'Verification failed' });
         }
     });
 
@@ -402,7 +527,92 @@ io.on('connection', (socket) => {
             entry.tracker.stopTracking();
             trackers.delete(jid);
             socket.emit('contact-removed', jid);
+            removeContact(jid);
         }
+    });
+
+    // Re-activate a previously tracked contact from history
+    socket.on('reactivate-contact', async (jid: string) => {
+        console.log(`Request to reactivate: ${jid}`);
+
+        if (trackers.has(jid)) {
+            socket.emit('error', { jid, message: 'Already tracking this contact' });
+            return;
+        }
+
+        if (!isWhatsAppConnected || !sock) {
+            socket.emit('error', { jid, message: 'WhatsApp not connected' });
+            return;
+        }
+
+        try {
+            const tracker = new WhatsAppTracker(sock, jid);
+            tracker.setProbeMethod(globalProbeMethod);
+            trackers.set(jid, { tracker });
+
+            tracker.onUpdate = (updateData) => {
+                io.emit('tracker-update', { jid, ...updateData });
+
+                if (updateData.median !== undefined && updateData.devices) {
+                    saveMeasurement({
+                        jid,
+                        rtt: updateData.devices[0]?.rtt ?? 0,
+                        avg: updateData.devices[0]?.avg ?? 0,
+                        median: updateData.median,
+                        threshold: updateData.threshold ?? 0,
+                        state: updateData.devices.find((d: any) => d.state.includes('Online'))?.state || updateData.devices[0]?.state || 'Unknown',
+                        devices: updateData.devices,
+                        deviceCount: updateData.deviceCount ?? 0
+                    });
+                }
+            };
+
+            tracker.startTracking();
+
+            // Mark as active again in DB
+            await reactivateContact(jid);
+
+            const number = jid.replace('@s.whatsapp.net', '');
+            socket.emit('contact-added', { jid, number });
+
+            // Fetch profile pic
+            try {
+                const ppUrl = await sock.profilePictureUrl(jid, 'image');
+                io.emit('profile-pic', { jid, url: ppUrl || null });
+            } catch (_e) {}
+
+            console.log(`[REACTIVATE] ✓ ${jid}`);
+        } catch (err) {
+            console.error(`[REACTIVATE] Error:`, err);
+            socket.emit('error', { jid, message: 'Failed to reactivate contact' });
+        }
+    });
+
+    // ── Network Monitor Socket events ──────────────────────────
+
+    socket.on('network-start', (data: { interfaceAddr: string; filter?: CaptureFilter }) => {
+        console.log(`[NETWORK] Start capture on ${data.interfaceAddr}`);
+        const ok = startCapture(data.interfaceAddr, data.filter || {}, (packet: PacketMeta) => {
+            io.emit('network-packet', packet);
+        });
+        socket.emit('network-status', getCaptureStatus());
+        if (!ok) {
+            socket.emit('error', { message: 'Failed to start capture. Run as administrator.' });
+        }
+    });
+
+    socket.on('network-stop', () => {
+        stopCapture();
+        socket.emit('network-status', getCaptureStatus());
+        console.log('[NETWORK] Capture stopped by client');
+    });
+
+    socket.on('network-filter', (filter: CaptureFilter) => {
+        updateFilter(filter);
+    });
+
+    socket.on('network-get-status', () => {
+        socket.emit('network-status', getCaptureStatus());
     });
 
     socket.on('set-probe-method', (method: ProbeMethod) => {
@@ -415,11 +625,7 @@ io.on('connection', (socket) => {
         globalProbeMethod = method;
 
         for (const entry of trackers.values()) {
-            // Only WhatsApp trackers support the delete method
-            if (entry.platform === 'whatsapp') {
-                (entry.tracker as WhatsAppTracker).setProbeMethod(method);
-            }
-            // Signal trackers always use reaction method
+            entry.tracker.setProbeMethod(method);
         }
 
         io.emit('probe-method', method);
@@ -430,4 +636,14 @@ io.on('connection', (socket) => {
 const PORT = parseInt(process.env.PORT || '3001', 10);
 httpServer.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+});
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+    console.log('\nShutting down...');
+    for (const entry of trackers.values()) {
+        entry.tracker.stopTracking();
+    }
+    await disconnectDB();
+    process.exit(0);
 });

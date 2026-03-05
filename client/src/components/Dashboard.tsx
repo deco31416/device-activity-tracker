@@ -1,13 +1,27 @@
-import React, { useEffect, useState } from 'react';
-import {Eye, EyeOff, Plus, Trash2, Zap, MessageCircle, Settings} from 'lucide-react';
-import { socket, Platform, ConnectionState } from '../App';
+import React, { useEffect, useState, useCallback } from 'react';
+import { Eye, EyeOff, Plus, Trash2, Zap, Settings, History, RotateCcw, User } from 'lucide-react';
+import { socket, ConnectionState } from '../App';
 import { ContactCard } from './ContactCard';
 import { Login } from './Login';
+
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
 
 type ProbeMethod = 'delete' | 'reaction';
 
 interface DashboardProps {
     connectionState: ConnectionState;
+}
+
+interface SavedContact {
+    jid: string;
+    number: string;
+    contactName: string;
+    profilePic: string | null;
+    about: string | null;
+    isBusinessAccount: boolean;
+    addedAt: string;
+    lastSeen: string;
+    isActive: boolean;
 }
 
 interface TrackerData {
@@ -35,19 +49,32 @@ interface ContactInfo {
     deviceCount: number;
     presence: string | null;
     profilePic: string | null;
-    platform: Platform;
 }
 
 export function Dashboard({ connectionState }: DashboardProps) {
     const [inputNumber, setInputNumber] = useState('');
-    const [selectedPlatform, setSelectedPlatform] = useState<Platform>(
-        connectionState.whatsapp ? 'whatsapp' : 'signal'
-    );
     const [contacts, setContacts] = useState<Map<string, ContactInfo>>(new Map());
     const [error, setError] = useState<string | null>(null);
     const [privacyMode, setPrivacyMode] = useState(false);
     const [probeMethod, setProbeMethod] = useState<ProbeMethod>('delete');
     const [showConnections, setShowConnections] = useState(false);
+    const [showHistory, setShowHistory] = useState(false);
+    const [savedContacts, setSavedContacts] = useState<SavedContact[]>([]);
+    const [historyLoading, setHistoryLoading] = useState(false);
+
+    const fetchHistory = useCallback(() => {
+        setHistoryLoading(true);
+        fetch(`${API_URL}/api/contacts/history`)
+            .then(r => r.json())
+            .then((data: SavedContact[]) => {
+                setSavedContacts(data);
+                setHistoryLoading(false);
+            })
+            .catch((err) => {
+                console.error('Failed to fetch contact history:', err);
+                setHistoryLoading(false);
+            });
+    }, []);
 
     useEffect(() => {
         function onTrackerUpdate(update: any) {
@@ -59,7 +86,6 @@ export function Dashboard({ connectionState }: DashboardProps) {
                 const contact = next.get(jid);
 
                 if (contact) {
-                    // Update existing contact
                     const updatedContact = { ...contact };
 
                     if (data.presence !== undefined) {
@@ -72,7 +98,6 @@ export function Dashboard({ connectionState }: DashboardProps) {
                         updatedContact.devices = data.devices;
                     }
 
-                    // Add to chart data
                     if (data.median !== undefined && data.devices && data.devices.length > 0) {
                         const newDataPoint: TrackerData = {
                             rtt: data.devices[0].rtt,
@@ -114,7 +139,7 @@ export function Dashboard({ connectionState }: DashboardProps) {
             });
         }
 
-        function onContactAdded(data: { jid: string, number: string, platform?: Platform }) {
+        function onContactAdded(data: { jid: string, number: string }) {
             setContacts(prev => {
                 const next = new Map(prev);
                 next.set(data.jid, {
@@ -125,8 +150,7 @@ export function Dashboard({ connectionState }: DashboardProps) {
                     devices: [],
                     deviceCount: 0,
                     presence: null,
-                    profilePic: null,
-                    platform: data.platform || 'whatsapp'
+                    profilePic: null
                 });
                 return next;
             });
@@ -150,19 +174,12 @@ export function Dashboard({ connectionState }: DashboardProps) {
             setProbeMethod(method);
         }
 
-        function onTrackedContacts(contacts: { id: string, platform: Platform }[]) {
+        function onTrackedContacts(contacts: string[]) {
             setContacts(prev => {
                 const next = new Map(prev);
-                contacts.forEach(({ id, platform }) => {
+                contacts.forEach((id) => {
                     if (!next.has(id)) {
-                        // Extract display number from id
-                        let displayNumber = id;
-                        if (platform === 'signal') {
-                            displayNumber = id.replace('signal:', '');
-                        } else {
-                            // WhatsApp JID format: number@s.whatsapp.net
-                            displayNumber = id.split('@')[0];
-                        }
+                        const displayNumber = id.split('@')[0];
                         next.set(id, {
                             jid: id,
                             displayNumber,
@@ -171,8 +188,7 @@ export function Dashboard({ connectionState }: DashboardProps) {
                             devices: [],
                             deviceCount: 0,
                             presence: null,
-                            profilePic: null,
-                            platform
+                            profilePic: null
                         });
                     }
                 });
@@ -189,7 +205,6 @@ export function Dashboard({ connectionState }: DashboardProps) {
         socket.on('probe-method', onProbeMethod);
         socket.on('tracked-contacts', onTrackedContacts);
 
-        // Request tracked contacts after listeners are set up
         socket.emit('get-tracked-contacts');
 
         return () => {
@@ -206,142 +221,117 @@ export function Dashboard({ connectionState }: DashboardProps) {
 
     const handleAdd = () => {
         if (!inputNumber) return;
-        socket.emit('add-contact', { number: inputNumber, platform: selectedPlatform });
+        socket.emit('add-contact', { number: inputNumber });
     };
 
     const handleRemove = (jid: string) => {
         socket.emit('remove-contact', jid);
     };
 
+    const handleReactivate = (jid: string) => {
+        socket.emit('reactivate-contact', jid);
+    };
+
     const handleProbeMethodChange = (method: ProbeMethod) => {
         socket.emit('set-probe-method', method);
     };
 
+    // Load history when panel is opened
+    useEffect(() => {
+        if (showHistory) fetchHistory();
+    }, [showHistory, fetchHistory]);
+
     return (
         <div className="space-y-6">
-            {/* Add Contact Form */}
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-                <div className="flex justify-between items-center mb-4">
-                    <div className="flex items-center gap-4">
-                        <h2 className="text-xl font-semibold text-gray-900">Track Contacts</h2>
-                        {/* Manage Connections button */}
+            {/* ── Control Panel ─────────────────────── */}
+            <div className="card p-5">
+                <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
+                    <div className="flex items-center gap-3">
+                        <h2 className="text-lg font-semibold text-txt-primary">Track Contacts</h2>
                         <button
                             onClick={() => setShowConnections(!showConnections)}
-                            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors flex items-center gap-1 ${
-                                showConnections
-                                    ? 'bg-gray-700 text-white'
-                                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                            className={`btn-ghost flex items-center gap-1.5 !py-1.5 !px-3 !text-xs ${
+                                showConnections ? '!bg-accent !text-white !border-accent' : ''
                             }`}
                         >
-                            <Settings size={14} />
-                            {showConnections ? 'Hide Connections' : 'Manage Connections'}
+                            <Settings size={13} />
+                            {showConnections ? 'Hide' : 'Connections'}
+                        </button>
+                        <button
+                            onClick={() => setShowHistory(!showHistory)}
+                            className={`btn-ghost flex items-center gap-1.5 !py-1.5 !px-3 !text-xs ${
+                                showHistory ? '!bg-accent !text-white !border-accent' : ''
+                            }`}
+                        >
+                            <History size={13} />
+                            {showHistory ? 'Hide' : 'History'}
                         </button>
                     </div>
-                    <div className="flex items-center gap-4">
-                        {/* Probe Method Toggle */}
+
+                    <div className="flex items-center gap-3">
+                        {/* Probe Method */}
                         <div className="flex items-center gap-2">
-                            <span className="text-sm text-gray-600">Probe Method:</span>
-                            <div className="flex rounded-lg overflow-hidden border border-gray-300">
+                            <span className="text-xs text-txt-muted">Probe:</span>
+                            <div className="flex rounded-xl overflow-hidden border border-surface-border">
                                 <button
                                     onClick={() => handleProbeMethodChange('delete')}
-                                    className={`px-3 py-1.5 text-sm font-medium transition-all duration-200 flex items-center gap-1 ${
+                                    className={`px-3 py-1.5 text-xs font-medium transition-all duration-200 flex items-center gap-1.5 ${
                                         probeMethod === 'delete'
-                                            ? 'bg-purple-600 text-white'
-                                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                            ? 'bg-accent text-white'
+                                            : 'bg-surface-overlay text-txt-muted hover:text-txt-primary'
                                     }`}
-                                    title="Silent Delete Probe - Completely covert, target sees nothing"
                                 >
-                                    <Trash2 size={14} />
-                                    Delete
+                                    <Trash2 size={12} /> Delete
                                 </button>
                                 <button
                                     onClick={() => handleProbeMethodChange('reaction')}
-                                    className={`px-3 py-1.5 text-sm font-medium transition-all duration-200 flex items-center gap-1 ${
+                                    className={`px-3 py-1.5 text-xs font-medium transition-all duration-200 flex items-center gap-1.5 ${
                                         probeMethod === 'reaction'
-                                            ? 'bg-yellow-500 text-white'
-                                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                            ? 'bg-warning text-surface'
+                                            : 'bg-surface-overlay text-txt-muted hover:text-txt-primary'
                                     }`}
-                                    title="Reaction Probe - Sends reactions to non-existent messages"
                                 >
-                                    <Zap size={14} />
-                                    Reaction
+                                    <Zap size={12} /> Reaction
                                 </button>
                             </div>
                         </div>
-                        {/* Privacy Mode Toggle */}
+
+                        {/* Privacy Toggle */}
                         <button
                             onClick={() => setPrivacyMode(!privacyMode)}
-                            className={`px-4 py-2 rounded-lg flex items-center gap-2 font-medium transition-all duration-200 ${
-                                privacyMode 
-                                    ? 'bg-green-600 text-white hover:bg-green-700 shadow-md' 
-                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium transition-all duration-200 border ${
+                                privacyMode
+                                    ? 'bg-success/15 text-success border-success/25 glow-success'
+                                    : 'bg-surface-overlay text-txt-muted border-surface-border hover:text-txt-primary'
                             }`}
-                            title={privacyMode ? 'Privacy Mode: ON (Click to disable)' : 'Privacy Mode: OFF (Click to enable)'}
                         >
-                            {privacyMode ? (
-                                <>
-                                    <EyeOff size={20} />
-                                    <span>Privacy ON</span>
-                                </>
-                            ) : (
-                                <>
-                                    <Eye size={20} />
-                                    <span>Privacy OFF</span>
-                                </>
-                            )}
+                            {privacyMode ? <EyeOff size={14} /> : <Eye size={14} />}
+                            Privacy {privacyMode ? 'ON' : 'OFF'}
                         </button>
                     </div>
                 </div>
-                <div className="flex gap-4">
-                    {/* Platform Selector */}
-                    <div className="flex rounded-lg overflow-hidden border border-gray-300">
-                        <button
-                            onClick={() => setSelectedPlatform('whatsapp')}
-                            disabled={!connectionState.whatsapp}
-                            className={`px-4 py-2 text-sm font-medium transition-all duration-200 flex items-center gap-2 ${
-                                selectedPlatform === 'whatsapp'
-                                    ? 'bg-green-600 text-white'
-                                    : connectionState.whatsapp
-                                        ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                            }`}
-                            title={connectionState.whatsapp ? 'WhatsApp' : 'WhatsApp not connected'}
-                        >
-                            <MessageCircle size={16} />
-                            WhatsApp
-                        </button>
-                        <button
-                            onClick={() => setSelectedPlatform('signal')}
-                            disabled={!connectionState.signal}
-                            className={`px-4 py-2 text-sm font-medium transition-all duration-200 flex items-center gap-2 ${
-                                selectedPlatform === 'signal'
-                                    ? 'bg-blue-600 text-white'
-                                    : connectionState.signal
-                                        ? 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                            }`}
-                            title={connectionState.signal ? 'Signal' : 'Signal not connected'}
-                        >
-                            <MessageCircle size={16} />
-                            Signal
-                        </button>
-                    </div>
+
+                {/* Input row */}
+                <div className="flex gap-3">
                     <input
                         type="text"
                         placeholder="Enter phone number (e.g. 491701234567)"
-                        className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                        className="input-field flex-1"
                         value={inputNumber}
                         onChange={(e) => setInputNumber(e.target.value)}
                         onKeyPress={(e) => e.key === 'Enter' && handleAdd()}
                     />
-                    <button
-                        onClick={handleAdd}
-                        className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 font-medium transition-colors"
-                    >
-                        <Plus size={20} /> Add Contact
+                    <button onClick={handleAdd} className="btn-primary flex items-center gap-2">
+                        <Plus size={18} /> Add
                     </button>
                 </div>
-                {error && <p className="mt-2 text-red-500 text-sm">{error}</p>}
+
+                {error && (
+                    <p className="mt-3 text-danger text-sm flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-danger" />
+                        {error}
+                    </p>
+                )}
             </div>
 
             {/* Connections Panel */}
@@ -349,11 +339,101 @@ export function Dashboard({ connectionState }: DashboardProps) {
                 <Login connectionState={connectionState} />
             )}
 
-            {/* Contact Cards */}
+            {/* ── Contact History Panel ────────────── */}
+            {showHistory && (
+                <div className="card p-5">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-sm font-semibold text-txt-primary flex items-center gap-2">
+                            <History size={16} className="text-accent" />
+                            Contact History
+                            <span className="badge-neutral !text-[10px]">{savedContacts.length}</span>
+                        </h3>
+                        <button onClick={fetchHistory} className="btn-ghost !text-xs !py-1 !px-2.5 flex items-center gap-1">
+                            <RotateCcw size={12} /> Refresh
+                        </button>
+                    </div>
+
+                    {historyLoading ? (
+                        <div className="text-center py-4">
+                            <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                            <p className="text-xs text-txt-muted">Loading history...</p>
+                        </div>
+                    ) : savedContacts.length === 0 ? (
+                        <p className="text-xs text-txt-dim text-center py-4">No contacts in history</p>
+                    ) : (
+                        <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                            {savedContacts.map(sc => {
+                                const isCurrentlyTracked = contacts.has(sc.jid);
+                                const timeAgo = (() => {
+                                    if (!sc.lastSeen) return '';
+                                    const diff = Date.now() - new Date(sc.lastSeen).getTime();
+                                    const mins = Math.floor(diff / 60000);
+                                    if (mins < 60) return `${mins}m ago`;
+                                    const hrs = Math.floor(mins / 60);
+                                    if (hrs < 24) return `${hrs}h ago`;
+                                    return `${Math.floor(hrs / 24)}d ago`;
+                                })();
+
+                                return (
+                                    <div
+                                        key={sc.jid}
+                                        className={`flex items-center justify-between px-3 py-2.5 rounded-xl border transition-colors ${
+                                            isCurrentlyTracked
+                                                ? 'bg-success/5 border-success/20'
+                                                : 'bg-surface-overlay border-surface-border hover:border-accent/30'
+                                        }`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-8 h-8 rounded-lg overflow-hidden bg-surface-hover border border-surface-border flex-shrink-0">
+                                                {sc.profilePic ? (
+                                                    <img src={sc.profilePic} alt="" className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <div className="w-full h-full flex items-center justify-center text-txt-dim">
+                                                        <User size={14} />
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-medium text-txt-primary">
+                                                    {sc.contactName || sc.number}
+                                                    {sc.isBusinessAccount && (
+                                                        <span className="ml-1.5 text-[9px] text-accent">● Business</span>
+                                                    )}
+                                                </p>
+                                                <p className="text-[10px] text-txt-dim">
+                                                    +{sc.number} · Last seen {timeAgo}
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-2">
+                                            {isCurrentlyTracked ? (
+                                                <span className="badge-success !text-[10px]">Active</span>
+                                            ) : (
+                                                <button
+                                                    onClick={() => handleReactivate(sc.jid)}
+                                                    className="btn-primary !text-[10px] !py-1 !px-2.5 flex items-center gap-1"
+                                                >
+                                                    <RotateCcw size={10} /> Track
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ── Contact Cards ────────────────────── */}
             {contacts.size === 0 ? (
-                <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-xl p-12 text-center">
-                    <p className="text-gray-500 text-lg">No contacts being tracked</p>
-                    <p className="text-gray-400 text-sm mt-2">Add a contact above to start tracking</p>
+                <div className="empty-state">
+                    <div className="w-14 h-14 rounded-2xl bg-surface-overlay flex items-center justify-center mx-auto mb-4">
+                        <Plus size={28} className="text-txt-dim" />
+                    </div>
+                    <p className="text-txt-secondary text-lg font-medium">No contacts being tracked</p>
+                    <p className="text-txt-dim text-sm mt-2">Add a contact above to start tracking</p>
                 </div>
             ) : (
                 <div className="space-y-6">
@@ -369,7 +449,6 @@ export function Dashboard({ connectionState }: DashboardProps) {
                             profilePic={contact.profilePic}
                             onRemove={() => handleRemove(contact.jid)}
                             privacyMode={privacyMode}
-                            platform={contact.platform}
                         />
                     ))}
                 </div>
