@@ -139,22 +139,23 @@ export async function saveContact(jid: string, number: string, contactName?: str
         // Only set customName if explicitly provided (not undefined)
         if (customName !== undefined) setFields.customName = customName;
 
+        const setOnInsertFields: any = {
+            addedAt: new Date(),
+            about: null,
+            aboutSetAt: null,
+            isBusinessAccount: false,
+            businessProfile: null,
+            verifiedOnWhatsApp: true,
+            pushName: null,
+            lastProfileUpdate: null,
+            isActive: true,
+        };
+
         await contacts.updateOne(
             { jid },
             {
                 $set: setFields,
-                $setOnInsert: {
-                    addedAt: new Date(),
-                    about: null,
-                    aboutSetAt: null,
-                    isBusinessAccount: false,
-                    businessProfile: null,
-                    verifiedOnWhatsApp: true,
-                    pushName: null,
-                    customName: customName || null,
-                    lastProfileUpdate: null,
-                    isActive: true,
-                }
+                $setOnInsert: setOnInsertFields
             },
             { upsert: true }
         );

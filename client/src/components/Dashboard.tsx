@@ -182,10 +182,10 @@ export function Dashboard({ connectionState }: DashboardProps) {
             setProbeMethod(method);
         }
 
-        function onTrackedContacts(contacts: string[]) {
+        function onTrackedContacts(trackedJids: string[]) {
             setContacts(prev => {
                 const next = new Map(prev);
-                contacts.forEach((id) => {
+                trackedJids.forEach((id) => {
                     if (!next.has(id)) {
                         const displayNumber = id.split('@')[0];
                         next.set(id, {
@@ -203,6 +203,32 @@ export function Dashboard({ connectionState }: DashboardProps) {
                     }
                 });
                 return next;
+            });
+
+            // Load historical RTT data from MongoDB for each contact
+            trackedJids.forEach((id) => {
+                fetch(`${API_URL}/api/history/${encodeURIComponent(id)}?limit=200`)
+                    .then(r => r.json())
+                    .then((history: any[]) => {
+                        if (history.length === 0) return;
+                        const historicalData: TrackerData[] = history.map((m: any) => ({
+                            rtt: m.rtt ?? 0,
+                            avg: m.avg ?? 0,
+                            median: m.median ?? 0,
+                            threshold: m.threshold ?? 0,
+                            state: m.state ?? 'Unknown',
+                            timestamp: new Date(m.timestamp).getTime(),
+                        }));
+                        setContacts(prev => {
+                            const next = new Map(prev);
+                            const contact = next.get(id);
+                            if (contact) {
+                                next.set(id, { ...contact, data: [...historicalData, ...contact.data] });
+                            }
+                            return next;
+                        });
+                    })
+                    .catch(() => {});
             });
         }
 

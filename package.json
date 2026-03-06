@@ -1,6 +1,6 @@
 {
   "name": "@deco31416/device-activity-tracker",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "type": "module",
   "description": "WhatsApp activity tracker with RTT analysis, real-time bitácora, contact history, report generation, and network monitoring",
   "main": "dist/index.js",

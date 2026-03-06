@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [2.3.0] — 2026-03-06
+
+### ✨ New Features
+
+#### Historical RTT Charts
+- RTT History chart now loads the **last 200 measurements from MongoDB** on page load
+- Charts no longer start empty — historical data is fetched via `/api/history/:jid` and prepended to real-time data
+- New data points continue appending seamlessly after historical data
+
+### 🐛 Bug Fixes
+
+#### `saveContact` Duplicate Field Conflict
+- Fixed MongoDB upsert failure caused by `customName` appearing in both `$set` and `$setOnInsert` operators
+- MongoDB silently rejected the upsert when both operators contained the same field
+- New contacts now persist correctly on first add
+
+#### `deviceCount` Incorrect Count
+- `deviceCount` previously used `trackedJids.size` which included LID JIDs (internal WhatsApp identifiers)
+- Now correctly uses `devices.length` to count only actual devices
+
+### 🔧 Changes
+- Dashboard `onTrackedContacts` handler now fetches historical measurements for each contact on load
+- `saveContact()` refactored: `$setOnInsert` no longer includes `customName` (handled exclusively by `$set`)
+
+---
+
 ## [2.2.0] — 2026-03-05
 
 ### ✨ New Features

@@ -1,8 +1,8 @@
-<h1 align="center">Device Activity Tracker v2.2.0</h1>
+<h1 align="center">Device Activity Tracker v2.3.0</h1>
 <p align="center">WhatsApp Activity Tracker — RTT Analysis · Real-Time Bitácora · Behavior Intelligence · Report Generation · Network Monitor</p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.2.0-blue?style=flat" alt="Version 2.2.0"/>
+  <img src="https://img.shields.io/badge/version-2.3.0-blue?style=flat" alt="Version 2.3.0"/>
   <img src="https://img.shields.io/badge/Node.js-22+-339933?style=flat&logo=node.js&logoColor=white" alt="Node.js"/>
   <img src="https://img.shields.io/badge/TypeScript-5.7+-3178C6?style=flat&logo=typescript&logoColor=white" alt="TypeScript"/>
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat&logo=react&logoColor=black" alt="React"/>
@@ -39,7 +39,7 @@ Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to M
 ### WhatsApp Activity Tracker
 - 🔍 Real-time RTT measurement via delivery receipts
 - 📊 Dynamic threshold-based device state detection (Online / Standby / Offline)
-- 📈 Historical RTT chart with Recharts visualization
+- 📈 Historical RTT chart with persistent data from MongoDB (loads last 200 measurements on page load)
 - 🔄 Multiple probe methods (Delete / Reaction)
 - 📱 QR code authentication via Baileys
 - 👤 Contact profile enrichment (about, business profile, push name)
@@ -373,7 +373,12 @@ For **network monitoring**: Use a VPN to encrypt and tunnel all traffic.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
-### v2.1.0 (March 2026) — Current
+### v2.3.0 (March 2026) — Current
+- 📈 Historical RTT chart — loads last 200 measurements from MongoDB on page load (charts no longer start empty)
+- 🐛 Fix: `saveContact` conflict with duplicate `customName` in `$set` and `$setOnInsert` — new contacts now persist correctly
+- 🐛 Fix: `deviceCount` incorrectly counted LID JIDs — now uses actual `devices.length`
+
+### v2.2.0 (March 2026)
 - ✨ Activity Bitácora with military time (local + UTC)
 - 📤 Export to JSON / HTML / PDF
 - 📊 Comprehensive report generation
