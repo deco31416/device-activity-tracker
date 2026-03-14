@@ -317,7 +317,7 @@ export function NetworkMonitor() {
 
             {/* Tab content */}
             {activeTab === 'packets' && (
-                <PacketTable packets={packets} formatTime={formatTime} tableEndRef={tableEndRef} />
+                <PacketTable packets={packets} formatTime={formatTime} tableEndRef={tableEndRef} autoScroll={autoScroll} />
             )}
 
             {activeTab === 'stats' && stats && (
@@ -360,17 +360,63 @@ function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label:
     );
 }
 
+const PAGE_SIZE = 8;
+
 function PacketTable({
     packets,
     formatTime,
     tableEndRef,
+    autoScroll,
 }: {
     packets: PacketMeta[];
     formatTime: (ts: string) => string;
     tableEndRef: React.RefObject<HTMLDivElement | null>;
+    autoScroll: boolean;
 }) {
+    const totalPages = Math.max(1, Math.ceil(packets.length / PAGE_SIZE));
+    const [page, setPage] = React.useState(0);
+
+    // Auto-advance to last page when capturing
+    React.useEffect(() => {
+        if (autoScroll) setPage(totalPages - 1);
+    }, [autoScroll, totalPages]);
+
+    const start = page * PAGE_SIZE;
+    const visiblePackets = packets.slice(start, start + PAGE_SIZE);
+    const from = packets.length === 0 ? 0 : start + 1;
+    const to = Math.min(start + PAGE_SIZE, packets.length);
+
     return (
         <div className="card overflow-hidden">
+            {/* Pagination controls */}
+            <div className="px-4 py-2.5 border-b border-surface-border flex items-center justify-between">
+                <span className="text-xs text-txt-muted">
+                    Mostrando <span className="text-txt-primary font-medium">{from}–{to}</span> de <span className="text-txt-primary font-medium">{packets.length.toLocaleString()}</span> paquetes
+                </span>
+                <div className="flex items-center gap-1.5">
+                    <button
+                        onClick={() => setPage(0)}
+                        disabled={page === 0}
+                        className="btn-ghost !px-2 !py-1 !text-[10px] disabled:opacity-30"
+                    >«</button>
+                    <button
+                        onClick={() => setPage(p => Math.max(0, p - 1))}
+                        disabled={page === 0}
+                        className="btn-ghost !px-2 !py-1 !text-[10px] disabled:opacity-30"
+                    >‹</button>
+                    <span className="text-xs text-txt-muted px-1">{page + 1} / {totalPages}</span>
+                    <button
+                        onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                        disabled={page >= totalPages - 1}
+                        className="btn-ghost !px-2 !py-1 !text-[10px] disabled:opacity-30"
+                    >›</button>
+                    <button
+                        onClick={() => setPage(totalPages - 1)}
+                        disabled={page >= totalPages - 1}
+                        className="btn-ghost !px-2 !py-1 !text-[10px] disabled:opacity-30"
+                    >»</button>
+                </div>
+            </div>
             <div className="overflow-auto max-h-[500px]">
                 <table className="w-full text-xs">
                     <thead className="bg-surface-overlay sticky top-0 z-10">
@@ -387,7 +433,7 @@ function PacketTable({
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-surface-border">
-                        {packets.map(p => {
+                        {visiblePackets.map(p => {
                             const sev = SEVERITY_STYLES[p.severity];
                             const SevIcon = sev.icon;
                             return (

@@ -53,6 +53,9 @@ interface ContactInfo {
     deviceCount: number;
     presence: string | null;
     profilePic: string | null;
+    connectionType?: 'wifi' | 'cellular' | 'unknown';
+    typingState?: 'composing' | 'recording' | null;
+    deviceAlerts?: { deviceJid: string; totalDevices: number; timestamp: number }[];
 }
 
 export function Dashboard({ connectionState }: DashboardProps) {
@@ -101,6 +104,9 @@ export function Dashboard({ connectionState }: DashboardProps) {
                     }
                     if (data.devices !== undefined) {
                         updatedContact.devices = data.devices;
+                    }
+                    if (data.connectionType !== undefined) {
+                        updatedContact.connectionType = data.connectionType;
                     }
 
                     if (data.median !== undefined && data.devices && data.devices.length > 0) {
@@ -256,6 +262,32 @@ export function Dashboard({ connectionState }: DashboardProps) {
             });
         }
 
+        function onPresenceChange(data: { jid: string; presence: string; timestamp: number }) {
+            setContacts(prev => {
+                const next = new Map(prev);
+                const contact = next.get(data.jid);
+                if (contact) {
+                    const typing = (data.presence === 'composing' || data.presence === 'recording')
+                        ? data.presence as 'composing' | 'recording'
+                        : null;
+                    next.set(data.jid, { ...contact, typingState: typing, presence: data.presence });
+                }
+                return next;
+            });
+        }
+
+        function onDeviceAlert(data: { deviceJid: string; targetJid: string; totalDevices: number; timestamp: number }) {
+            setContacts(prev => {
+                const next = new Map(prev);
+                const contact = next.get(data.targetJid);
+                if (contact) {
+                    const alerts = [...(contact.deviceAlerts || []), { deviceJid: data.deviceJid, totalDevices: data.totalDevices, timestamp: data.timestamp }];
+                    next.set(data.targetJid, { ...contact, deviceAlerts: alerts });
+                }
+                return next;
+            });
+        }
+
         socket.on('tracker-update', onTrackerUpdate);
         socket.on('profile-pic', onProfilePic);
         socket.on('contact-name', onContactName);
@@ -266,6 +298,8 @@ export function Dashboard({ connectionState }: DashboardProps) {
         socket.on('tracked-contacts', onTrackedContacts);
         socket.on('custom-name-updated', onCustomNameUpdated);
         socket.on('contact-profile-update', onContactProfileUpdate);
+        socket.on('presence-change', onPresenceChange);
+        socket.on('device-alert', onDeviceAlert);
 
         socket.emit('get-tracked-contacts');
 
@@ -280,6 +314,8 @@ export function Dashboard({ connectionState }: DashboardProps) {
             socket.off('tracked-contacts', onTrackedContacts);
             socket.off('custom-name-updated', onCustomNameUpdated);
             socket.off('contact-profile-update', onContactProfileUpdate);
+            socket.off('presence-change', onPresenceChange);
+            socket.off('device-alert', onDeviceAlert);
         };
     }, []);
 
@@ -521,6 +557,9 @@ export function Dashboard({ connectionState }: DashboardProps) {
                             deviceCount={contact.deviceCount}
                             presence={contact.presence}
                             profilePic={contact.profilePic}
+                            connectionType={contact.connectionType}
+                            typingState={contact.typingState}
+                            deviceAlerts={contact.deviceAlerts}
                             onRemove={() => handleRemove(contact.jid)}
                             privacyMode={privacyMode}
                         />

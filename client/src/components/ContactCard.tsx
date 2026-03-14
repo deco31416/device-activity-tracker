@@ -145,6 +145,9 @@ interface ContactCardProps {
     deviceCount: number;
     presence: string | null;
     profilePic: string | null;
+    connectionType?: 'wifi' | 'cellular' | 'unknown';
+    typingState?: 'composing' | 'recording' | null;
+    deviceAlerts?: { deviceJid: string; totalDevices: number; timestamp: number }[];
     onRemove: () => void;
     privacyMode?: boolean;
 }
@@ -159,6 +162,9 @@ export function ContactCard({
     deviceCount,
     presence,
     profilePic,
+    connectionType,
+    typingState,
+    deviceAlerts,
     onRemove,
     privacyMode = false
 }: ContactCardProps) {
@@ -170,6 +176,11 @@ export function ContactCard({
     const [profileLoading, setProfileLoading] = useState(false);
     const [logPage, setLogPage] = useState(1);
     const LOG_PAGE_SIZE = 15;
+
+    // Privacy score
+    const [privacyScore, setPrivacyScore] = useState<{ score: number; level: string; deductions: { reason: string; points: number }[] } | null>(null);
+    // Anomalies
+    const [anomalies, setAnomalies] = useState<{ type: string; severity: string; description: string; timestamp: number }[]>([]);
 
     // Intelligence data
     const [intel, setIntel] = useState<IntelData | null>(null);
@@ -305,16 +316,32 @@ export function ContactCard({
             .catch((err) => { console.error(err); setIntelLoading(false); });
     }, [jid]);
 
+    const fetchPrivacyScore = useCallback(() => {
+        fetch(`${API_URL}/api/privacy-score/${encodeURIComponent(jid)}`)
+            .then(r => r.json())
+            .then(setPrivacyScore)
+            .catch(console.error);
+    }, [jid]);
+
+    const fetchAnomalies = useCallback(() => {
+        fetch(`${API_URL}/api/anomalies/${encodeURIComponent(jid)}?days=14`)
+            .then(r => r.json())
+            .then((data) => setAnomalies(data.anomalies || []))
+            .catch(console.error);
+    }, [jid]);
+
     // Load profile and patterns when those tabs are activated
     useEffect(() => {
         if (activePanel === 'profile') {
             fetchProfile();
             fetchPatterns();
+            fetchPrivacyScore();
         }
         if (activePanel === 'intel') {
             fetchIntel();
+            fetchAnomalies();
         }
-    }, [activePanel, fetchProfile, fetchPatterns, fetchIntel]);
+    }, [activePanel, fetchProfile, fetchPatterns, fetchIntel, fetchPrivacyScore, fetchAnomalies]);
 
     const formatTime = (ts: string | null) => {
         if (!ts) return '—';
@@ -676,14 +703,42 @@ th{background:#f1f5f9;padding:8px;text-align:left;font-size:10px;text-transform:
                             )}
 
                             <div className="space-y-2 text-sm">
+                                {/* Typing / Recording indicator */}
+                                {typingState && (
+                                    <div className={clsx(
+                                        "flex items-center justify-center gap-2 py-1.5 px-3 rounded-lg text-xs font-bold animate-pulse",
+                                        typingState === 'composing' ? "bg-blue-500/20 text-blue-400" : "bg-red-500/20 text-red-400"
+                                    )}>
+                                        {typingState === 'composing' ? '✍️ Escribiendo...' : '🎙️ Grabando audio...'}
+                                    </div>
+                                )}
                                 <div className="flex justify-between items-center text-txt-secondary">
                                     <span className="flex items-center gap-1.5"><Wifi size={14} className="text-txt-dim" /> Status</span>
                                     <span className="font-medium text-txt-primary">{presence || 'Unknown'}</span>
                                 </div>
+                                {/* Connection type */}
+                                {connectionType && connectionType !== 'unknown' && (
+                                    <div className="flex justify-between items-center text-txt-secondary">
+                                        <span className="flex items-center gap-1.5"><Globe size={14} className="text-txt-dim" /> Conexión</span>
+                                        <span className={clsx(
+                                            "font-medium text-xs px-2 py-0.5 rounded-full",
+                                            connectionType === 'wifi' ? "bg-emerald-500/20 text-emerald-400" : "bg-orange-500/20 text-orange-400"
+                                        )}>
+                                            {connectionType === 'wifi' ? '📶 WiFi' : '📱 Celular'}
+                                        </span>
+                                    </div>
+                                )}
                                 <div className="flex justify-between items-center text-txt-secondary">
                                     <span className="flex items-center gap-1.5"><Smartphone size={14} className="text-txt-dim" /> Devices</span>
                                     <span className="font-medium text-txt-primary">{deviceCount || 0}</span>
                                 </div>
+                                {/* Device alerts */}
+                                {deviceAlerts && deviceAlerts.length > 0 && (
+                                    <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-1.5 text-xs text-amber-400">
+                                        <span className="font-bold">⚠️ Nuevo dispositivo detectado</span>
+                                        <span className="text-txt-dim ml-1">({deviceAlerts[deviceAlerts.length - 1].totalDevices} total)</span>
+                                    </div>
+                                )}
                                 {stats?.lastOnline && (
                                     <div className="flex justify-between items-center text-txt-secondary">
                                         <span className="flex items-center gap-1.5"><Clock size={14} className="text-success" /> Last Online</span>
@@ -837,7 +892,7 @@ th{background:#f1f5f9;padding:8px;text-align:left;font-size:10px;text-transform:
                             <>
                             <div className="bg-surface-overlay rounded-xl border border-surface-border p-5 h-[300px]">
                                 <h5 className="text-xs font-semibold text-txt-muted uppercase tracking-wider mb-4">RTT History & Threshold</h5>
-                                <ResponsiveContainer width="100%" height="85%">
+                                <ResponsiveContainer width="100%" height={220}>
                                     <AreaChart data={data}>
                                         <defs>
                                             <linearGradient id={`grad-${jid}`} x1="0" y1="0" x2="0" y2="1">
@@ -1466,6 +1521,30 @@ th{background:#f1f5f9;padding:8px;text-align:left;font-size:10px;text-transform:
                                                 </div>
                                             </div>
                                         )}
+
+                                        {/* ── Anomaly Detection ── */}
+                                        {anomalies.length > 0 && (
+                                            <div className="bg-surface-overlay rounded-xl border border-amber-500/30 p-5">
+                                                <h5 className="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                                                    <Zap size={13} /> Anomalías Detectadas
+                                                </h5>
+                                                <div className="space-y-2">
+                                                    {anomalies.map((a, i) => (
+                                                        <div key={i} className={clsx(
+                                                            "flex items-start gap-2 rounded-lg px-3 py-2 text-xs",
+                                                            a.severity === 'critical' ? 'bg-red-500/10 text-red-400' :
+                                                            a.severity === 'warning' ? 'bg-amber-500/10 text-amber-400' :
+                                                            'bg-blue-500/10 text-blue-400'
+                                                        )}>
+                                                            <span className="mt-0.5">
+                                                                {a.severity === 'critical' ? '🔴' : a.severity === 'warning' ? '🟡' : 'ℹ️'}
+                                                            </span>
+                                                            <span>{a.description}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
                                     </>
                                 ) : (
                                     <div className="text-center py-8">
@@ -1657,7 +1736,7 @@ th{background:#f1f5f9;padding:8px;text-align:left;font-size:10px;text-transform:
 
                                                 {/* Hourly bar chart */}
                                                 <div className="h-[140px]">
-                                                    <ResponsiveContainer width="100%" height="100%">
+                                                    <ResponsiveContainer width="100%" height={130}>
                                                         <BarChart data={patterns.hourly} margin={{ top: 5, right: 5, bottom: 5, left: -25 }}>
                                                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(30,37,69,0.5)" />
                                                             <XAxis
@@ -1708,6 +1787,48 @@ th{background:#f1f5f9;padding:8px;text-align:left;font-size:10px;text-transform:
                                                     <span className="flex items-center gap-1">
                                                         <span className="w-2 h-2 rounded-sm bg-[#1e2545]" /> Total mediciones
                                                     </span>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Privacy / OPSEC Score */}
+                                        {privacyScore && (
+                                            <div className="bg-surface-overlay rounded-xl border border-surface-border p-5">
+                                                <h5 className="text-xs font-semibold text-txt-muted uppercase tracking-wider mb-4 flex items-center gap-1.5">
+                                                    <Shield size={13} /> Puntaje de Privacidad (OPSEC)
+                                                </h5>
+                                                <div className="flex items-center gap-4 mb-4">
+                                                    <div className={clsx(
+                                                        "w-16 h-16 rounded-full flex items-center justify-center text-xl font-black border-4",
+                                                        privacyScore.score >= 70 ? "border-emerald-500 text-emerald-400" :
+                                                        privacyScore.score >= 40 ? "border-amber-500 text-amber-400" :
+                                                        "border-red-500 text-red-400"
+                                                    )}>
+                                                        {privacyScore.score}
+                                                    </div>
+                                                    <div>
+                                                        <p className={clsx(
+                                                            "text-sm font-bold",
+                                                            privacyScore.score >= 70 ? "text-emerald-400" :
+                                                            privacyScore.score >= 40 ? "text-amber-400" :
+                                                            "text-red-400"
+                                                        )}>
+                                                            Privacidad: {privacyScore.level}
+                                                        </p>
+                                                        <p className="text-[10px] text-txt-dim mt-1">
+                                                            {privacyScore.score >= 70 ? 'Difícil de perfilar' :
+                                                             privacyScore.score >= 40 ? 'Moderadamente expuesto' :
+                                                             'Altamente expuesto — fácil de perfilar'}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    {privacyScore.deductions.map((d, i) => (
+                                                        <div key={i} className="flex justify-between items-center text-xs">
+                                                            <span className="text-txt-secondary">• {d.reason}</span>
+                                                            <span className="text-red-400 font-mono">-{d.points}</span>
+                                                        </div>
+                                                    ))}
                                                 </div>
                                             </div>
                                         )}

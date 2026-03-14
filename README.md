@@ -1,8 +1,8 @@
-<h1 align="center">Device Activity Tracker v2.3.0</h1>
-<p align="center">WhatsApp Activity Tracker — RTT Analysis · Real-Time Bitácora · Behavior Intelligence · Report Generation · Network Monitor</p>
+<h1 align="center">Device Activity Tracker v2.5.0</h1>
+<p align="center">WhatsApp Activity Tracker — RTT Analysis · Real-Time Bitácora · Behavior Intelligence · SIGINT Detection · Privacy Score · Report Generation · Network Monitor</p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.3.0-blue?style=flat" alt="Version 2.3.0"/>
+  <img src="https://img.shields.io/badge/version-2.5.0-blue?style=flat" alt="Version 2.5.0"/>
   <img src="https://img.shields.io/badge/Node.js-22+-339933?style=flat&logo=node.js&logoColor=white" alt="Node.js"/>
   <img src="https://img.shields.io/badge/TypeScript-5.7+-3178C6?style=flat&logo=typescript&logoColor=white" alt="TypeScript"/>
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat&logo=react&logoColor=black" alt="React"/>
@@ -27,6 +27,9 @@ Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to M
 |--------|-------------|
 | **📱 WhatsApp Tracker** | Measures RTT of delivery receipts to detect device activity (online/standby/offline) |
 | **🧠 Behavior Intelligence** | OSINT analytics: routine detection, availability model, session stats, heatmap, habit profiling |
+| **🔍 SIGINT Detection** | Real-time typing/recording detection, device change alerts, WiFi vs Cellular inference |
+| **🛡️ Privacy Score** | OPSEC assessment: evaluates target's exposure level (profile pic, about, business data) |
+| **⚡ Anomaly Detection** | Flags unusual activity patterns: off-schedule hours, erratic behavior, session length outliers |
 | **📋 Activity Bitácora** | Human-readable timeline with military time (local + UTC), designed for non-technical stakeholders |
 | **📊 Reports & Stats** | Comprehensive report generation with profile, stats, patterns, and export to JSON/HTML/PDF |
 | **💾 Contact History** | Persistent contacts across restarts with auto-restore and one-click re-tracking |
@@ -72,6 +75,33 @@ Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to M
 - 🦉 **Habit Profiling** — Night Owl/Early Bird/Regular/Irregular classification, timezone inference
 - 🔗 **Multi-Contact Correlation** — Pearson correlation, simultaneous online detection, follow-delay
 - 📈 All analytics accessible via Intel tab and REST API (`/api/intel/*`)
+
+### SIGINT Detection (NEW in v2.4)
+- ✍️ **Typing Detection** — Real-time `composing` state via Baileys presence events, animated ✍️ indicator on card
+- 🎙️ **Recording Detection** — Detects `recording` (audio) state, animated 🎙️ indicator on card
+- 📱 **Device Change Alerts** — Tracks known device JIDs; alerts when a new device connects (new phone, WhatsApp Web/Desktop)
+- 📶 **WiFi vs Cellular Inference** — Analyzes RTT variance (coefficient of variation) to classify connection type:
+  - Low RTT + low CV → WiFi 📶
+  - High RTT + high CV → Celular 📱
+- 🏷️ Real-time connection type badge on each contact card
+
+### Privacy / OPSEC Score (NEW in v2.4)
+- 🛡️ Calculates a **privacy exposure score (0–100)** for each contact
+- Evaluates: profile picture visibility, about/status text, business account data, push name, RTT trackability, typing/recording detectability, multi-device fingerprint
+- Visual score card with color-coded level (Alto ≥70 / Medio 40–69 / Bajo <40)
+- Detailed deduction breakdown showing exactly what data is exposed
+- Available in the **Profile tab** and via REST API (`GET /api/privacy-score/:jid`)
+
+### Anomaly Detection (NEW in v2.4)
+- ⚡ Detects **unusual behavior patterns** compared to historical baselines:
+  - 🕐 **Unusual Hours** — Online during normally inactive hours (with probability %)
+  - ⏱️ **Long Sessions** — Session max 3× above average duration
+  - 🦉 **Night Owl Pattern** — Elevated nocturnal activity score
+  - 🔀 **Erratic Behavior** — Low consistency score (<30%)
+  - 📅 **Schedule Shifts** — Large weekday vs weekend usage difference (>2h)
+- Severity levels: info (ℹ️), warning (🟡), critical (🔴)
+- Visual anomaly alerts in the **Intel tab**
+- Available via REST API (`GET /api/anomalies/:jid`)
 
 ### Custom Name / Alias (NEW in v2.2)
 - ✏️ Per-contact custom alias with inline editing (pencil icon)
@@ -228,6 +258,8 @@ docker compose up --build
 | `GET` | `/api/patterns/:jid` | Hourly activity patterns |
 | `GET` | `/api/report/:jid` | Comprehensive report (JSON) |
 | `GET` | `/api/report/:jid/download` | Download report as file |
+| `GET` | `/api/privacy-score/:jid` | Privacy/OPSEC exposure score (0–100) with deductions |
+| `GET` | `/api/anomalies/:jid` | Anomaly detection (unusual hours, erratic behavior, etc.) |
 
 ### Network Monitor
 
@@ -254,6 +286,8 @@ docker compose up --build
 | `network-start` | Client → Server | Start packet capture |
 | `network-stop` | Client → Server | Stop packet capture |
 | `network-packet` | Server → Client | New packet captured |
+| `presence-change` | Server → Client | Typing/recording/available state change |
+| `device-alert` | Server → Client | New device detected for a contact |
 
 ---
 
@@ -262,8 +296,8 @@ docker compose up --build
 ```
 device-activity-tracker/
 ├── src/
-│   ├── server.ts              # Express + Socket.IO backend (all APIs + auto-restore)
-│   ├── tracker.ts             # WhatsApp RTT analysis engine
+│   ├── server.ts              # Express + Socket.IO backend (APIs + auto-restore + privacy/anomaly)
+│   ├── tracker.ts             # WhatsApp RTT analysis engine + SIGINT detection
 │   ├── packet-capture.ts      # Network packet capture service (Npcap/cap)
 │   ├── db.ts                  # MongoDB persistence + report generation
 │   ├── index.ts               # CLI interface
@@ -275,7 +309,7 @@ device-activity-tracker/
 │   │   └── components/
 │   │       ├── Dashboard.tsx      # Tracker dashboard + contact history panel
 │   │       ├── Login.tsx          # WhatsApp QR authentication
-│   │       ├── ContactCard.tsx    # Contact card: chart, bitácora, stats, profile, export
+│   │       ├── ContactCard.tsx    # Contact card: chart, bitácora, stats, profile, intel, SIGINT
 │   │       └── NetworkMonitor.tsx # Network monitor UI
 │   ├── tailwind.config.js
 │   └── package.json
@@ -373,7 +407,22 @@ For **network monitoring**: Use a VPN to encrypt and tunnel all traffic.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
-### v2.3.0 (March 2026) — Current
+### v2.5.0 (March 2026) — Current
+- 🐛 **Network Monitor fixes** — `cap.open()` buffer arg order, `geoip-lite` CJS interop, `linkType: undefined` en Wi-Fi (Windows)
+- 📄 **Network Monitor pagination** — 8 paquetes/página con controles «‹ N/Total ›» y auto-scroll a última página
+- 🐛 **Recharts height fix** — `ResponsiveContainer` en `ContactCard` usa píxeles fijos en vez de % para evitar warnings
+
+### v2.4.0 (March 2026)
+- ✍️ **SIGINT Detection** — Real-time typing/recording detection via presence events with animated indicators
+- 📱 **Device Change Alerts** — Detects when a new device connects; visual warning badge with device count
+- 📶 **WiFi vs Cellular Inference** — Classifies connection type from RTT variance; dynamic badge on contact card
+- 🛡️ **Privacy Score (OPSEC)** — Calculates 0–100 exposure score; evaluates pic, about, business, push name, trackability
+- ⚡ **Anomaly Detection** — Flags unusual hours, long sessions, night owl patterns, erratic behavior, schedule shifts
+- 🔧 Refactored `wireTrackerCallbacks()` — centralized callback wiring eliminates 3 duplicate code blocks
+- 🆕 New API endpoints: `/api/privacy-score/:jid`, `/api/anomalies/:jid`
+- 🆕 New Socket.IO events: `presence-change`, `device-alert`
+
+### v2.3.0 (March 2026)
 - 📈 Historical RTT chart — loads last 200 measurements from MongoDB on page load (charts no longer start empty)
 - 🐛 Fix: `saveContact` conflict with duplicate `customName` in `$set` and `$setOnInsert` — new contacts now persist correctly
 - 🐛 Fix: `deviceCount` incorrectly counted LID JIDs — now uses actual `devices.length`

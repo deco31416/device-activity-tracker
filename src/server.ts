@@ -170,6 +170,39 @@ async function connectToWhatsApp() {
 })();
 
 /**
+ * Wire up standard callbacks for a tracker instance.
+ * Centralizes onUpdate, onPresenceChange, onNewDevice logic.
+ */
+function wireTrackerCallbacks(tracker: WhatsAppTracker, jid: string) {
+    tracker.onUpdate = (updateData) => {
+        io.emit('tracker-update', { jid, ...updateData });
+
+        if (updateData.median !== undefined && updateData.devices) {
+            saveMeasurement({
+                jid,
+                rtt: updateData.devices[0]?.rtt ?? 0,
+                avg: updateData.devices[0]?.avg ?? 0,
+                median: updateData.median,
+                threshold: updateData.threshold ?? 0,
+                state: updateData.devices.find((d: any) => d.state.includes('Online'))?.state || updateData.devices[0]?.state || 'Unknown',
+                devices: updateData.devices,
+                deviceCount: updateData.deviceCount ?? 0
+            });
+        }
+    };
+
+    tracker.onPresenceChange = (data) => {
+        console.log(`[PRESENCE] ${jid}: ${data.presence}`);
+        io.emit('presence-change', data);
+    };
+
+    tracker.onNewDevice = (data) => {
+        console.log(`[NEW DEVICE] ${jid}: new device ${data.deviceJid} (total: ${data.totalDevices})`);
+        io.emit('device-alert', data);
+    };
+}
+
+/**
  * Auto-restore: resume tracking for all active contacts saved in MongoDB.
  * Called when WhatsApp connection is established (or re-established).
  */
@@ -195,22 +228,7 @@ async function autoRestoreContacts() {
                 tracker.setProbeMethod(globalProbeMethod);
                 trackers.set(contact.jid, { tracker });
 
-                tracker.onUpdate = (updateData) => {
-                    io.emit('tracker-update', { jid: contact.jid, ...updateData });
-
-                    if (updateData.median !== undefined && updateData.devices) {
-                        saveMeasurement({
-                            jid: contact.jid,
-                            rtt: updateData.devices[0]?.rtt ?? 0,
-                            avg: updateData.devices[0]?.avg ?? 0,
-                            median: updateData.median,
-                            threshold: updateData.threshold ?? 0,
-                            state: updateData.devices.find((d: any) => d.state.includes('Online'))?.state || updateData.devices[0]?.state || 'Unknown',
-                            devices: updateData.devices,
-                            deviceCount: updateData.deviceCount ?? 0
-                        });
-                    }
-                };
+                wireTrackerCallbacks(tracker, contact.jid);
 
                 tracker.startTracking();
                 restored++;
@@ -439,6 +457,153 @@ app.get('/api/intel/correlation', async (req, res) => {
     res.json(await getCorrelation(jid1 as string, jid2 as string, d));
 });
 
+// ── Privacy / OPSEC Score ─────────────────────────────────────
+
+app.get('/api/privacy-score/:jid', async (req, res) => {
+    const jid = req.params.jid;
+    try {
+        const profile = await getContactProfile(jid);
+        let score = 100; // Perfect privacy = 100
+        const deductions: { reason: string; points: number }[] = [];
+
+        // Profile picture exposed
+        let hasPic = !!profile?.profilePic;
+        if (!hasPic && isWhatsAppConnected && sock) {
+            try { hasPic = !!(await sock.profilePictureUrl(jid, 'image')); } catch {}
+        }
+        if (hasPic) { score -= 20; deductions.push({ reason: 'Foto de perfil visible', points: 20 }); }
+
+        // About/status exposed
+        let hasAbout = !!profile?.about;
+        if (!hasAbout && isWhatsAppConnected && sock) {
+            try {
+                const st = await sock.fetchStatus(jid);
+                hasAbout = !!(st?.status);
+            } catch {}
+        }
+        if (hasAbout) { score -= 15; deductions.push({ reason: 'Estado/About visible', points: 15 }); }
+
+        // Business account (exposes lots of data)
+        if (profile?.isBusinessAccount) {
+            score -= 25;
+            deductions.push({ reason: 'Cuenta de negocio (datos expuestos)', points: 25 });
+        }
+
+        // Push name set (reveals real name)
+        if (profile?.pushName) { score -= 10; deductions.push({ reason: 'Nombre de perfil (Push Name) visible', points: 10 }); }
+
+        // Online activity trackable (we can always detect this — universal deduction)
+        score -= 15;
+        deductions.push({ reason: 'Actividad online rastreable via RTT', points: 15 });
+
+        // Presence trackable (typing/recording)
+        score -= 10;
+        deductions.push({ reason: 'Indicadores escribiendo/grabando detectables', points: 10 });
+
+        // Multiple devices detectable
+        const entry = trackers.get(jid);
+        if (entry) {
+            const deviceMetricSize = (entry.tracker as any).knownDeviceJids?.size ?? 0;
+            if (deviceMetricSize > 1) {
+                score -= 5;
+                deductions.push({ reason: `${deviceMetricSize} dispositivos detectados`, points: 5 });
+            }
+        }
+
+        score = Math.max(0, score);
+        const level = score >= 70 ? 'Alto' : score >= 40 ? 'Medio' : 'Bajo';
+
+        res.json({ score, level, deductions });
+    } catch (err) {
+        console.error('[PRIVACY] Error:', err);
+        res.status(500).json({ error: 'Failed to calculate privacy score' });
+    }
+});
+
+// ── Anomaly Detection ─────────────────────────────────────────
+
+app.get('/api/anomalies/:jid', async (req, res) => {
+    const jid = req.params.jid;
+    try {
+        const days = parseInt(req.query.days as string) || 14;
+        const [habits, sessions, availability] = await Promise.all([
+            getHabitProfile(jid, days),
+            getSessionStats(jid, days),
+            getAvailabilityProfile(jid, days),
+        ]);
+
+        const anomalies: { type: string; severity: 'info' | 'warning' | 'critical'; description: string; timestamp: number }[] = [];
+        const now = new Date();
+        const currentHour = now.getHours();
+
+        // 1. Active during normally inactive hours
+        if (availability.inactiveHours.includes(currentHour)) {
+            const prob = availability.hourly[currentHour] ?? 0;
+            // Check if the tracker shows Online right now
+            const entry = trackers.get(jid);
+            if (entry) {
+                const lastPresence = (entry.tracker as any).lastPresence;
+                if (lastPresence === 'available' || lastPresence === 'composing' || lastPresence === 'recording') {
+                    anomalies.push({
+                        type: 'unusual-hours',
+                        severity: 'warning',
+                        description: `Activo a las ${currentHour}:00 (probabilidad habitual: ${(prob * 100).toFixed(0)}%)`,
+                        timestamp: Date.now()
+                    });
+                }
+            }
+        }
+
+        // 2. Session duration anomaly — check if current session is unusually long
+        if (sessions.avgDurationSec > 0 && sessions.maxDurationSec > sessions.avgDurationSec * 3) {
+            anomalies.push({
+                type: 'long-session',
+                severity: 'info',
+                description: `Sesión máxima (${Math.round(sessions.maxDurationSec / 60)}min) es 3x el promedio (${Math.round(sessions.avgDurationSec / 60)}min)`,
+                timestamp: Date.now()
+            });
+        }
+
+        // 3. Night owl / schedule shift
+        if (habits.nightOwlScore > 70) {
+            anomalies.push({
+                type: 'night-owl',
+                severity: 'info',
+                description: `Patrón nocturno elevado (score: ${habits.nightOwlScore})`,
+                timestamp: Date.now()
+            });
+        }
+
+        // 4. Low consistency (erratic behavior)
+        if (habits.consistencyScore < 30) {
+            anomalies.push({
+                type: 'erratic-behavior',
+                severity: 'warning',
+                description: `Comportamiento errático (consistencia: ${habits.consistencyScore}%)`,
+                timestamp: Date.now()
+            });
+        }
+
+        // 5. Weekend vs weekday difference
+        if (habits.weekdayVsWeekend) {
+            const diff = Math.abs(habits.weekdayVsWeekend.weekdayAvgMin - habits.weekdayVsWeekend.weekendAvgMin);
+            if (diff > 120) { // >2h difference
+                anomalies.push({
+                    type: 'schedule-shift',
+                    severity: 'info',
+                    description: `Gran diferencia L-V vs fin de semana: ${habits.weekdayVsWeekend.difference}`,
+                    timestamp: Date.now()
+                });
+            }
+        }
+
+        res.json({ anomalies, totalAnalyzedDays: availability.daysAnalyzed });
+    } catch (err) {
+        console.error('[ANOMALY] Error:', err);
+        res.status(500).json({ error: 'Failed to detect anomalies' });
+    }
+});
+
 // ── Network Monitor REST endpoints ────────────────────────────
 
 app.put('/api/contact/:jid/custom-name', async (req, res) => {
@@ -531,26 +696,7 @@ io.on('connection', (socket) => {
                 tracker.setProbeMethod(globalProbeMethod);
                 trackers.set(result.jid, { tracker });
 
-                tracker.onUpdate = (updateData) => {
-                    io.emit('tracker-update', {
-                        jid: result.jid,
-                        ...updateData
-                    });
-
-                    // Persist measurement to MongoDB
-                    if (updateData.median !== undefined && updateData.devices) {
-                        saveMeasurement({
-                            jid: result.jid,
-                            rtt: updateData.devices[0]?.rtt ?? 0,
-                            avg: updateData.devices[0]?.avg ?? 0,
-                            median: updateData.median,
-                            threshold: updateData.threshold ?? 0,
-                            state: updateData.devices.find((d: any) => d.state.includes('Online'))?.state || updateData.devices[0]?.state || 'Unknown',
-                            devices: updateData.devices,
-                            deviceCount: updateData.deviceCount ?? 0
-                        });
-                    }
-                };
+                wireTrackerCallbacks(tracker, result.jid);
 
                 tracker.startTracking();
 
@@ -706,22 +852,7 @@ io.on('connection', (socket) => {
             tracker.setProbeMethod(globalProbeMethod);
             trackers.set(jid, { tracker });
 
-            tracker.onUpdate = (updateData) => {
-                io.emit('tracker-update', { jid, ...updateData });
-
-                if (updateData.median !== undefined && updateData.devices) {
-                    saveMeasurement({
-                        jid,
-                        rtt: updateData.devices[0]?.rtt ?? 0,
-                        avg: updateData.devices[0]?.avg ?? 0,
-                        median: updateData.median,
-                        threshold: updateData.threshold ?? 0,
-                        state: updateData.devices.find((d: any) => d.state.includes('Online'))?.state || updateData.devices[0]?.state || 'Unknown',
-                        devices: updateData.devices,
-                        deviceCount: updateData.deviceCount ?? 0
-                    });
-                }
-            };
+            wireTrackerCallbacks(tracker, jid);
 
             tracker.startTracking();
 

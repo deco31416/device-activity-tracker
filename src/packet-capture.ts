@@ -10,8 +10,11 @@
 
 // @ts-ignore - cap is a CJS module
 import capModule from 'cap';
-import * as geoip from 'geoip-lite';
+// @ts-ignore - geoip-lite is CJS
+import geoipModule from 'geoip-lite';
 import os from 'os';
+
+const geoip = (geoipModule as any)?.default ?? geoipModule as any;
 
 const { Cap, decoders, findDevice } = capModule as any;
 
@@ -248,23 +251,28 @@ export function startCapture(
 
         const bufSize = 10 * 1024 * 1024; // 10MB buffer
         const snapLen = 65535;
+        const buffer = Buffer.alloc(snapLen);
 
-        capSession.open(device, bpfFilter, snapLen, bufSize);
+        capSession.open(device, bpfFilter, bufSize, buffer);
         capSession.setMinBytes && capSession.setMinBytes(0);
 
         const linkType = capSession.linkType;
-        const buffer = Buffer.alloc(snapLen);
 
         capSession.on('packet', (nbytes: number) => {
             const raw = buffer.slice(0, nbytes);
 
             try {
                 let ethSize = 0;
-                if (linkType === 'ETHERNET') {
-                    const ethInfo = decoders.Ethernet(raw);
-                    // Only process IPv4 (0x0800)
-                    if (ethInfo.info.type !== 0x0800) return;
-                    ethSize = ethInfo.offset;
+                // ETHERNET or undefined (Wi-Fi on Windows can report undefined)
+                if (linkType === 'ETHERNET' || linkType === undefined || linkType === null) {
+                    try {
+                        const ethInfo = decoders.Ethernet(raw);
+                        if (ethInfo.info.type !== 0x0800) { return; } // Only IPv4
+                        ethSize = ethInfo.offset;
+                    } catch {
+                        // Not ethernet-framed, try raw IPv4
+                        ethSize = 0;
+                    }
                 }
 
                 const ipInfo = decoders.IPV4(raw, ethSize);
@@ -313,13 +321,13 @@ export function startCapture(
 
                 // Emit to callback
                 if (onPacket) onPacket(packet);
-            } catch {
-                // Malformed packet, skip
+            } catch (e: any) {
+                // Malformed packet, skip silently
             }
         });
 
         isCapturing = true;
-        console.log(`[CAPTURE] Started on ${device} with filter: "${bpfFilter}"`);
+        console.log(`[CAPTURE] Started on ${device} | filter: "${bpfFilter}" | linkType: ${linkType}`);
         return true;
     } catch (err) {
         console.error('[CAPTURE] Failed to start:', err);

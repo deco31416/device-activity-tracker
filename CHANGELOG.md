@@ -4,6 +4,60 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [2.5.0] — 2026-03-14 · Current
+
+### 🐛 Bug Fixes
+- **Network Monitor**: Fixed `TypeError: buffer must be a Buffer` — `cap.open()` recibía los argumentos en orden incorrecto; el buffer debe crearse antes de `open()` y pasarse como 4.º argumento
+- **Network Monitor**: Fixed `geoip.lookup is not a function` — corregido interop ESM/CJS para `geoip-lite` usando default import con patrón de unwrap
+- **Network Monitor**: Fixed `linkType: undefined` en adaptadores Wi-Fi (Windows) — ahora trata `undefined/null` igual que `ETHERNET` con try/catch interno para frames no-ethernet
+- **Charts**: Fixed advertencias `width(-1) height(-1)` de Recharts en `ContactCard` — reemplazados heights porcentuales ("85%", "100%") por valores fijos en píxeles (220, 130) en `ResponsiveContainer`
+
+### ✨ Improvements
+- **Network Monitor**: Añadida paginación (8 paquetes/página) con controles «‹ N/Total ›» — evita que la UI se congele con capturas de alto volumen (10 000+ paquetes)
+- **Network Monitor**: El modo auto-scroll avanza automáticamente a la última página cuando llegan nuevos paquetes
+
+---
+
+## [2.4.0] — 2026-03-06
+
+### ✨ New Features
+
+#### SIGINT Detection — Typing & Recording
+- Real-time detection of `composing` (typing) and `recording` (audio) states via Baileys presence events
+- Animated indicator on contact card: ✍️ Escribiendo... / 🎙️ Grabando audio...
+- New `onPresenceChange` callback on `WhatsAppTracker` class — fires immediately on state change
+
+#### Device Change Alerts
+- Tracks known device JIDs (multi-device) and alerts when a new device connects
+- New `onNewDevice` callback on `WhatsAppTracker` — emits `device-alert` socket event
+- Visual warning badge on contact card showing total device count
+
+#### WiFi vs Cellular Inference
+- Analyzes RTT variance (coefficient of variation) to classify connection type
+- Low RTT + low variance = WiFi 📶, High RTT + high variance = Celular 📱
+- Real-time badge displayed on contact card in the Status section
+
+#### Privacy / OPSEC Score
+- New `/api/privacy-score/:jid` endpoint calculates privacy exposure (0–100)
+- Evaluates: profile pic visibility, about/status, business account data, push name, trackability
+- Visual score card with deduction breakdown in Profile tab
+- Levels: Alto (≥70), Medio (40–69), Bajo (<40)
+
+#### Anomaly Detection
+- New `/api/anomalies/:jid` endpoint detects unusual behavior patterns
+- Detects: unusual active hours, long sessions, night owl patterns, erratic behavior, schedule shifts
+- Severity levels: info, warning, critical
+- Visual anomaly alerts in Intel tab with color-coded badges
+
+### 🔧 Changes
+- Refactored tracker callback wiring into centralized `wireTrackerCallbacks()` helper in server.ts
+- Removed 3 duplicate `onUpdate` implementations (autoRestore, addContact, reactivateContact) — now use shared helper
+- `sendUpdate()` now includes `connectionType` field in tracker data
+- Frontend `ContactInfo` interface extended with `connectionType`, `typingState`, `deviceAlerts`
+- Dashboard listens for `presence-change` and `device-alert` socket events
+
+---
+
 ## [2.3.0] — 2026-03-06
 
 ### ✨ New Features

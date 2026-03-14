@@ -104,12 +104,17 @@ export class WhatsAppTracker {
     private probeTimeouts: Map<string, NodeJS.Timeout> = new Map();
     private lastPresence: string | null = null;
     private probeMethod: ProbeMethod = 'delete'; // Default to delete method
+    private knownDeviceJids: Set<string> = new Set(); // Track known device JIDs for alerts
+    private lastPresenceTimestamp: number = 0;
     public onUpdate?: (data: any) => void;
+    public onPresenceChange?: (data: { jid: string; presence: string; timestamp: number }) => void;
+    public onNewDevice?: (data: { deviceJid: string; targetJid: string; totalDevices: number; timestamp: number }) => void;
 
     constructor(sock: WASocket, targetJid: string, debugMode: boolean = false) {
         this.sock = sock;
         this.targetJid = targetJid;
         this.trackedJids.add(targetJid);
+        this.knownDeviceJids.add(targetJid);
         trackerLogger.setDebugMode(debugMode);
     }
 
@@ -154,12 +159,38 @@ export class WhatsAppTracker {
             if (update.presences) {
                 for (const [jid, presenceData] of Object.entries(update.presences)) {
                     if (presenceData && presenceData.lastKnownPresence) {
+                        // Detect new device JIDs
+                        if (!this.knownDeviceJids.has(jid)) {
+                            this.knownDeviceJids.add(jid);
+                            trackerLogger.info(`[NEW DEVICE] Detected new device JID: ${jid} for ${this.targetJid}`);
+                            if (this.onNewDevice) {
+                                this.onNewDevice({
+                                    deviceJid: jid,
+                                    targetJid: this.targetJid,
+                                    totalDevices: this.knownDeviceJids.size,
+                                    timestamp: Date.now()
+                                });
+                            }
+                        }
+
                         // Track multi-device JIDs (including LID)
                         this.trackedJids.add(jid);
                         trackerLogger.debug(`[MULTI-DEVICE] Added JID to tracking: ${jid}`);
 
-                        this.lastPresence = presenceData.lastKnownPresence;
+                        const newPresence = presenceData.lastKnownPresence;
+                        const prevPresence = this.lastPresence;
+                        this.lastPresence = newPresence;
+                        this.lastPresenceTimestamp = Date.now();
                         trackerLogger.debug(`[PRESENCE] Stored presence from ${jid}: ${this.lastPresence}`);
+
+                        // Emit presence change for composing/recording/available/unavailable
+                        if (this.onPresenceChange && newPresence !== prevPresence) {
+                            this.onPresenceChange({
+                                jid: this.targetJid,
+                                presence: newPresence,
+                                timestamp: Date.now()
+                            });
+                        }
                         break;
                     }
                 }
@@ -569,6 +600,7 @@ export class WhatsAppTracker {
             devices,
             deviceCount: devices.length,
             presence: this.lastPresence,
+            connectionType: this.inferConnectionType(),
             // Global stats for charts
             median: globalMedian,
             threshold: globalThreshold
@@ -577,6 +609,23 @@ export class WhatsAppTracker {
         if (this.onUpdate) {
             this.onUpdate(data);
         }
+    }
+
+    /**
+     * Infer WiFi vs Cellular connection based on RTT patterns.
+     * WiFi: low RTT, low variance. Cellular: higher RTT, high variance.
+     */
+    private inferConnectionType(): 'wifi' | 'cellular' | 'unknown' {
+        if (this.globalRttHistory.length < 10) return 'unknown';
+        const recent = this.globalRttHistory.slice(-10);
+        const avg = recent.reduce((a, b) => a + b, 0) / recent.length;
+        if (avg === 0) return 'unknown';
+        const variance = recent.reduce((sum, r) => sum + Math.pow(r - avg, 2), 0) / recent.length;
+        const cv = Math.sqrt(variance) / avg; // coefficient of variation
+
+        if (avg < 350 && cv < 0.3) return 'wifi';
+        if (avg > 600 || cv > 0.5) return 'cellular';
+        return 'unknown';
     }
 
     /**
