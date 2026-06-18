@@ -10,24 +10,54 @@
 import 'dotenv/config';
 import express from 'express';
 import { createServer } from 'http';
+import { createHash } from 'crypto';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import makeWASocket, { DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys';
 import { pino } from 'pino';
 import { Boom } from '@hapi/boom';
 import { WhatsAppTracker, ProbeMethod } from './tracker.js';
-import { connectDB, saveMeasurement, saveContact, removeContact, reactivateContact, getRecentMeasurements, getSavedContacts, getActiveContacts, getActivityHistory, getStateDistribution, updateContactProfile, updateCustomName, getContactProfile, getOnlinePatterns, generateReport, disconnectDB } from './db.js';
+import { connectDB, saveMeasurement, saveContact, removeContact, reactivateContact, getRecentMeasurements, getSavedContacts, getActiveContacts, getActivityHistory, getStateDistribution, updateContactProfile, updateCustomName, getContactProfile, getOnlinePatterns, generateReport, disconnectDB, saveCallAnalysis, getCallAnalyses, saveAuditEvent, getAuditEvents } from './db.js';
 import { listInterfaces, startCapture, stopCapture, getCaptureStatus, getRecentPackets, updateFilter, exportJSON, exportCSV, CaptureFilter, PacketMeta } from './packet-capture.js';
 import { initAnalytics, getFullIntelligence, getDailyRoutine, getAvailabilityProfile, getSessionStats, getWeeklyHeatmap, getHabitProfile, getCorrelation } from './analytics.js';
+import { startCallCapture, stopCallCapture, getCallCaptureStatus, getCallAnalysisHistory, getLatestCallAnalysis, autoDetectInterface } from './call-analyzer.js';
 
 // Configuration
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',')
     : ['http://localhost:3000', 'http://localhost:3001', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001'];
 
+const DEPLOYMENT_MODE = process.env.DEPLOYMENT_MODE || (process.env.RAILWAY_ENVIRONMENT_NAME ? 'railway-dashboard' : 'local-full');
+const LOCAL_CAPTURE_ENABLED = process.env.LOCAL_CAPTURE_ENABLED
+    ? process.env.LOCAL_CAPTURE_ENABLED === 'true'
+    : DEPLOYMENT_MODE === 'local-full';
+const DASHBOARD_TOKEN = process.env.DASHBOARD_TOKEN || '';
+
 const app = express();
 app.use(cors({ origin: ALLOWED_ORIGINS }));
 app.use(express.json());
+
+function extractAuthToken(req: express.Request): string {
+    const auth = req.headers.authorization || '';
+    if (auth.toLowerCase().startsWith('bearer ')) return auth.slice(7).trim();
+    return typeof req.query.auth === 'string' ? req.query.auth.trim() : '';
+}
+
+function isAuthorizedToken(token: string): boolean {
+    return !DASHBOARD_TOKEN || token === DASHBOARD_TOKEN;
+}
+
+app.use('/api', (req, res, next) => {
+    if (req.path === '/runtime-capabilities') {
+        next();
+        return;
+    }
+    if (!isAuthorizedToken(extractAuthToken(req))) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+    }
+    next();
+});
 
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
@@ -35,6 +65,21 @@ const io = new Server(httpServer, {
         origin: ALLOWED_ORIGINS,
         methods: ["GET", "POST"]
     }
+});
+
+io.use((socket, next) => {
+    const token = typeof socket.handshake.auth?.token === 'string'
+        ? socket.handshake.auth.token
+        : typeof socket.handshake.query?.auth === 'string'
+            ? socket.handshake.query.auth
+            : '';
+
+    if (!isAuthorizedToken(token)) {
+        next(new Error('Unauthorized'));
+        return;
+    }
+
+    next();
 });
 
 let sock: any;
@@ -47,6 +92,62 @@ interface TrackerEntry {
 }
 
 const trackers: Map<string, TrackerEntry> = new Map(); // JID -> Tracker entry
+
+interface CaptureAuditContext {
+    caseId: string;
+    operatorName: string;
+    authorizationNote: string;
+}
+
+let activeNetworkAuditContext: CaptureAuditContext | null = null;
+let activeCallAuditContext: (CaptureAuditContext & { targetJid: string; callId: string }) | null = null;
+
+function rejectCaptureUnavailable(res: express.Response): boolean {
+    if (LOCAL_CAPTURE_ENABLED) return false;
+    res.status(403).json({
+        error: 'Local packet capture is disabled in this deployment',
+        mode: DEPLOYMENT_MODE,
+    });
+    return true;
+}
+
+function parseCaptureAuditContext(data: any): CaptureAuditContext | null {
+    const caseId = typeof data?.caseId === 'string' ? data.caseId.trim() : '';
+    const operatorName = typeof data?.operatorName === 'string' ? data.operatorName.trim() : '';
+    const authorizationNote = typeof data?.authorizationNote === 'string' ? data.authorizationNote.trim() : '';
+
+    if (!caseId || !operatorName || !authorizationNote) return null;
+
+    return {
+        caseId,
+        operatorName,
+        authorizationNote,
+    };
+}
+
+function getDefaultCaptureAuditContext(): CaptureAuditContext | null {
+    return parseCaptureAuditContext({
+        caseId: process.env.DEFAULT_CASE_ID,
+        operatorName: process.env.DEFAULT_OPERATOR_NAME,
+        authorizationNote: process.env.DEFAULT_AUTHORIZATION_NOTE,
+    });
+}
+
+async function auditEvent(
+    context: CaptureAuditContext,
+    action: string,
+    scope: 'network' | 'call' | 'contact' | 'report' | 'system',
+    details: Record<string, unknown> = {},
+    targetJid?: string | null
+) {
+    await saveAuditEvent({
+        ...context,
+        action,
+        scope,
+        targetJid: targetJid || null,
+        details,
+    });
+}
 
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
@@ -158,6 +259,84 @@ async function connectToWhatsApp() {
     sock.ev.on('messages.update', (updates: any) => {
         for (const update of updates) {
             console.log(`[MSG UPDATE] JID: ${update.key.remoteJid}, ID: ${update.key.id}, Status: ${update.update.status}, FromMe: ${update.key.fromMe}`);
+        }
+    });
+
+    // ── Listen to call events for Call IP Analyzer ──
+    sock.ev.on('call', async (calls: any[]) => {
+        for (const call of calls) {
+            console.log(`[CALL] Event: ${call.status} | From: ${call.from} | ID: ${call.id} | Video: ${call.isVideo || false}`);
+
+            // Emit call event to all connected clients
+            io.emit('call-event', {
+                callId: call.id,
+                from: call.from,
+                status: call.status,
+                isVideo: call.isVideo || false,
+                date: call.date,
+                offline: call.offline,
+                latencyMs: call.latencyMs,
+            });
+
+            // Auto-start only when a default case context is configured.
+            if (LOCAL_CAPTURE_ENABLED && (call.status === 'offer' || call.status === 'accept')) {
+                const defaultContext = getDefaultCaptureAuditContext();
+                if (!defaultContext) {
+                    console.log('[CALL] Auto-capture skipped: DEFAULT_CASE_ID, DEFAULT_OPERATOR_NAME, and DEFAULT_AUTHORIZATION_NOTE are required');
+                    continue;
+                }
+                const iface = autoDetectInterface();
+                if (iface) {
+                    const started = startCallCapture(
+                        iface,
+                        call.from,
+                        call.id,
+                        call.isVideo || false,
+                        (packet) => {
+                            io.emit('call-packet', packet);
+                        }
+                    );
+                    if (started) {
+                        activeCallAuditContext = { ...defaultContext, targetJid: call.from, callId: call.id };
+                        await auditEvent(defaultContext, 'call_capture_start', 'call', {
+                            callId: call.id,
+                            interfaceAddr: iface,
+                            isVideo: call.isVideo || false,
+                            trigger: 'auto',
+                        }, call.from);
+                        console.log(`[CALL] Auto-capture started for call ${call.id}`);
+                        io.emit('call-capture-started', { callId: call.id, targetJid: call.from });
+                    }
+                } else {
+                    console.warn('[CALL] No network interface found for auto-capture');
+                }
+            }
+
+            // Auto-stop capture when call terminates
+            if (LOCAL_CAPTURE_ENABLED && (call.status === 'terminate' || call.status === 'reject' || call.status === 'timeout')) {
+                if (!activeCallAuditContext || activeCallAuditContext.callId !== call.id) {
+                    continue;
+                }
+                const result = stopCallCapture();
+                if (result) {
+                    console.log(`[CALL] Analysis complete: ${result.verdict} | ${result.candidateIps.filter(c => c.isP2P).length} direct-path candidates`);
+                    io.emit('call-analysis', result);
+                    // Persist to MongoDB
+                    await saveCallAnalysis(result);
+                    if (activeCallAuditContext) {
+                        await auditEvent(activeCallAuditContext, 'call_capture_stop', 'call', {
+                            callId: result.callId,
+                            verdict: result.verdict,
+                            totalPackets: result.totalPackets,
+                            durationSec: result.durationSec,
+                            candidateCount: result.candidateIps.filter(c => c.isP2P).length,
+                            metaIpCount: result.metaIps.length,
+                            trigger: 'auto',
+                        }, result.targetJid);
+                        activeCallAuditContext = null;
+                    }
+                }
+            }
         }
     });
 }
@@ -621,20 +800,36 @@ app.put('/api/contact/:jid/custom-name', async (req, res) => {
     }
 });
 
+app.get('/api/runtime-capabilities', (_req, res) => {
+    res.json({
+        mode: DEPLOYMENT_MODE,
+        localCapture: LOCAL_CAPTURE_ENABLED,
+        whatsappTracker: true,
+        reports: true,
+        networkMonitor: LOCAL_CAPTURE_ENABLED,
+        callTrafficAnalysis: LOCAL_CAPTURE_ENABLED,
+        authRequired: !!DASHBOARD_TOKEN,
+    });
+});
+
 app.get('/api/network/interfaces', (_req, res) => {
+    if (rejectCaptureUnavailable(res)) return;
     res.json(listInterfaces());
 });
 
 app.get('/api/network/status', (_req, res) => {
+    if (rejectCaptureUnavailable(res)) return;
     res.json(getCaptureStatus());
 });
 
 app.get('/api/network/packets', (req, res) => {
+    if (rejectCaptureUnavailable(res)) return;
     const limit = parseInt(req.query.limit as string) || 100;
     res.json(getRecentPackets(limit));
 });
 
 app.get('/api/network/export/json', (req, res) => {
+    if (rejectCaptureUnavailable(res)) return;
     const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', `attachment; filename=packets-${Date.now()}.json`);
@@ -642,10 +837,163 @@ app.get('/api/network/export/json', (req, res) => {
 });
 
 app.get('/api/network/export/csv', (req, res) => {
+    if (rejectCaptureUnavailable(res)) return;
     const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename=packets-${Date.now()}.csv`);
     res.send(exportCSV(limit));
+});
+
+// ── Call IP Analyzer REST endpoints ───────────────────────────
+
+app.get('/api/call-analysis/:jid', async (req, res) => {
+    const jid = req.params.jid;
+    try {
+        // Try in-memory first, fallback to MongoDB
+        const latest = getLatestCallAnalysis(jid);
+        if (latest) {
+            res.json(latest);
+        } else {
+            const fromDB = await getCallAnalyses(jid, 1);
+            res.json(fromDB[0] || null);
+        }
+    } catch (err) {
+        console.error('[CALL-API] Error:', err);
+        res.status(500).json({ error: 'Failed to get call analysis' });
+    }
+});
+
+app.get('/api/call-history/:jid', async (req, res) => {
+    const jid = req.params.jid;
+    const limit = parseInt(req.query.limit as string) || 20;
+    try {
+        // Merge in-memory and MongoDB results
+        const inMemory = getCallAnalysisHistory(jid);
+        const fromDB = await getCallAnalyses(jid, limit);
+
+        // Deduplicate by callId
+        const seen = new Set<string>();
+        const merged = [];
+        for (const r of [...inMemory, ...fromDB]) {
+            if (!seen.has(r.callId)) {
+                seen.add(r.callId);
+                merged.push(r);
+            }
+        }
+        // Sort by startTime descending
+        merged.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+        res.json(merged.slice(0, limit));
+    } catch (err) {
+        console.error('[CALL-API] Error:', err);
+        res.status(500).json({ error: 'Failed to get call history' });
+    }
+});
+
+app.get('/api/audit/:caseId', async (req, res) => {
+    const limit = parseInt(req.query.limit as string) || 100;
+    res.json(await getAuditEvents(req.params.caseId, limit));
+});
+
+app.get('/api/audit/:caseId/export', async (req, res) => {
+    const caseId = req.params.caseId;
+    const limit = parseInt(req.query.limit as string) || 1000;
+    const events = await getAuditEvents(caseId, limit);
+    const exportedAt = new Date();
+    const payload = {
+        caseId,
+        exportedAt: exportedAt.toISOString(),
+        eventCount: events.length,
+        events,
+    };
+    const payloadJson = JSON.stringify(payload, null, 2);
+    const sha256 = createHash('sha256').update(payloadJson).digest('hex');
+    const exportPackage = {
+        ...payload,
+        integrity: {
+            algorithm: 'SHA-256',
+            hash: sha256,
+            canonicalPayload: 'JSON.stringify(payload, null, 2) before adding integrity',
+        },
+    };
+
+    await saveAuditEvent({
+        caseId,
+        operatorName: 'system',
+        authorizationNote: 'Audit trail export',
+        action: 'audit_export',
+        scope: 'report',
+        targetJid: null,
+        details: {
+            eventCount: events.length,
+            sha256,
+            exportedAt: exportedAt.toISOString(),
+        },
+    });
+
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="audit-${caseId}-${exportedAt.toISOString().slice(0, 10)}.json"`);
+    res.send(JSON.stringify(exportPackage, null, 2));
+});
+
+app.get('/api/call-capture/status', (_req, res) => {
+    if (rejectCaptureUnavailable(res)) return;
+    res.json(getCallCaptureStatus());
+});
+
+app.post('/api/call-capture/start', async (req, res) => {
+    if (rejectCaptureUnavailable(res)) return;
+    const auditContext = parseCaptureAuditContext(req.body);
+    if (!auditContext) {
+        res.status(400).json({ error: 'caseId, operatorName, and authorizationNote are required' });
+        return;
+    }
+    const { interfaceAddr, targetJid, callId, isVideo } = req.body || {};
+    const iface = interfaceAddr || autoDetectInterface();
+    if (!iface) {
+        res.status(400).json({ error: 'No network interface available' });
+        return;
+    }
+    const cid = callId || `manual-${Date.now()}`;
+    const ok = startCallCapture(iface, targetJid || 'manual', cid, isVideo || false, (packet) => {
+        io.emit('call-packet', packet);
+    });
+    if (ok) {
+        activeCallAuditContext = { ...auditContext, targetJid: targetJid || 'manual', callId: cid };
+        await auditEvent(auditContext, 'call_capture_start', 'call', {
+            callId: cid,
+            interfaceAddr: iface,
+            isVideo: isVideo || false,
+            trigger: 'manual_rest',
+        }, targetJid || 'manual');
+        io.emit('call-capture-started', { callId: cid, targetJid: targetJid || 'manual' });
+        res.json({ ok: true, callId: cid });
+    } else {
+        res.status(500).json({ error: 'Failed to start capture. Already capturing or run as administrator.' });
+    }
+});
+
+app.post('/api/call-capture/stop', async (_req, res) => {
+    if (rejectCaptureUnavailable(res)) return;
+    const result = stopCallCapture();
+    if (result) {
+        io.emit('call-analysis', result);
+        await saveCallAnalysis(result);
+        if (activeCallAuditContext) {
+            await auditEvent(activeCallAuditContext, 'call_capture_stop', 'call', {
+                callId: result.callId,
+                verdict: result.verdict,
+                totalPackets: result.totalPackets,
+                durationSec: result.durationSec,
+                candidateCount: result.candidateIps.filter(c => c.isP2P).length,
+                metaIpCount: result.metaIps.length,
+                trigger: 'manual_rest',
+            }, result.targetJid);
+            activeCallAuditContext = null;
+        }
+        res.json(result);
+    } else {
+        res.json({ ok: false, message: 'No active capture' });
+    }
 });
 
 io.on('connection', (socket) => {
@@ -662,9 +1010,6 @@ io.on('connection', (socket) => {
 
     // Send current probe method to client
     socket.emit('probe-method', globalProbeMethod);
-
-    // Send tracked contacts
-    const trackedContacts = Array.from(trackers.keys());
 
     // Handle request to get tracked contacts (for page refresh)
     socket.on('get-tracked-contacts', () => {
@@ -877,28 +1222,62 @@ io.on('connection', (socket) => {
 
     // ── Network Monitor Socket events ──────────────────────────
 
-    socket.on('network-start', (data: { interfaceAddr: string; filter?: CaptureFilter }) => {
+    socket.on('network-start', async (data: { interfaceAddr: string; filter?: CaptureFilter; caseId?: string; operatorName?: string; authorizationNote?: string }) => {
+        if (!LOCAL_CAPTURE_ENABLED) {
+            socket.emit('error', { message: 'Local packet capture is disabled in this deployment', mode: DEPLOYMENT_MODE });
+            return;
+        }
+        const auditContext = parseCaptureAuditContext(data);
+        if (!auditContext) {
+            socket.emit('error', { message: 'caseId, operatorName, and authorizationNote are required before capture' });
+            return;
+        }
         console.log(`[NETWORK] Start capture on ${data.interfaceAddr}`);
         const ok = startCapture(data.interfaceAddr, data.filter || {}, (packet: PacketMeta) => {
             io.emit('network-packet', packet);
         });
         socket.emit('network-status', getCaptureStatus());
+        if (ok) {
+            activeNetworkAuditContext = auditContext;
+            await auditEvent(auditContext, 'capture_start', 'network', {
+                interfaceAddr: data.interfaceAddr,
+                filter: data.filter || {},
+                trigger: 'socket',
+            });
+        }
         if (!ok) {
             socket.emit('error', { message: 'Failed to start capture. Run as administrator.' });
         }
     });
 
-    socket.on('network-stop', () => {
+    socket.on('network-stop', async () => {
+        if (!LOCAL_CAPTURE_ENABLED) {
+            socket.emit('network-status', { isCapturing: false, stats: null });
+            return;
+        }
         stopCapture();
-        socket.emit('network-status', getCaptureStatus());
+        const status = getCaptureStatus();
+        socket.emit('network-status', status);
+        if (activeNetworkAuditContext) {
+            await auditEvent(activeNetworkAuditContext, 'capture_stop', 'network', {
+                stats: status.stats,
+                trigger: 'socket',
+            });
+            activeNetworkAuditContext = null;
+        }
         console.log('[NETWORK] Capture stopped by client');
     });
 
     socket.on('network-filter', (filter: CaptureFilter) => {
+        if (!LOCAL_CAPTURE_ENABLED) return;
         updateFilter(filter);
     });
 
     socket.on('network-get-status', () => {
+        if (!LOCAL_CAPTURE_ENABLED) {
+            socket.emit('network-status', { isCapturing: false, stats: null });
+            return;
+        }
         socket.emit('network-status', getCaptureStatus());
     });
 
@@ -918,11 +1297,91 @@ io.on('connection', (socket) => {
         io.emit('probe-method', method);
         console.log(`Probe method changed to: ${method}`);
     });
+
+    // ── Call IP Analyzer Socket events ──────────────────────────
+
+    socket.on('start-call-capture', async (data: { interfaceAddr?: string; targetJid?: string; callId?: string; isVideo?: boolean; caseId?: string; operatorName?: string; authorizationNote?: string }) => {
+        if (!LOCAL_CAPTURE_ENABLED) {
+            socket.emit('error', { message: 'Local call traffic analysis is disabled in this deployment', mode: DEPLOYMENT_MODE });
+            return;
+        }
+        const auditContext = parseCaptureAuditContext(data);
+        if (!auditContext) {
+            socket.emit('error', { message: 'caseId, operatorName, and authorizationNote are required before call capture' });
+            return;
+        }
+        const iface = data.interfaceAddr || autoDetectInterface();
+        if (!iface) {
+            socket.emit('error', { message: 'No network interface available for capture' });
+            return;
+        }
+        const cid = data.callId || `manual-${Date.now()}`;
+        const jid = data.targetJid || 'manual';
+        const ok = startCallCapture(iface, jid, cid, data.isVideo || false, (packet) => {
+            io.emit('call-packet', packet);
+        });
+        if (ok) {
+            activeCallAuditContext = { ...auditContext, targetJid: jid, callId: cid };
+            await auditEvent(auditContext, 'call_capture_start', 'call', {
+                callId: cid,
+                interfaceAddr: iface,
+                isVideo: data.isVideo || false,
+                trigger: 'socket',
+            }, jid);
+            io.emit('call-capture-started', { callId: cid, targetJid: jid });
+            console.log(`[CALL] Manual capture started: ${cid} for ${jid}`);
+        } else {
+            socket.emit('error', { message: 'Failed to start call capture. Already capturing or run as administrator.' });
+        }
+    });
+
+    socket.on('stop-call-capture', async () => {
+        if (!LOCAL_CAPTURE_ENABLED) {
+            socket.emit('error', { message: 'No local call capture is running in this deployment' });
+            return;
+        }
+        const result = stopCallCapture();
+        if (result) {
+            io.emit('call-analysis', result);
+            await saveCallAnalysis(result);
+            if (activeCallAuditContext) {
+                await auditEvent(activeCallAuditContext, 'call_capture_stop', 'call', {
+                    callId: result.callId,
+                    verdict: result.verdict,
+                    totalPackets: result.totalPackets,
+                    durationSec: result.durationSec,
+                    candidateCount: result.candidateIps.filter(c => c.isP2P).length,
+                    metaIpCount: result.metaIps.length,
+                    trigger: 'socket',
+                }, result.targetJid);
+                activeCallAuditContext = null;
+            }
+            console.log(`[CALL] Manual capture stopped. Verdict: ${result.verdict}`);
+        } else {
+            socket.emit('error', { message: 'No active call capture to stop' });
+        }
+    });
+
+    socket.on('get-call-capture-status', () => {
+        if (!LOCAL_CAPTURE_ENABLED) {
+            socket.emit('call-capture-status', {
+                isCapturing: false,
+                targetJid: null,
+                callId: null,
+                startTime: null,
+                packetsCollected: 0,
+                elapsed: 0,
+            });
+            return;
+        }
+        socket.emit('call-capture-status', getCallCaptureStatus());
+    });
 });
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 httpServer.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+    console.log(`[RUNTIME] mode=${DEPLOYMENT_MODE} localCapture=${LOCAL_CAPTURE_ENABLED}`);
 });
 
 // Graceful shutdown

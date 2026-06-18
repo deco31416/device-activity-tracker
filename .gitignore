@@ -12,6 +12,15 @@ auth_info_baileys/
 auth_info_multi/
 .wwebjs_auth/
 
+# Sensitive operational exports and packet captures
+captures/
+capture_exports/
+audit_exports/
+evidence_packages/
+generated_reports/
+*.pcap
+*.pcapng
+
 # Environment variables
 .env
 .env.local

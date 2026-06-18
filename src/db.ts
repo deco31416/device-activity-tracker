@@ -1,12 +1,13 @@
 /**
  * MongoDB Persistence Service
  *
- * Stores RTT measurements, contact info, and activity history
- * so data is not lost when the server restarts.
+ * Stores RTT measurements, contact info, activity history,
+ * and call analysis results so data is not lost when the server restarts.
  */
 
 import { MongoClient, Db, Collection } from 'mongodb';
 import 'dotenv/config';
+import type { CallAnalysisResult } from './call-analyzer.js';
 
 // Types
 export interface MeasurementDoc {
@@ -56,6 +57,18 @@ export interface SessionDoc {
     contactsTracked: string[];
 }
 
+export interface AuditEventDoc {
+    caseId: string;
+    operatorName: string;
+    authorizationNote: string;
+    action: string;
+    scope: 'network' | 'call' | 'contact' | 'report' | 'system';
+    targetJid?: string | null;
+    details?: Record<string, unknown>;
+    timestamp: Date;
+    timestampUtc: string;
+}
+
 // Singleton
 let client: MongoClient | null = null;
 let db: Db | null = null;
@@ -63,6 +76,8 @@ let db: Db | null = null;
 let measurements: Collection<MeasurementDoc>;
 let contacts: Collection<ContactDoc>;
 let sessions: Collection<SessionDoc>;
+let callAnalyses: Collection<CallAnalysisResult & { savedAt?: Date; updatedAt?: Date }>;
+let auditEvents: Collection<AuditEventDoc>;
 
 const MONGO_URI = process.env.MONGODB_URI || '';
 const DB_NAME = process.env.MONGODB_DB || 'activity-tracker';
@@ -85,11 +100,18 @@ export async function connectDB(): Promise<boolean> {
         measurements = db.collection<MeasurementDoc>('measurements');
         contacts = db.collection<ContactDoc>('contacts');
         sessions = db.collection<SessionDoc>('sessions');
+        callAnalyses = db.collection<CallAnalysisResult & { savedAt?: Date; updatedAt?: Date }>('call_analyses');
+        auditEvents = db.collection<AuditEventDoc>('audit_events');
 
         // Create indexes for efficient queries
         await measurements.createIndex({ jid: 1, timestamp: -1 });
         await measurements.createIndex({ timestamp: 1 }, { expireAfterSeconds: 30 * 24 * 3600 }); // TTL: 30 days
         await contacts.createIndex({ jid: 1 }, { unique: true });
+        await callAnalyses.createIndex({ callId: 1 });
+        await callAnalyses.createIndex({ targetJid: 1, startTime: -1 });
+        await callAnalyses.createIndex({ startTime: 1 }, { expireAfterSeconds: 90 * 24 * 3600 }); // TTL: 90 days
+        await auditEvents.createIndex({ caseId: 1, timestamp: -1 });
+        await auditEvents.createIndex({ scope: 1, action: 1, timestamp: -1 });
 
         console.log('[DB] Connected to MongoDB');
         return true;
@@ -129,7 +151,7 @@ export async function saveMeasurement(data: Omit<MeasurementDoc, 'timestamp'>): 
 export async function saveContact(jid: string, number: string, contactName?: string, profilePic?: string | null, customName?: string | null): Promise<void> {
     if (!db) return;
     try {
-        const setFields: any = {
+        const setFields: Partial<ContactDoc> = {
             jid,
             number,
             ...(contactName && { contactName }),
@@ -139,7 +161,7 @@ export async function saveContact(jid: string, number: string, contactName?: str
         // Only set customName if explicitly provided (not undefined)
         if (customName !== undefined) setFields.customName = customName;
 
-        const setOnInsertFields: any = {
+        const setOnInsertFields: Partial<ContactDoc> = {
             addedAt: new Date(),
             about: null,
             aboutSetAt: null,
@@ -192,7 +214,7 @@ export async function updateContactProfile(jid: string, profile: {
 }): Promise<void> {
     if (!db) return;
     try {
-        const updateFields: any = { lastProfileUpdate: new Date() };
+        const updateFields: Partial<ContactDoc> = { lastProfileUpdate: new Date() };
         if (profile.about !== undefined) updateFields.about = profile.about;
         if (profile.aboutSetAt !== undefined) updateFields.aboutSetAt = profile.aboutSetAt;
         if (profile.isBusinessAccount !== undefined) updateFields.isBusinessAccount = profile.isBusinessAccount;
@@ -249,11 +271,11 @@ export async function getOnlinePatterns(jid: string): Promise<{
             { $sort: { '_id': 1 } }
         ];
 
-        const results = await measurements.aggregate(pipeline).toArray();
+        const results = await measurements.aggregate<{ _id: number; total: number; online: number }>(pipeline).toArray();
 
         // Build full 24h array
         const hourly = Array.from({ length: 24 }, (_, h) => {
-            const found = results.find((r: any) => r._id === h);
+            const found = results.find((r: { _id: number; total: number; online: number }) => r._id === h);
             const total = found ? found.total : 0;
             const online = found ? found.online : 0;
             return { hour: h, total, online, pct: total > 0 ? Math.round((online / total) * 100) : 0 };
@@ -602,6 +624,81 @@ export async function generateReport(jid: string): Promise<{
             estimatedDailyUsage,
         },
     };
+}
+
+// ── Call Analysis Persistence ─────────────────────────────────
+
+/**
+ * Save a call analysis result to MongoDB
+ */
+export async function saveCallAnalysis(result: CallAnalysisResult): Promise<void> {
+    if (!db) return;
+    try {
+        await callAnalyses.updateOne(
+            { callId: result.callId },
+            {
+                $set: {
+                    ...result,
+                    updatedAt: new Date(),
+                },
+                $setOnInsert: {
+                    savedAt: new Date(),
+                },
+            },
+            { upsert: true }
+        );
+        console.log(`[DB] Call analysis saved for ${result.targetJid} (${result.verdict})`);
+    } catch (err) {
+        console.error('[DB] Error saving call analysis:', err);
+    }
+}
+
+/**
+ * Get call analysis history for a contact
+ */
+export async function getCallAnalyses(jid: string, limit: number = 20): Promise<CallAnalysisResult[]> {
+    if (!db) return [];
+    try {
+        return await callAnalyses
+            .find({ targetJid: jid })
+            .sort({ startTime: -1 })
+            .limit(limit)
+            .toArray();
+    } catch (err) {
+        console.error('[DB] Error fetching call analyses:', err);
+        return [];
+    }
+}
+
+// ── Audit Log Persistence ─────────────────────────────────────
+
+export async function saveAuditEvent(event: Omit<AuditEventDoc, 'timestamp' | 'timestampUtc'>): Promise<void> {
+    if (!db) return;
+    try {
+        const timestamp = new Date();
+        await auditEvents.insertOne({
+            ...event,
+            timestamp,
+            timestampUtc: timestamp.toISOString(),
+        });
+        console.log(`[AUDIT] ${event.caseId} ${event.scope}:${event.action}`);
+    } catch (err) {
+        console.error('[DB] Error saving audit event:', err);
+    }
+}
+
+export async function getAuditEvents(caseId: string, limit: number = 100): Promise<AuditEventDoc[]> {
+    if (!db) return [];
+    try {
+        return await auditEvents
+            .find({ caseId })
+            .sort({ timestamp: -1 })
+            .limit(limit)
+            .toArray();
+    } catch (err) {
+        console.error('[DB] Error fetching audit events:', err);
+        return [];
+    }
 }
 
 /**

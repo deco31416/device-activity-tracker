@@ -3,8 +3,7 @@ import { Eye, EyeOff, Plus, Trash2, Zap, Settings, History, RotateCcw, User } fr
 import { socket, ConnectionState } from '../App';
 import { ContactCard } from './ContactCard';
 import { Login } from './Login';
-
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+import { API_URL, authFetch } from '../auth';
 
 type ProbeMethod = 'delete' | 'reaction';
 
@@ -72,7 +71,7 @@ export function Dashboard({ connectionState }: DashboardProps) {
 
     const fetchHistory = useCallback(() => {
         setHistoryLoading(true);
-        fetch(`${API_URL}/api/contacts/history`)
+        authFetch(`${API_URL}/api/contacts/history`)
             .then(r => r.json())
             .then((data: SavedContact[]) => {
                 setSavedContacts(data);
@@ -213,7 +212,7 @@ export function Dashboard({ connectionState }: DashboardProps) {
 
             // Load historical RTT data from MongoDB for each contact
             trackedJids.forEach((id) => {
-                fetch(`${API_URL}/api/history/${encodeURIComponent(id)}?limit=200`)
+                authFetch(`${API_URL}/api/history/${encodeURIComponent(id)}?limit=200`)
                     .then(r => r.json())
                     .then((history: any[]) => {
                         if (history.length === 0) return;

@@ -1,5 +1,5 @@
 <h1 align="center">Device Activity Tracker v2.5.0</h1>
-<p align="center">WhatsApp Activity Tracker — RTT Analysis · Real-Time Bitácora · Behavior Intelligence · SIGINT Detection · Privacy Score · Report Generation · Network Monitor</p>
+<p align="center">WhatsApp Activity Tracker — RTT Analysis · Real-Time Bitácora · Behavior Intelligence · Audit Trail · Railway Dashboard · Local Network Monitor</p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/version-2.5.0-blue?style=flat" alt="Version 2.5.0"/>
@@ -11,13 +11,13 @@
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License MIT"/>
 </p>
 
-> ⚠️ **DISCLAIMER**: Proof-of-concept for educational and security research purposes only. Demonstrates privacy vulnerabilities in WhatsApp messaging and network metadata analysis.
+> ⚠️ **DISCLAIMER**: Proof-of-concept for authorized security research, defensive analysis, training, and lab use only. Do not monitor people, accounts, devices, or traffic without explicit authorization. Network results are treated as observed infrastructure, relays, and IP candidates; they do not prove identity, exact location, or ownership by a person.
 
 ---
 
 ## Overview
 
-Originally forked from [gommzystudio/device-activity-tracker](https://github.com/gommzystudio/device-activity-tracker). Extensively redesigned, improved, and scaled by **[deco31416](https://www.deco31416.com)** — adding MongoDB persistence, contact history with auto-restore, human-readable activity bitácora, comprehensive report generation (JSON/HTML/PDF), profile enrichment, behavior intelligence analytics (OSINT), custom contact aliases, and a full Network Monitor module.
+Originally forked from [gommzystudio/device-activity-tracker](https://github.com/gommzystudio/device-activity-tracker). Extensively redesigned, improved, and scaled by **[deco31416](https://www.deco31416.com)** — adding MongoDB persistence, contact history with auto-restore, human-readable activity bitácora, comprehensive report generation (JSON/HTML/PDF), profile enrichment, behavior intelligence analytics, custom contact aliases, a local Network Monitor module, local call traffic analysis, audit trail, and Railway/local deployment split.
 
 Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to Monitor Users on Mobile Instant Messengers"** by Gabriel K. Gegenhuber et al. (University of Vienna & SBA Research).
 
@@ -34,6 +34,9 @@ Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to M
 | **📊 Reports & Stats** | Comprehensive report generation with profile, stats, patterns, and export to JSON/HTML/PDF |
 | **💾 Contact History** | Persistent contacts across restarts with auto-restore and one-click re-tracking |
 | **🌐 Network Monitor** | Real-time packet capture with protocol analysis, IP geolocation, and data export |
+| **📞 Call Traffic Analysis** | Local authorized packet capture during WhatsApp Web calls with route visualization and candidate IP classification |
+| **🧾 Audit Trail** | Case-based capture metadata, event log, and SHA-256 hashed audit export |
+| **🚆 Railway Dashboard Mode** | Remote dashboard/statistics mode with local capture disabled for safe cloud deployment |
 
 ---
 
@@ -124,12 +127,35 @@ Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to M
 - ⚠️ Severity classification: info, warning, danger
 - 📊 Statistics: protocol distribution pie chart, top IPs bar chart
 - 📤 Export to CSV and JSON
+- 🧾 Requires `caseId`, operator, and authorization note before starting manual capture
+
+### Call Traffic Analysis (Local Full Mode)
+- 📞 Manual authorized capture window during WhatsApp Web calls or interactions
+- 🗺️ Visual route map: local host → local network/ISP → WhatsApp/Meta infrastructure → relays/cloud → candidate IPs
+- 🧭 Provider classification for Meta/WhatsApp, Google, Cloudflare, private ranges, and unknown public IPs
+- 📊 Packet counters, ports, directions, geolocation hints, and historical call analysis
+- ⚠️ Candidate IP language by design: observed IPs are not treated as verified person identity
+
+### Audit Trail & Evidence Metadata
+- 🧾 Required capture metadata: `caseId`, `operatorName`, `authorizationNote`
+- 🕐 UTC timestamps for local capture and call-capture events
+- 🔎 Audit Trail tab to search events by Case ID
+- 📤 JSON audit export via `/api/audit/:caseId/export`
+- 🔐 SHA-256 hash included with audit export payload
+
+### Runtime Modes
+- 🚆 `railway-dashboard`: dashboard, contacts, reports, activity, audit lookup, and WhatsApp session persistence without local packet capture
+- 💻 `local-full`: complete local/VM/VPS mode with packet capture, Network Monitor, and call traffic analysis
+- 🧠 `/api/runtime-capabilities` lets the frontend show or hide capture features automatically
+- 🔐 Optional `DASHBOARD_TOKEN` protects REST API, Socket.IO, dashboard access, and download links
 
 ### MongoDB Persistence
 - 💾 Measurements stored with 30-day TTL auto-cleanup
 - 📇 Contacts with full profile data (soft-delete enabled)
 - 📊 Aggregation queries for stats, patterns, and reports
 - 🔄 Graceful shutdown with connection cleanup
+- 📞 Call analyses persisted by `callId`
+- 🧾 Audit events persisted by `caseId`
 
 ---
 
@@ -180,7 +206,7 @@ cp .env.example .env
 ### Environment Variables
 
 ```env
-# Server
+# Server / frontend defaults
 BACKEND_PORT=3001
 CLIENT_PORT=3000
 BACKEND_URL=http://localhost:3001
@@ -189,9 +215,21 @@ BACKEND_URL=http://localhost:3001
 MONGODB_URI=mongodb://localhost:27017       # or mongodb+srv://... for Atlas
 MONGODB_DB=device-tracker
 
-# Environment
+# Runtime
 NODE_ENV=production
+DEPLOYMENT_MODE=local-full                  # local-full | railway-dashboard
+LOCAL_CAPTURE_ENABLED=true                  # false in Railway dashboard mode
+
+# Optional auth for public dashboards
+DASHBOARD_TOKEN=change-this-long-random-token
+
+# Optional automatic call-capture defaults
+DEFAULT_CASE_ID=CASO-2026-001
+DEFAULT_OPERATOR_NAME=Operator name
+DEFAULT_AUTHORIZATION_NOTE=Authorization reference
 ```
+
+For Railway, use `DEPLOYMENT_MODE=railway-dashboard` and `LOCAL_CAPTURE_ENABLED=false`.
 
 ---
 
@@ -210,9 +248,11 @@ cd client && pnpm start
 Open [http://localhost:3000](http://localhost:3000):
 
 1. **📱 WhatsApp Tracker tab** — Scan QR, add contacts, monitor RTT + bitácora
-2. **🌐 Network Monitor tab** — Select interface, apply filters, capture packets
+2. **🌐 Network Monitor tab** — Select interface, add audit metadata, apply filters, capture packets
+3. **🧾 Audit Trail tab** — Search events by Case ID and export hashed audit JSON
+4. **📞 Call panel** — In a contact card, use local call traffic analysis when Local full mode is enabled
 
-> **Note:** Packet capture requires **administrator privileges**.
+> **Note:** Packet capture requires **administrator/root privileges** and only works on the local machine, VM, or authorized host where the traffic is visible.
 
 ### Contact Tracking Workflow
 
@@ -240,10 +280,44 @@ docker compose up --build
 
 - Frontend: [http://localhost:3000](http://localhost:3000)
 - Backend: [http://localhost:3001](http://localhost:3001)
+- WhatsApp auth is persisted at `/app/auth_info_baileys`
+
+### Railway Dashboard Deployment
+
+Railway should be used for the dashboard/API/statistics side, not for local packet capture.
+
+Required production shape:
+
+```env
+DEPLOYMENT_MODE=railway-dashboard
+LOCAL_CAPTURE_ENABLED=false
+NODE_ENV=production
+PORT=3001
+MONGODB_URI=mongodb+srv://...
+MONGODB_DB=activity-tracker
+ALLOWED_ORIGINS=https://your-frontend.up.railway.app
+DASHBOARD_TOKEN=change-this-long-random-token
+```
+
+Attach a Railway volume to:
+
+```txt
+/app/auth_info_baileys
+```
+
+See [docs/railway-checklist.md](docs/railway-checklist.md) for the full deployment checklist.
 
 ---
 
 ## API Endpoints
+
+### Runtime & Audit
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/runtime-capabilities` | Public runtime capability check for dashboard/local mode |
+| `GET` | `/api/audit/:caseId` | Audit events for a Case ID |
+| `GET` | `/api/audit/:caseId/export` | Export audit JSON with SHA-256 hash |
 
 ### WhatsApp Tracker
 
@@ -271,6 +345,16 @@ docker compose up --build
 | `GET` | `/api/network/export/json` | Export packets as JSON file |
 | `GET` | `/api/network/export/csv` | Export packets as CSV file |
 
+### Call Traffic Analysis
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/call-analysis/:jid` | Latest call traffic analysis for a contact |
+| `GET` | `/api/call-history/:jid` | Call traffic analysis history for a contact |
+| `GET` | `/api/call-capture/status` | Current call-capture status |
+| `POST` | `/api/call-capture/start` | Start manual call capture with audit metadata |
+| `POST` | `/api/call-capture/stop` | Stop manual call capture |
+
 ### Socket.IO Events
 
 | Event | Direction | Description |
@@ -286,8 +370,15 @@ docker compose up --build
 | `network-start` | Client → Server | Start packet capture |
 | `network-stop` | Client → Server | Stop packet capture |
 | `network-packet` | Server → Client | New packet captured |
+| `start-call-capture` | Client → Server | Start call traffic capture with audit metadata |
+| `stop-call-capture` | Client → Server | Stop call traffic capture |
+| `call-capture-started` | Server → Client | Call capture started confirmation |
+| `call-capture-stopped` | Server → Client | Call capture stopped with analysis result |
+| `call-packet` | Server → Client | New packet observed during call capture |
 | `presence-change` | Server → Client | Typing/recording/available state change |
 | `device-alert` | Server → Client | New device detected for a contact |
+
+When `DASHBOARD_TOKEN` is set, REST requests require `Authorization: Bearer <token>` and Socket.IO connects with the same token in auth payload.
 
 ---
 
@@ -299,6 +390,8 @@ device-activity-tracker/
 │   ├── server.ts              # Express + Socket.IO backend (APIs + auto-restore + privacy/anomaly)
 │   ├── tracker.ts             # WhatsApp RTT analysis engine + SIGINT detection
 │   ├── packet-capture.ts      # Network packet capture service (Npcap/cap)
+│   ├── call-analyzer.ts       # Local call traffic analysis and route/candidate classification
+│   ├── meta-ip-ranges.ts      # Meta/WhatsApp infrastructure CIDR helpers
 │   ├── db.ts                  # MongoDB persistence + report generation
 │   ├── index.ts               # CLI interface
 │   └── types/
@@ -306,13 +399,21 @@ device-activity-tracker/
 ├── client/
 │   ├── src/
 │   │   ├── App.tsx            # Root component with tab navigation
+│   │   ├── auth.ts            # Dashboard token helpers and authenticated fetch/download URLs
+│   │   ├── types.ts           # Shared frontend models for call/audit views
 │   │   └── components/
 │   │       ├── Dashboard.tsx      # Tracker dashboard + contact history panel
 │   │       ├── Login.tsx          # WhatsApp QR authentication
 │   │       ├── ContactCard.tsx    # Contact card: chart, bitácora, stats, profile, intel, SIGINT
-│   │       └── NetworkMonitor.tsx # Network monitor UI
+│   │       ├── NetworkMonitor.tsx # Network monitor UI
+│   │       └── AuditTrail.tsx     # Case-based audit lookup and export
 │   ├── tailwind.config.js
 │   └── package.json
+├── docs/
+│   ├── deployment-split.md
+│   ├── local-operation-guide.md
+│   └── railway-checklist.md
+├── plan.md
 ├── CHANGELOG.md
 ├── .env.example
 ├── docker-compose.yml
@@ -378,6 +479,51 @@ Captures packet **metadata only** (no payload/content inspection):
 5. **Stream** → Socket.IO real-time to UI
 6. **Store** → Buffer of 2000 packets with export
 
+### Call Traffic Analysis
+
+In Local full mode, the call analyzer opens a bounded capture window while an authorized WhatsApp Web call or interaction is performed on the same machine.
+
+The UI presents a route map and packet summary using cautious language:
+
+1. **Local host** → machine running WhatsApp Web and the capture service
+2. **Local network / ISP** → observed outbound path
+3. **WhatsApp / Meta infrastructure** → known provider ranges when matched
+4. **Relays / cloud providers** → infrastructure that may proxy traffic
+5. **Candidate IPs** → non-verified observed IPs for further authorized analysis
+
+The result is an investigative aid, not proof that an IP belongs to a person.
+
+### Audit Flow
+
+Manual capture flows require:
+
+- `caseId`
+- `operatorName`
+- `authorizationNote`
+
+Audit events are saved in MongoDB and can be reviewed from the `Audit Trail` tab. Audit export returns a JSON payload plus SHA-256 hash so the exported package can be referenced later.
+
+### Deployment Split
+
+The project intentionally separates cloud dashboard features from local packet capture:
+
+- **Railway dashboard mode**: API, dashboard, WhatsApp session, contacts, reports, audit lookup, and statistics.
+- **Local full mode**: full capture stack, Network Monitor, call traffic analysis, and route visualization.
+
+Railway containers cannot see your local network adapter, so packet capture belongs on the local machine, VM, or authorized lab host where the traffic is generated.
+
+---
+
+## Documentation
+
+| Document | Purpose |
+|----------|---------|
+| [plan.md](plan.md) | Planner/audit board for current work and next steps |
+| [docs/README.md](docs/README.md) | Documentation index and operating principles |
+| [docs/deployment-split.md](docs/deployment-split.md) | Architecture split between Railway dashboard and Local full mode |
+| [docs/local-operation-guide.md](docs/local-operation-guide.md) | Local operating procedure, prerequisites, audit metadata, and troubleshooting |
+| [docs/railway-checklist.md](docs/railway-checklist.md) | Railway deployment checklist with env vars, volume, CORS, and smoke tests |
+
 ---
 
 ## How to Protect Yourself
@@ -397,6 +543,10 @@ For **network monitoring**: Use a VPN to encrypt and tunnel all traffic.
 | **Not connecting to WhatsApp** | Delete `auth_info_baileys/` folder and re-scan QR |
 | **Baileys 405 error** | Install from GitHub, not npm |
 | **Packet capture not working** | Run as Administrator; verify Npcap with WinPcap mode |
+| **Network Monitor hidden** | Backend is likely in `railway-dashboard` mode or `LOCAL_CAPTURE_ENABLED=false` |
+| **401 Unauthorized** | `DASHBOARD_TOKEN` is set; enter the correct token in the dashboard |
+| **No useful call packets** | Confirm WhatsApp Web/call is running on the same machine/interface being captured |
+| **Railway does not capture traffic** | Expected behavior; Railway mode is for dashboard/statistics, not local adapter capture |
 | **Yarn PnP errors** | `.yarnrc.yml` must have `nodeLinker: node-modules` |
 | **MongoDB connection failed** | Check `MONGODB_URI` in `.env`; verify Atlas IP whitelist |
 | **Contact not auto-restoring** | Ensure contact was active (not stopped) before restart |
@@ -406,6 +556,13 @@ For **network monitoring**: Use a VPN to encrypt and tunnel all traffic.
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
+
+### Unreleased (June 2026)
+- 🚆 **Railway/local split** — `railway-dashboard` mode disables local capture; `local-full` keeps the complete capture stack
+- 🔐 **Dashboard token auth** — optional `DASHBOARD_TOKEN` for REST, Socket.IO, dashboard, and downloads
+- 📞 **Call Traffic Analysis** — local authorized capture window, observed route map, relays/providers, and candidate IP classification
+- 🧾 **Audit Trail** — required capture metadata, Case ID event lookup, and SHA-256 hashed audit export
+- 📚 **Operational docs** — Railway checklist, local operation guide, deployment split, and planner/audit board
 
 ### v2.5.0 (March 2026) — Current
 - 🐛 **Network Monitor fixes** — `cap.open()` buffer arg order, `geoip-lite` CJS interop, `linkType: undefined` en Wi-Fi (Windows)
@@ -446,7 +603,9 @@ See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
 ## Ethical & Legal Considerations
 
-⚠️ **For research and educational purposes only.** Never track people without explicit consent — this may violate privacy laws in your jurisdiction. Authentication data (`auth_info_baileys/`) must never be committed to version control.
+⚠️ **For authorized research, defensive analysis, training, and lab use only.** Never track people, accounts, devices, or traffic without explicit authorization; doing so may violate privacy, computer misuse, wiretap, or data protection laws in your jurisdiction.
+
+Authentication data (`auth_info_baileys/`), packet captures, audit exports, evidence packages, and generated reports must not be committed to version control.
 
 ---
 

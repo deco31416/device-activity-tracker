@@ -90,6 +90,17 @@ const dstIpCounts = new Map<string, number>();
 // Callback for emitting packets
 let onPacket: ((packet: PacketMeta) => void) | null = null;
 
+function resetCaptureState() {
+    try {
+        capSession?.close();
+    } catch (err) {
+        console.error('[CAPTURE] Error closing capture session:', err);
+    }
+    capSession = null;
+    isCapturing = false;
+    onPacket = null;
+}
+
 // ── Helpers ────────────────────────────────────────────────────
 
 function lookupGeo(ip: string): GeoInfo | null {
@@ -106,10 +117,11 @@ function lookupGeo(ip: string): GeoInfo | null {
 }
 
 function isPrivateIp(ip: string): boolean {
+    const parts = ip.split('.').map(Number);
+    const isPrivate172 = parts.length === 4 && parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31;
     return (
         ip.startsWith('10.') ||
-        ip.startsWith('172.16.') || ip.startsWith('172.17.') || ip.startsWith('172.18.') ||
-        ip.startsWith('172.19.') || ip.startsWith('172.2') || ip.startsWith('172.3') ||
+        isPrivate172 ||
         ip.startsWith('192.168.') ||
         ip.startsWith('127.') ||
         ip === '0.0.0.0' ||
@@ -246,6 +258,7 @@ export function startCapture(
         const device = findDevice(interfaceAddress);
         if (!device) {
             console.error('[CAPTURE] Could not find network device for:', interfaceAddress);
+            resetCaptureState();
             return false;
         }
 
@@ -331,6 +344,7 @@ export function startCapture(
         return true;
     } catch (err) {
         console.error('[CAPTURE] Failed to start:', err);
+        resetCaptureState();
         return false;
     }
 }
@@ -340,10 +354,7 @@ export function startCapture(
  */
 export function stopCapture(): void {
     if (capSession && isCapturing) {
-        capSession.close();
-        capSession = null;
-        isCapturing = false;
-        onPacket = null;
+        resetCaptureState();
         console.log('[CAPTURE] Stopped');
     }
 }

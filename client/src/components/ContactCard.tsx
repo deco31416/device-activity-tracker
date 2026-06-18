@@ -1,10 +1,10 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, BarChart, Bar, Cell } from 'recharts';
-import { Square, Activity, Wifi, Smartphone, Monitor, Clock, Database, BarChart3, History, TrendingUp, User, Briefcase, Globe, Mail, MapPin, Sun, Moon, Zap, FileDown, FileText, Code, ChevronLeft, ChevronRight, Download, Pencil, Check, X, Brain, Target, CalendarDays, Timer, Coffee, Shield } from 'lucide-react';
+import { Square, Activity, Wifi, Smartphone, Monitor, Clock, Database, BarChart3, History, TrendingUp, User, Briefcase, Globe, Mail, MapPin, Sun, Moon, Zap, FileDown, FileText, Code, ChevronLeft, ChevronRight, Download, Pencil, Check, X, Brain, Target, CalendarDays, Timer, Coffee, Shield, Phone } from 'lucide-react';
 import clsx from 'clsx';
 import { socket } from '../App';
-
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+import { API_URL, authFetch, authUrl } from '../auth';
+import { CallAnalysisResult, CallCaptureStarted, CallEvent, CandidateIP } from '../types';
 
 interface TrackerData {
     rtt: number;
@@ -172,7 +172,7 @@ export function ContactCard({
     const [activity, setActivity] = useState<ActivityEntry[]>([]);
     const [profile, setProfile] = useState<ProfileData | null>(null);
     const [patterns, setPatterns] = useState<PatternsData | null>(null);
-    const [activePanel, setActivePanel] = useState<'chart' | 'stats' | 'activity' | 'profile' | 'intel'>('chart');
+    const [activePanel, setActivePanel] = useState<'chart' | 'stats' | 'activity' | 'profile' | 'intel' | 'call'>('chart');
     const [profileLoading, setProfileLoading] = useState(false);
     const [logPage, setLogPage] = useState(1);
     const LOG_PAGE_SIZE = 15;
@@ -211,13 +211,106 @@ export function ContactCard({
         };
     }, [jid]);
 
+    const [callTrafficAvailable, setCallTrafficAvailable] = useState(true);
+
+    useEffect(() => {
+        fetch(`${API_URL}/api/runtime-capabilities`)
+            .then(r => r.json())
+            .then(data => setCallTrafficAvailable(data.callTrafficAnalysis !== false))
+            .catch(() => setCallTrafficAvailable(true));
+    }, []);
+
+    useEffect(() => {
+        if (!callTrafficAvailable && activePanel === 'call') {
+            setActivePanel('chart');
+        }
+    }, [callTrafficAvailable, activePanel]);
+
+    // ── Call traffic analysis state ──
+    const [callAnalysis, setCallAnalysis] = useState<CallAnalysisResult | null>(null);
+    const [callHistory, setCallHistory] = useState<CallAnalysisResult[]>([]);
+    const [callCapturing, setCallCapturing] = useState(false);
+    const [callEvent, setCallEvent] = useState<CallEvent | null>(null);
+    const [callPacketCount, setCallPacketCount] = useState(0);
+    const [callCaseId, setCallCaseId] = useState('');
+    const [callOperatorName, setCallOperatorName] = useState('');
+    const [callAuthorizationNote, setCallAuthorizationNote] = useState('');
+    const callCapturingRef = useRef(false);
+
+    useEffect(() => {
+        callCapturingRef.current = callCapturing;
+    }, [callCapturing]);
+
+    const fetchCallHistory = useCallback(() => {
+        authFetch(`${API_URL}/api/call-history/${encodeURIComponent(jid)}?limit=10`)
+            .then(r => r.json())
+            .then(data => {
+                if (Array.isArray(data)) setCallHistory(data as CallAnalysisResult[]);
+            })
+            .catch(console.error);
+    }, [jid]);
+
+    // Listen for call events from server
+    useEffect(() => {
+        function onCallEvent(data: CallEvent) {
+            if (data.from === jid || data.from?.includes(jid.replace('@s.whatsapp.net', ''))) {
+                setCallEvent(data);
+            }
+        }
+        function onCallCaptureStarted(data: CallCaptureStarted) {
+            if (data.targetJid === jid) {
+                setCallCapturing(true);
+                setCallPacketCount(0);
+            }
+        }
+        function onCallPacket() {
+            if (callCapturingRef.current) {
+                setCallPacketCount(prev => prev + 1);
+            }
+        }
+        function onCallAnalysis(result: CallAnalysisResult) {
+            if (result.targetJid === jid) {
+                setCallAnalysis(result);
+                setCallCapturing(false);
+                setCallPacketCount(0);
+                // Refresh history
+                fetchCallHistory();
+            }
+        }
+        socket.on('call-event', onCallEvent);
+        socket.on('call-capture-started', onCallCaptureStarted);
+        socket.on('call-packet', onCallPacket);
+        socket.on('call-analysis', onCallAnalysis);
+        return () => {
+            socket.off('call-event', onCallEvent);
+            socket.off('call-capture-started', onCallCaptureStarted);
+            socket.off('call-packet', onCallPacket);
+            socket.off('call-analysis', onCallAnalysis);
+        };
+    }, [jid, fetchCallHistory]);
+
+    const handleStartManualCapture = () => {
+        if (!callTrafficAvailable) return;
+        if (!callCaseId.trim() || !callOperatorName.trim() || !callAuthorizationNote.trim()) return;
+        socket.emit('start-call-capture', {
+            targetJid: jid,
+            caseId: callCaseId.trim(),
+            operatorName: callOperatorName.trim(),
+            authorizationNote: callAuthorizationNote.trim(),
+        });
+    };
+
+    const handleStopManualCapture = () => {
+        socket.emit('stop-call-capture');
+    };
+
     const handleSaveCustomName = async () => {
         const trimmed = editNameValue.trim() || null;
         setCustomName(trimmed);
         setEditingName(false);
         // Use REST API (reliable) + socket broadcast as fallback
         try {
-            await fetch(`${API_URL}/api/contact/${encodeURIComponent(jid)}/custom-name`, {
+            await authFetch(`${API_URL}/api/contact/${encodeURIComponent(jid)}/custom-name`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ customName: trimmed }),
@@ -259,14 +352,14 @@ export function ContactCard({
 
     // Fetch stats from MongoDB
     const fetchStats = useCallback(() => {
-        fetch(`${API_URL}/api/stats/${encodeURIComponent(jid)}`)
+        authFetch(`${API_URL}/api/stats/${encodeURIComponent(jid)}`)
             .then(r => r.json())
             .then(setStats)
             .catch(console.error);
     }, [jid]);
 
     const fetchActivity = useCallback(() => {
-        fetch(`${API_URL}/api/activity/${encodeURIComponent(jid)}?limit=30`)
+        authFetch(`${API_URL}/api/activity/${encodeURIComponent(jid)}?limit=30`)
             .then(r => r.json())
             .then(setActivity)
             .catch(console.error);
@@ -274,7 +367,7 @@ export function ContactCard({
 
     const fetchProfile = useCallback(() => {
         setProfileLoading(true);
-        fetch(`${API_URL}/api/profile/${encodeURIComponent(jid)}`)
+        authFetch(`${API_URL}/api/profile/${encodeURIComponent(jid)}`)
             .then(r => r.json())
             .then((data) => {
                 setProfile(data);
@@ -291,7 +384,7 @@ export function ContactCard({
     }, [jid, customName]);
 
     const fetchPatterns = useCallback(() => {
-        fetch(`${API_URL}/api/patterns/${encodeURIComponent(jid)}`)
+        authFetch(`${API_URL}/api/patterns/${encodeURIComponent(jid)}`)
             .then(r => r.json())
             .then(setPatterns)
             .catch(console.error);
@@ -310,21 +403,21 @@ export function ContactCard({
 
     const fetchIntel = useCallback(() => {
         setIntelLoading(true);
-        fetch(`${API_URL}/api/intel/${encodeURIComponent(jid)}?days=14`)
+        authFetch(`${API_URL}/api/intel/${encodeURIComponent(jid)}?days=14`)
             .then(r => r.json())
             .then((data) => { setIntel(data); setIntelLoading(false); })
             .catch((err) => { console.error(err); setIntelLoading(false); });
     }, [jid]);
 
     const fetchPrivacyScore = useCallback(() => {
-        fetch(`${API_URL}/api/privacy-score/${encodeURIComponent(jid)}`)
+        authFetch(`${API_URL}/api/privacy-score/${encodeURIComponent(jid)}`)
             .then(r => r.json())
             .then(setPrivacyScore)
             .catch(console.error);
     }, [jid]);
 
     const fetchAnomalies = useCallback(() => {
-        fetch(`${API_URL}/api/anomalies/${encodeURIComponent(jid)}?days=14`)
+        authFetch(`${API_URL}/api/anomalies/${encodeURIComponent(jid)}?days=14`)
             .then(r => r.json())
             .then((data) => setAnomalies(data.anomalies || []))
             .catch(console.error);
@@ -341,7 +434,10 @@ export function ContactCard({
             fetchIntel();
             fetchAnomalies();
         }
-    }, [activePanel, fetchProfile, fetchPatterns, fetchIntel, fetchPrivacyScore, fetchAnomalies]);
+        if (activePanel === 'call') {
+            fetchCallHistory();
+        }
+    }, [activePanel, fetchProfile, fetchPatterns, fetchIntel, fetchPrivacyScore, fetchAnomalies, fetchCallHistory]);
 
     const formatTime = (ts: string | null) => {
         if (!ts) return '—';
@@ -638,7 +734,7 @@ th{background:#f1f5f9;padding:8px;text-align:left;font-size:10px;text-transform:
 
                 <div className="flex items-center gap-2">
                     <a
-                        href={`${API_URL}/api/report/${encodeURIComponent(jid)}/download`}
+                        href={authUrl(`${API_URL}/api/report/${encodeURIComponent(jid)}/download`)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="btn-ghost flex items-center gap-1.5 !text-xs !py-1.5 !px-3"
@@ -871,6 +967,7 @@ th{background:#f1f5f9;padding:8px;text-align:left;font-size:10px;text-transform:
                                 { key: 'stats', label: 'Stats', icon: <Database size={13} /> },
                                 { key: 'intel', label: 'Intel', icon: <Brain size={13} /> },
                                 { key: 'profile', label: 'Profile', icon: <User size={13} /> },
+                                ...(callTrafficAvailable ? [{ key: 'call' as const, label: 'Llamada', icon: <Phone size={13} /> }] : []),
                             ] as const).map(tab => (
                                 <button
                                     key={tab.key}
@@ -963,7 +1060,7 @@ th{background:#f1f5f9;padding:8px;text-align:left;font-size:10px;text-transform:
                                             <FileDown size={10} /> PDF
                                         </button>
                                         <a
-                                            href={`${API_URL}/api/report/${encodeURIComponent(jid)}/download`}
+                                            href={authUrl(`${API_URL}/api/report/${encodeURIComponent(jid)}/download`)}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="btn-ghost !text-[10px] !py-1 !px-2 flex items-center gap-1"
@@ -1836,6 +1933,282 @@ th{background:#f1f5f9;padding:8px;text-align:left;font-size:10px;text-transform:
                                 )}
                             </div>
                         )}
+
+                        {/* \u2500\u2500 Call Traffic Analysis Panel \u2500\u2500 */}
+                        {activePanel === 'call' && (
+                            <div className="space-y-4">
+                                {/* Capture Controls */}
+                                <div className="bg-surface-overlay rounded-xl border border-surface-border p-5">
+                                    <h5 className="text-xs font-semibold text-txt-muted uppercase tracking-wider mb-4 flex items-center gap-2">
+                                        <Phone size={14} className="text-accent" /> Analisis de Trafico de Llamada
+                                    </h5>
+                                    <p className="text-[11px] text-txt-dim mb-4">
+                                        Captura trafico local durante llamadas WhatsApp para clasificar IPs observadas, relays e infraestructura.
+                                        La captura se inicia automáticamente al detectar una llamada, o puede iniciarse manualmente.
+                                    </p>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
+                                        <input
+                                            value={callCaseId}
+                                            onChange={e => setCallCaseId(e.target.value)}
+                                            disabled={callCapturing}
+                                            placeholder="Case ID"
+                                            className="input-field !text-xs"
+                                        />
+                                        <input
+                                            value={callOperatorName}
+                                            onChange={e => setCallOperatorName(e.target.value)}
+                                            disabled={callCapturing}
+                                            placeholder="Operador"
+                                            className="input-field !text-xs"
+                                        />
+                                        <input
+                                            value={callAuthorizationNote}
+                                            onChange={e => setCallAuthorizationNote(e.target.value)}
+                                            disabled={callCapturing}
+                                            placeholder="Autorizacion / motivo"
+                                            className="input-field !text-xs"
+                                        />
+                                    </div>
+
+                                    <div className="flex items-center gap-3">
+                                        {!callCapturing ? (
+                                            <button
+                                                onClick={handleStartManualCapture}
+                                                disabled={!callCaseId.trim() || !callOperatorName.trim() || !callAuthorizationNote.trim()}
+                                                className="btn-primary flex items-center gap-2 !text-xs !py-2 !px-4"
+                                            >
+                                                <Phone size={14} /> Iniciar Captura Manual
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={handleStopManualCapture}
+                                                className="btn-danger flex items-center gap-2 !text-xs !py-2 !px-4 animate-pulse"
+                                            >
+                                                <Square size={14} /> Detener Captura ({callPacketCount} paquetes)
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* Live capture indicator */}
+                                    {callCapturing && (
+                                        <div className="mt-3 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 flex items-center gap-3">
+                                            <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                                            <div>
+                                                <p className="text-xs font-bold text-red-400">Captura en curso</p>
+                                                <p className="text-[10px] text-txt-dim">{callPacketCount} paquetes UDP capturados · Haz la llamada desde este equipo local</p>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Call event status */}
+                                    {callEvent && (
+                                        <div className="mt-3 bg-accent/10 border border-accent/30 rounded-lg px-4 py-2">
+                                            <p className="text-xs text-accent">
+                                                📞 Última llamada detectada: <span className="font-bold">{callEvent.status}</span>
+                                                {callEvent.isVideo && ' (Video)'}
+                                                {callEvent.date && ` · ${new Date(callEvent.date).toLocaleTimeString('es-ES')}`}
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Analysis Results */}
+                                {callAnalysis && (
+                                    <div className="bg-surface-overlay rounded-xl border border-surface-border p-5">
+                                        <div className="flex items-center justify-between mb-4">
+                                            <h5 className="text-xs font-semibold text-txt-muted uppercase tracking-wider flex items-center gap-2">
+                                                <Target size={14} className="text-success" /> Resultado del Análisis
+                                            </h5>
+                                            {/* Verdict badge */}
+                                            <span className={clsx(
+                                                "text-xs font-bold px-3 py-1 rounded-full",
+                                                callAnalysis.verdict === 'p2p' ? "bg-emerald-500/20 text-emerald-400" :
+                                                callAnalysis.verdict === 'mixed' ? "bg-amber-500/20 text-amber-400" :
+                                                callAnalysis.verdict === 'relay' ? "bg-red-500/20 text-red-400" :
+                                                "bg-slate-500/20 text-slate-400"
+                                            )}>
+                                                {callAnalysis.verdict === 'p2p' ? '🟢 Trafico directo candidato' :
+                                                 callAnalysis.verdict === 'mixed' ? '🟡 Mixto (candidato + relay)' :
+                                                 callAnalysis.verdict === 'relay' ? '🔴 Solo Relay (Meta)' :
+                                                 '⚪ Datos Insuficientes'}
+                                            </span>
+                                        </div>
+
+                                        {/* Summary stats */}
+                                        <div className="grid grid-cols-4 gap-3 mb-4">
+                                            <div className="bg-surface-hover rounded-lg p-3 text-center">
+                                                <p className="text-lg font-bold text-txt-primary">{callAnalysis.totalPackets}</p>
+                                                <p className="text-[10px] text-txt-dim">Paquetes</p>
+                                            </div>
+                                            <div className="bg-surface-hover rounded-lg p-3 text-center">
+                                                <p className="text-lg font-bold text-accent">{callAnalysis.candidateIps.filter((c: CandidateIP) => c.isP2P).length}</p>
+                                                <p className="text-[10px] text-txt-dim">Candidatas</p>
+                                            </div>
+                                            <div className="bg-surface-hover rounded-lg p-3 text-center">
+                                                <p className="text-lg font-bold text-red-400">{callAnalysis.metaIps?.length || 0}</p>
+                                                <p className="text-[10px] text-txt-dim">IPs Meta</p>
+                                            </div>
+                                            <div className="bg-surface-hover rounded-lg p-3 text-center">
+                                                <p className="text-lg font-bold text-txt-primary">{callAnalysis.durationSec || 0}s</p>
+                                                <p className="text-[10px] text-txt-dim">Duración</p>
+                                            </div>
+                                        </div>
+
+                                        <CallTrafficMap analysis={callAnalysis} />
+
+                                        {/* Direct-path candidate IPs */}
+                                        {callAnalysis.candidateIps.filter((c: CandidateIP) => c.isP2P).length > 0 && (
+                                            <div className="mb-4">
+                                                <h6 className="text-[11px] font-semibold text-success uppercase tracking-wider mb-2">🎯 IPs observadas candidatas</h6>
+                                                <div className="space-y-2">
+                                                    {callAnalysis.candidateIps.filter((c: CandidateIP) => c.isP2P).map((candidate: CandidateIP, idx: number) => (
+                                                        <div key={idx} className="bg-surface-hover rounded-lg p-3 border border-surface-border">
+                                                            <div className="flex items-center justify-between mb-2">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-sm font-mono font-bold text-txt-primary">{candidate.ip}</span>
+                                                                    <span className={clsx(
+                                                                        "text-[10px] font-bold px-2 py-0.5 rounded-full",
+                                                                        candidate.confidence === 'high' ? "bg-emerald-500/20 text-emerald-400" :
+                                                                        candidate.confidence === 'medium' ? "bg-amber-500/20 text-amber-400" :
+                                                                        "bg-slate-500/20 text-slate-400"
+                                                                    )}>
+                                                                        {candidate.confidence === 'high' ? '🟢 Alta' :
+                                                                         candidate.confidence === 'medium' ? '🟡 Media' : '⚪ Baja'}
+                                                                    </span>
+                                                                    <span className="text-[10px] text-txt-dim">{candidate.direction === 'bidirectional' ? '↔️' : candidate.direction === 'incoming' ? '⬅️' : '➡️'} {candidate.direction}</span>
+                                                                </div>
+                                                                <span className="text-[10px] text-txt-muted font-mono">{candidate.packets} pkts</span>
+                                                            </div>
+                                                            {candidate.geo && (
+                                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                                                                    <div>
+                                                                        <span className="text-txt-dim">🌍 País:</span>{' '}
+                                                                        <span className="text-txt-primary font-medium">{candidate.geo.country || '—'}</span>
+                                                                    </div>
+                                                                    <div>
+                                                                        <span className="text-txt-dim">🏙️ Ciudad:</span>{' '}
+                                                                        <span className="text-txt-primary font-medium">{candidate.geo.city || candidate.geo.region || '—'}</span>
+                                                                    </div>
+                                                                    <div>
+                                                                        <span className="text-txt-dim">📍 Coords:</span>{' '}
+                                                                        <span className="text-txt-primary font-mono text-[10px]">
+                                                                            {candidate.geo.lat?.toFixed(4)}, {candidate.geo.lon?.toFixed(4)}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div>
+                                                                        <span className="text-txt-dim">🕐 TZ:</span>{' '}
+                                                                        <span className="text-txt-primary font-medium">{candidate.geo.timezone || '—'}</span>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            {!candidate.geo && (
+                                                                <p className="text-[10px] text-txt-dim italic">Sin datos de geolocalización disponibles</p>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Relay IPs (collapsible) */}
+                                        {callAnalysis.metaIps?.length > 0 && (
+                                            <details className="mb-2">
+                                                <summary className="text-[11px] font-semibold text-red-400 uppercase tracking-wider cursor-pointer hover:text-red-300 transition-colors mb-2">
+                                                    🔴 IPs Meta/Relay filtradas ({callAnalysis.metaIps.length})
+                                                </summary>
+                                                <div className="bg-surface-hover rounded-lg p-3 border border-surface-border">
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {callAnalysis.metaIps.map((ip: string, idx: number) => (
+                                                            <span key={idx} className="text-[10px] font-mono text-txt-dim bg-red-500/10 px-2 py-0.5 rounded">{ip}</span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </details>
+                                        )}
+
+                                        {/* Infrastructure candidates */}
+                                        {callAnalysis.candidateIps.filter((c: CandidateIP) => !c.isP2P && c.provider !== 'unknown').length > 0 && (
+                                            <details>
+                                                <summary className="text-[11px] font-semibold text-amber-400 uppercase tracking-wider cursor-pointer hover:text-amber-300 transition-colors mb-2">
+                                                    🟡 IPs Infraestructura ({callAnalysis.candidateIps.filter((c: CandidateIP) => !c.isP2P).length})
+                                                </summary>
+                                                <div className="bg-surface-hover rounded-lg p-3 border border-surface-border space-y-1">
+                                                    {callAnalysis.candidateIps.filter((c: CandidateIP) => !c.isP2P).map((c: CandidateIP, idx: number) => (
+                                                        <div key={idx} className="flex items-center justify-between text-[10px]">
+                                                            <span className="font-mono text-txt-dim">{c.ip}</span>
+                                                            <span className="text-txt-muted">{c.provider} · {c.packets} pkts</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </details>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Call History */}
+                                {callHistory.length > 0 && (
+                                    <div className="bg-surface-overlay rounded-xl border border-surface-border p-5">
+                                        <h5 className="text-xs font-semibold text-txt-muted uppercase tracking-wider mb-3 flex items-center gap-2">
+                                            <History size={14} className="text-txt-dim" /> Historial de Análisis
+                                        </h5>
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-xs">
+                                                <thead>
+                                                    <tr className="border-b border-surface-border text-txt-muted uppercase tracking-wider">
+                                                        <th className="text-left py-2 px-2">Fecha</th>
+                                                        <th className="text-left py-2 px-2">Duración</th>
+                                                        <th className="text-left py-2 px-2">Veredicto</th>
+                                                        <th className="text-right py-2 px-2">Candidatas</th>
+                                                        <th className="text-right py-2 px-2">Paquetes</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {callHistory.map((h: CallAnalysisResult, idx: number) => (
+                                                        <tr
+                                                            key={idx}
+                                                            className="border-b border-surface-border/50 hover:bg-surface-hover cursor-pointer transition-colors"
+                                                            onClick={() => setCallAnalysis(h)}
+                                                        >
+                                                            <td className="py-2 px-2 text-txt-secondary font-mono">
+                                                                {new Date(h.startTime).toLocaleString('es-ES', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                                            </td>
+                                                            <td className="py-2 px-2 text-txt-primary">{h.durationSec}s</td>
+                                                            <td className="py-2 px-2">
+                                                                <span className={clsx(
+                                                                    "text-[10px] font-bold px-2 py-0.5 rounded-full",
+                                                                    h.verdict === 'p2p' ? "bg-emerald-500/20 text-emerald-400" :
+                                                                    h.verdict === 'mixed' ? "bg-amber-500/20 text-amber-400" :
+                                                                    h.verdict === 'relay' ? "bg-red-500/20 text-red-400" :
+                                                                    "bg-slate-500/20 text-slate-400"
+                                                                )}>
+                                                                    {h.verdict}
+                                                                </span>
+                                                            </td>
+                                                            <td className="py-2 px-2 text-right text-accent font-bold">{h.candidateIps.filter((c: CandidateIP) => c.isP2P).length}</td>
+                                                            <td className="py-2 px-2 text-right text-txt-dim">{h.totalPackets}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Empty state */}
+                                {!callAnalysis && callHistory.length === 0 && !callCapturing && (
+                                    <div className="bg-surface-overlay rounded-xl border border-surface-border p-8 text-center">
+                                        <Phone size={32} className="mx-auto text-txt-dim mb-3" />
+                                        <p className="text-sm text-txt-muted mb-2">Sin análisis de llamadas</p>
+                                        <p className="text-[11px] text-txt-dim max-w-md mx-auto">
+                                            Inicia una captura manual y luego haz la llamada desde WhatsApp en este equipo local.
+                                            La captura también se activa automáticamente cuando se detecta una llamada entrante/saliente.
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                     </div>
                 </div>
             </div>
@@ -1868,6 +2241,98 @@ function MetricCard({ label, value, unit, icon, color }: {
                 <span className="text-2xl font-bold text-txt-primary">{value}</span>
                 <span className="text-xs text-txt-dim">{unit}</span>
             </div>
+        </div>
+    );
+}
+
+function CallTrafficMap({ analysis }: { analysis: CallAnalysisResult }) {
+    const candidates = analysis.candidateIps;
+    const observedCandidates = candidates
+        .filter((candidate: CandidateIP) => candidate.isP2P)
+        .sort((a: CandidateIP, b: CandidateIP) => b.packets - a.packets)
+        .slice(0, 3);
+    const infrastructure = candidates
+        .filter((candidate: CandidateIP) => !candidate.isP2P && candidate.provider !== 'unknown')
+        .sort((a: CandidateIP, b: CandidateIP) => b.packets - a.packets)
+        .slice(0, 2);
+
+    const nodes = [
+        {
+            title: 'Este equipo',
+            subtitle: analysis?.captureInterface || 'interfaz local',
+            icon: <Monitor size={15} />,
+            tone: 'accent',
+        },
+        {
+            title: 'Red local / ISP',
+            subtitle: 'NAT + salida publica',
+            icon: <Wifi size={15} />,
+            tone: 'neutral',
+        },
+        {
+            title: 'WhatsApp / Meta',
+            subtitle: `${analysis?.metaIps?.length || 0} relays observados`,
+            icon: <Shield size={15} />,
+            tone: 'danger',
+        },
+        ...infrastructure.map((item: CandidateIP) => ({
+            title: item.provider || 'infraestructura',
+            subtitle: `${item.ip} · ${item.packets || 0} pkts`,
+            icon: <Globe size={15} />,
+            tone: 'warning',
+        })),
+        ...observedCandidates.map((item: CandidateIP) => ({
+            title: 'IP observada candidata',
+            subtitle: `${item.ip} · ${item.confidence || 'low'} · ${item.packets || 0} pkts`,
+            icon: <Target size={15} />,
+            tone: 'success',
+        })),
+        {
+            title: 'Contacto via WhatsApp',
+            subtitle: 'sin IP verificada',
+            icon: <Phone size={15} />,
+            tone: 'neutral',
+        },
+    ];
+
+    const toneClasses: Record<string, string> = {
+        accent: 'border-accent/40 bg-accent/10 text-accent',
+        success: 'border-success/40 bg-success/10 text-success',
+        warning: 'border-warning/40 bg-warning/10 text-warning',
+        danger: 'border-danger/40 bg-danger/10 text-danger',
+        neutral: 'border-surface-border bg-surface-hover text-txt-secondary',
+    };
+
+    return (
+        <div className="mb-4 bg-surface-hover rounded-lg border border-surface-border p-4">
+            <div className="flex items-center justify-between gap-3 mb-3">
+                <h6 className="text-[11px] font-semibold text-txt-muted uppercase tracking-wider">Mapa visual de ruta observada</h6>
+                <span className="text-[10px] text-txt-dim font-mono">{analysis?.verdict || 'unknown'}</span>
+            </div>
+
+            <div className="flex flex-col lg:flex-row lg:items-stretch gap-2">
+                {nodes.map((node, index) => (
+                    <React.Fragment key={`${node.title}-${index}`}>
+                        <div className={clsx(
+                            "min-w-0 flex-1 rounded-lg border px-3 py-3",
+                            toneClasses[node.tone]
+                        )}>
+                            <div className="flex items-center gap-2 mb-1">
+                                <div className="shrink-0">{node.icon}</div>
+                                <p className="text-[11px] font-bold uppercase tracking-wider truncate">{node.title}</p>
+                            </div>
+                            <p className="text-[10px] text-txt-dim font-mono truncate">{node.subtitle}</p>
+                        </div>
+                        {index < nodes.length - 1 && (
+                            <div className="hidden lg:flex items-center justify-center text-txt-dim px-0.5">→</div>
+                        )}
+                    </React.Fragment>
+                ))}
+            </div>
+
+            <p className="text-[10px] text-txt-dim mt-3">
+                Esta vista resume trafico observado en tu captura local. Las IPs candidatas no prueban identidad ni ubicacion exacta del contacto.
+            </p>
         </div>
     );
 }

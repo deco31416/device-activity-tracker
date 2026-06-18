@@ -1,0 +1,65 @@
+export interface CallGeoInfo {
+    country: string;
+    region: string;
+    city: string;
+    lat: number;
+    lon: number;
+    timezone: string;
+}
+
+export interface CandidateIP {
+    ip: string;
+    packets: number;
+    bytesTotal: number;
+    firstSeen: string;
+    lastSeen: string;
+    avgSize: number;
+    ports: number[];
+    direction: 'incoming' | 'outgoing' | 'bidirectional';
+    provider: 'meta' | 'google' | 'cloudflare' | 'unknown';
+    geo: CallGeoInfo | null;
+    confidence: 'high' | 'medium' | 'low';
+    isP2P: boolean;
+}
+
+export interface CallAnalysisResult {
+    callId: string;
+    targetJid: string;
+    startTime: string;
+    endTime: string | null;
+    durationSec: number;
+    isVideo: boolean;
+    totalPackets: number;
+    candidateIps: CandidateIP[];
+    metaIps: string[];
+    verdict: 'p2p' | 'relay' | 'mixed' | 'insufficient_data';
+    captureInterface: string;
+}
+
+export interface CallEvent {
+    callId: string;
+    from: string;
+    status: string;
+    isVideo: boolean;
+    date?: string | number;
+    offline?: boolean;
+    latencyMs?: number;
+}
+
+export interface CallCaptureStarted {
+    callId: string;
+    targetJid: string;
+}
+
+export interface AuditEvent {
+    _id?: string;
+    caseId: string;
+    operatorName: string;
+    authorizationNote: string;
+    action: string;
+    scope: 'network' | 'call' | 'contact' | 'report' | 'system';
+    targetJid?: string | null;
+    details?: Record<string, unknown>;
+    timestamp: string;
+    timestampUtc: string;
+}

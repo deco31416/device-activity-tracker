@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [Unreleased] — 2026-06-18
+
+### ✨ New Features
+- **Runtime split**: added `DEPLOYMENT_MODE` and `LOCAL_CAPTURE_ENABLED` to separate Railway dashboard mode from Local full mode.
+- **Runtime capabilities API**: added `/api/runtime-capabilities` so the frontend can enable or hide capture features based on backend mode.
+- **Call Traffic Analysis**: added local authorized call-capture flow, observed route map, relay/provider classification, candidate IP scoring, packet counters, and call history.
+- **Audit Trail**: added case-based audit events, required capture metadata (`caseId`, `operatorName`, `authorizationNote`), and frontend lookup by Case ID.
+- **Audit export**: added `/api/audit/:caseId/export` with SHA-256 hash for the exported JSON evidence payload.
+- **Dashboard token**: added optional `DASHBOARD_TOKEN` protection for REST API, Socket.IO, dashboard access, and authenticated download links.
+
+### 🔧 Changes
+- Railway mode now blocks local packet-capture endpoints and socket events instead of attempting capture inside the container.
+- Frontend hides `Network Monitor` and local call-capture panels when capture is unavailable.
+- Docker and Compose now persist WhatsApp auth data at `/app/auth_info_baileys`.
+- Call analysis persistence now upserts by `callId` to prevent duplicate records for the same call.
+- Packet-capture cleanup is safer when capture start/stop fails.
+- Private IP detection for `172.16.0.0/12` was corrected.
+- Documentation added for Railway deployment, local operation, and the project planner/audit workflow.
+
+### 🛡️ Safety & Compliance
+- Updated user-facing terminology to describe traffic as observed infrastructure, relays, and IP candidates.
+- Documented that candidate IPs do not prove identity, exact location, or ownership by a person.
+- Added ignore rules for packet captures and evidence/report exports.
+
+---
+
 ## [2.5.0] — 2026-03-14 · Current
 
 ### 🐛 Bug Fixes

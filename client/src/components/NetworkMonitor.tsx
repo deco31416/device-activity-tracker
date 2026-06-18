@@ -8,6 +8,7 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell, Legend
 } from 'recharts';
+import { API_URL, authFetch, authUrl } from '../auth';
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -56,8 +57,6 @@ interface CaptureFilter {
 
 // ── Constants ──────────────────────────────────────────────────
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
-
 const PROTOCOL_COLORS: Record<string, string> = {
     TCP: '#7c3aed',
     UDP: '#3b82f6',
@@ -87,13 +86,16 @@ export function NetworkMonitor() {
     const [showFilters, setShowFilters] = useState(false);
     const [autoScroll, setAutoScroll] = useState(true);
     const [activeTab, setActiveTab] = useState<'packets' | 'stats' | 'geo'>('packets');
+    const [caseId, setCaseId] = useState('');
+    const [operatorName, setOperatorName] = useState('');
+    const [authorizationNote, setAuthorizationNote] = useState('');
 
     const tableEndRef = useRef<HTMLDivElement | null>(null);
     const packetsRef = useRef<PacketMeta[]>([]);
 
     // Load interfaces on mount
     useEffect(() => {
-        fetch(`${API_URL}/api/network/interfaces`)
+        authFetch(`${API_URL}/api/network/interfaces`)
             .then(r => r.json())
             .then((data: NetworkInterface[]) => {
                 setInterfaces(data);
@@ -144,6 +146,7 @@ export function NetworkMonitor() {
 
     const handleStart = useCallback(() => {
         if (!selectedInterface) return;
+        if (!caseId.trim() || !operatorName.trim() || !authorizationNote.trim()) return;
         const captureFilter: CaptureFilter = {
             protocol: filterProtocol !== 'all' ? filterProtocol : undefined,
             port: filterPort ? parseInt(filterPort) : undefined,
@@ -151,15 +154,21 @@ export function NetworkMonitor() {
         };
         packetsRef.current = [];
         setPackets([]);
-        socket.emit('network-start', { interfaceAddr: selectedInterface, filter: captureFilter });
-    }, [selectedInterface, filterProtocol, filterPort, filterIp]);
+        socket.emit('network-start', {
+            interfaceAddr: selectedInterface,
+            filter: captureFilter,
+            caseId: caseId.trim(),
+            operatorName: operatorName.trim(),
+            authorizationNote: authorizationNote.trim(),
+        });
+    }, [selectedInterface, filterProtocol, filterPort, filterIp, caseId, operatorName, authorizationNote]);
 
     const handleStop = useCallback(() => {
         socket.emit('network-stop');
     }, []);
 
     const handleExport = useCallback((format: 'csv' | 'json') => {
-        window.open(`${API_URL}/api/network/export/${format}`, '_blank');
+        window.open(authUrl(`${API_URL}/api/network/export/${format}`), '_blank');
     }, []);
 
     // ── Protocol chart data ────────────────────────────────────
@@ -184,6 +193,32 @@ export function NetworkMonitor() {
 
     return (
         <div className="space-y-4">
+            <div className="card p-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <input
+                        value={caseId}
+                        onChange={e => setCaseId(e.target.value)}
+                        disabled={isCapturing}
+                        placeholder="Case ID"
+                        className="input-field"
+                    />
+                    <input
+                        value={operatorName}
+                        onChange={e => setOperatorName(e.target.value)}
+                        disabled={isCapturing}
+                        placeholder="Operador"
+                        className="input-field"
+                    />
+                    <input
+                        value={authorizationNote}
+                        onChange={e => setAuthorizationNote(e.target.value)}
+                        disabled={isCapturing}
+                        placeholder="Autorizacion / motivo"
+                        className="input-field"
+                    />
+                </div>
+            </div>
+
             {/* Control Bar */}
             <div className="card">
                 <div className="p-4 flex flex-wrap items-center gap-3">
@@ -205,7 +240,7 @@ export function NetworkMonitor() {
                     {!isCapturing ? (
                         <button
                             onClick={handleStart}
-                            disabled={!selectedInterface}
+                            disabled={!selectedInterface || !caseId.trim() || !operatorName.trim() || !authorizationNote.trim()}
                             className="px-4 py-2 bg-success hover:bg-success-hover text-white rounded-xl flex items-center gap-2 font-medium transition-colors text-sm disabled:opacity-40"
                         >
                             <Play size={16} /> Start Capture
