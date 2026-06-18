@@ -31,10 +31,30 @@ export function authFetch(input: RequestInfo | URL, init: RequestInit = {}) {
     });
 }
 
-export function authUrl(url: string): string {
-    const token = getDashboardToken();
-    if (!token) return url;
-    const parsed = new URL(url, window.location.href);
-    parsed.searchParams.set('auth', token);
-    return parsed.toString();
+export async function downloadAuthenticatedFile(url: string, fallbackFilename: string): Promise<void> {
+    const response = await authFetch(url);
+    if (!response.ok) {
+        throw new Error(`Download failed: HTTP ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const filename = getFilenameFromDisposition(response.headers.get('Content-Disposition')) || fallbackFilename;
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(objectUrl);
+}
+
+function getFilenameFromDisposition(disposition: string | null): string | null {
+    if (!disposition) return null;
+
+    const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match?.[1]) return decodeURIComponent(utf8Match[1].replace(/"/g, ''));
+
+    const plainMatch = disposition.match(/filename="?([^";]+)"?/i);
+    return plainMatch?.[1] || null;
 }

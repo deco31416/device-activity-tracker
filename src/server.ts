@@ -10,28 +10,125 @@
 import 'dotenv/config';
 import express from 'express';
 import { createServer } from 'http';
-import { createHash } from 'crypto';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import makeWASocket, { DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys';
 import { pino } from 'pino';
 import { Boom } from '@hapi/boom';
 import { WhatsAppTracker, ProbeMethod } from './tracker.js';
-import { connectDB, saveMeasurement, saveContact, removeContact, reactivateContact, getRecentMeasurements, getSavedContacts, getActiveContacts, getActivityHistory, getStateDistribution, updateContactProfile, updateCustomName, getContactProfile, getOnlinePatterns, generateReport, disconnectDB, saveCallAnalysis, getCallAnalyses, saveAuditEvent, getAuditEvents } from './db.js';
+import { connectDB, saveMeasurement, saveContact, removeContact, reactivateContact, getRecentMeasurements, getSavedContacts, getActiveContacts, getActivityHistory, getStateDistribution, updateContactProfile, updateCustomName, getContactProfile, getOnlinePatterns, generateReport, disconnectDB, saveCallAnalysis, getCallAnalyses, saveAuditEvent, getAuditEvents, createCase, getCase, updateCase, saveCaseEvidenceLink, getCaseEvidenceLinks } from './db.js';
 import { listInterfaces, startCapture, stopCapture, getCaptureStatus, getRecentPackets, updateFilter, exportJSON, exportCSV, CaptureFilter, PacketMeta } from './packet-capture.js';
 import { initAnalytics, getFullIntelligence, getDailyRoutine, getAvailabilityProfile, getSessionStats, getWeeklyHeatmap, getHabitProfile, getCorrelation } from './analytics.js';
 import { startCallCapture, stopCallCapture, getCallCaptureStatus, getCallAnalysisHistory, getLatestCallAnalysis, autoDetectInterface } from './call-analyzer.js';
+import { registerAuditRoutes } from './routes/audit.js';
+import { registerCaseRoutes } from './routes/cases.js';
+import { registerReportRoutes } from './routes/reports.js';
+import { CASE_STATUSES, cleanText, normalizeOptionalJid, parseLimit, socketValidationError, validateCaseId, validateJid, validateRequiredText, validationError } from './validation.js';
 
 // Configuration
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',')
     : ['http://localhost:3000', 'http://localhost:3001', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001'];
 
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const PORT = parseInt(process.env.PORT || process.env.BACKEND_PORT || '3001', 10);
 const DEPLOYMENT_MODE = process.env.DEPLOYMENT_MODE || (process.env.RAILWAY_ENVIRONMENT_NAME ? 'railway-dashboard' : 'local-full');
 const LOCAL_CAPTURE_ENABLED = process.env.LOCAL_CAPTURE_ENABLED
     ? process.env.LOCAL_CAPTURE_ENABLED === 'true'
     : DEPLOYMENT_MODE === 'local-full';
 const DASHBOARD_TOKEN = process.env.DASHBOARD_TOKEN || '';
+const ENABLE_SWAGGER = process.env.ENABLE_SWAGGER === 'true' && NODE_ENV !== 'production';
+
+const SERVICE_TAG = '[MONITORIZACION-DECO]';
+let dbAvailableForStartupAudit = false;
+let serverListeningForStartupAudit = false;
+let startupAuditRecorded = false;
+
+function bootLog(level: 'ok' | 'warn' | 'error' | 'info', message: string) {
+    const icon = {
+        ok: '🟢',
+        warn: '🟠',
+        error: '🔴',
+        info: '🔵',
+    }[level];
+    console.log(`${icon} ${SERVICE_TAG} ${message}`);
+}
+
+function isConfigured(value: string | undefined): boolean {
+    return typeof value === 'string' && value.trim().length > 0;
+}
+
+function logStartupBanner() {
+    bootLog('ok', 'Backend starting...');
+    bootLog('ok', 'Developed by Deco31416');
+}
+
+function logStartupConfiguration() {
+    bootLog('ok', `Environment: ${NODE_ENV}`);
+    bootLog('ok', `Port: ${PORT}`);
+    bootLog(isConfigured(process.env.MONGODB_URI) ? 'ok' : NODE_ENV === 'production' ? 'error' : 'warn',
+        isConfigured(process.env.MONGODB_URI)
+            ? 'MongoDB: configured'
+            : 'MONGODB_URI missing - persistence disabled');
+    bootLog(isConfigured(process.env.REDIS_URL) ? 'ok' : 'warn',
+        isConfigured(process.env.REDIS_URL)
+            ? 'Redis: configured'
+            : 'REDIS_URL missing - optional cache/rate-limit backend unavailable');
+    bootLog(isConfigured(process.env.GROQ_API_KEY) ? 'ok' : 'warn',
+        isConfigured(process.env.GROQ_API_KEY)
+            ? 'Groq: configured'
+            : 'GROQ_API_KEY missing - AI analysis integrations unavailable');
+    bootLog(isConfigured(process.env.RESEND_API_KEY) ? 'ok' : 'warn',
+        isConfigured(process.env.RESEND_API_KEY)
+            ? 'Resend: configured'
+            : 'RESEND_API_KEY missing - email notifications unavailable');
+    bootLog(ENABLE_SWAGGER ? 'warn' : 'ok',
+        ENABLE_SWAGGER ? 'Swagger: enabled at /docs' : 'Swagger: disabled');
+    bootLog('ok', `CORS origins loaded: ${ALLOWED_ORIGINS.length}`);
+    bootLog(DASHBOARD_TOKEN ? 'ok' : NODE_ENV === 'production' ? 'error' : 'warn',
+        DASHBOARD_TOKEN
+            ? 'Internal API guard: enabled'
+            : 'DASHBOARD_TOKEN missing - dashboard/API guard disabled');
+    bootLog('info', `Deployment mode: ${DEPLOYMENT_MODE}`);
+    bootLog(LOCAL_CAPTURE_ENABLED ? 'warn' : 'ok',
+        LOCAL_CAPTURE_ENABLED ? 'Local capture: enabled' : 'Local capture: disabled');
+}
+
+async function tryRecordStartupAudit() {
+    if (startupAuditRecorded || !serverListeningForStartupAudit) return;
+    startupAuditRecorded = true;
+
+    if (!dbAvailableForStartupAudit) {
+        bootLog('warn', 'Startup audit event skipped: MongoDB persistence unavailable');
+        return;
+    }
+
+    try {
+        await saveAuditEvent({
+            caseId: 'SYSTEM-STARTUP',
+            operatorName: 'system',
+            authorizationNote: 'Backend startup operational audit event',
+            action: 'backend_operational',
+            scope: 'system',
+            targetJid: null,
+            details: {
+                environment: NODE_ENV,
+                port: PORT,
+                deploymentMode: DEPLOYMENT_MODE,
+                localCapture: LOCAL_CAPTURE_ENABLED,
+                swaggerEnabled: ENABLE_SWAGGER,
+                corsOriginsLoaded: ALLOWED_ORIGINS.length,
+                dashboardGuardEnabled: !!DASHBOARD_TOKEN,
+                developedBy: 'Deco31416',
+            },
+        });
+        bootLog('ok', 'Startup audit event recorded: backend_operational');
+    } catch (err) {
+        bootLog('error', 'Startup audit event failed to record');
+    }
+}
+
+logStartupBanner();
 
 const app = express();
 app.use(cors({ origin: ALLOWED_ORIGINS }));
@@ -45,6 +142,259 @@ function extractAuthToken(req: express.Request): string {
 
 function isAuthorizedToken(token: string): boolean {
     return !DASHBOARD_TOKEN || token === DASHBOARD_TOKEN;
+}
+
+function buildOpenApiDocument() {
+    return {
+        openapi: '3.0.3',
+        info: {
+            title: 'Device Activity Tracker API',
+            version: '2.5.0',
+            description: 'Authorized activity monitoring, case management, audit trail, reports, and local capture API. Developed by Deco31416.',
+        },
+        servers: [{ url: `http://localhost:${PORT}` }],
+        tags: [
+            { name: 'Runtime' },
+            { name: 'Cases' },
+            { name: 'Audit' },
+            { name: 'Contacts' },
+            { name: 'Network' },
+            { name: 'Call Capture' },
+            { name: 'Reports' },
+            { name: 'Evidence' },
+        ],
+        components: {
+            securitySchemes: {
+                bearerAuth: {
+                    type: 'http',
+                    scheme: 'bearer',
+                },
+            },
+        },
+        security: DASHBOARD_TOKEN ? [{ bearerAuth: [] }] : [],
+        paths: {
+            '/api/runtime-capabilities': {
+                get: {
+                    tags: ['Runtime'],
+                    summary: 'Get runtime capabilities',
+                    security: [],
+                    responses: { '200': { description: 'Runtime capability document' } },
+                },
+            },
+            '/api/cases': {
+                get: {
+                    tags: ['Cases'],
+                    summary: 'List cases',
+                    parameters: [
+                        { name: 'limit', in: 'query', schema: { type: 'integer', default: 50 } },
+                        { name: 'status', in: 'query', schema: { type: 'string', enum: CASE_STATUSES } },
+                    ],
+                    responses: { '200': { description: 'Case list' } },
+                },
+                post: {
+                    tags: ['Cases'],
+                    summary: 'Create or update a case',
+                    requestBody: {
+                        required: true,
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    required: ['caseId', 'primaryOperator', 'authorizationNote'],
+                                    properties: {
+                                        caseId: { type: 'string' },
+                                        title: { type: 'string' },
+                                        description: { type: 'string', nullable: true },
+                                        status: { type: 'string', enum: CASE_STATUSES },
+                                        primaryOperator: { type: 'string' },
+                                        authorizationNote: { type: 'string' },
+                                        tags: { type: 'array', items: { type: 'string' } },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    responses: { '201': { description: 'Case created or updated' }, '400': { description: 'Missing required fields' } },
+                },
+            },
+            '/api/cases/{caseId}': {
+                get: {
+                    tags: ['Cases'],
+                    summary: 'Get a case',
+                    parameters: [{ name: 'caseId', in: 'path', required: true, schema: { type: 'string' } }],
+                    responses: { '200': { description: 'Case document' }, '404': { description: 'Case not found' } },
+                },
+                patch: {
+                    tags: ['Cases'],
+                    summary: 'Update a case',
+                    parameters: [{ name: 'caseId', in: 'path', required: true, schema: { type: 'string' } }],
+                    responses: { '200': { description: 'Updated case' }, '404': { description: 'Case not found' } },
+                },
+            },
+            '/api/cases/{caseId}/close': {
+                post: {
+                    tags: ['Cases'],
+                    summary: 'Close a case',
+                    parameters: [{ name: 'caseId', in: 'path', required: true, schema: { type: 'string' } }],
+                    responses: { '200': { description: 'Closed case' }, '404': { description: 'Case not found' } },
+                },
+            },
+            '/api/cases/{caseId}/evidence': {
+                get: {
+                    tags: ['Cases'],
+                    summary: 'List direct evidence links for a case',
+                    parameters: [{ name: 'caseId', in: 'path', required: true, schema: { type: 'string' } }],
+                    responses: { '200': { description: 'Case evidence links' } },
+                },
+            },
+            '/api/audit/{caseId}': {
+                get: {
+                    tags: ['Audit'],
+                    summary: 'List audit events for a case',
+                    parameters: [
+                        { name: 'caseId', in: 'path', required: true, schema: { type: 'string' } },
+                        { name: 'limit', in: 'query', schema: { type: 'integer', default: 100 } },
+                    ],
+                    responses: { '200': { description: 'Audit events' } },
+                },
+            },
+            '/api/audit/{caseId}/export': {
+                get: {
+                    tags: ['Audit'],
+                    summary: 'Export audit events with SHA-256 integrity hash',
+                    parameters: [{ name: 'caseId', in: 'path', required: true, schema: { type: 'string' } }],
+                    responses: { '200': { description: 'Audit JSON export' } },
+                },
+            },
+            '/api/contacts': {
+                get: {
+                    tags: ['Contacts'],
+                    summary: 'List active contacts',
+                    responses: { '200': { description: 'Contact list' } },
+                },
+            },
+            '/api/network/interfaces': {
+                get: {
+                    tags: ['Network'],
+                    summary: 'List local capture interfaces',
+                    responses: { '200': { description: 'Interfaces' }, '403': { description: 'Local capture disabled' } },
+                },
+            },
+            '/api/network/export/json': {
+                get: {
+                    tags: ['Network'],
+                    summary: 'Export captured packets as JSON',
+                    responses: { '200': { description: 'Packet JSON export' }, '403': { description: 'Local capture disabled' } },
+                },
+            },
+            '/api/network/export/csv': {
+                get: {
+                    tags: ['Network'],
+                    summary: 'Export captured packets as CSV',
+                    responses: { '200': { description: 'Packet CSV export' }, '403': { description: 'Local capture disabled' } },
+                },
+            },
+            '/api/call-capture/status': {
+                get: {
+                    tags: ['Call Capture'],
+                    summary: 'Get current call-capture status',
+                    responses: { '200': { description: 'Capture status' }, '403': { description: 'Local capture disabled' } },
+                },
+            },
+            '/api/call-capture/start': {
+                post: {
+                    tags: ['Call Capture'],
+                    summary: 'Start manual authorized call capture',
+                    responses: { '200': { description: 'Capture started' }, '409': { description: 'Case closed or archived' } },
+                },
+            },
+            '/api/call-capture/stop': {
+                post: {
+                    tags: ['Call Capture'],
+                    summary: 'Stop manual call capture',
+                    responses: { '200': { description: 'Call analysis result' } },
+                },
+            },
+            '/api/report/{jid}/download': {
+                get: {
+                    tags: ['Reports'],
+                    summary: 'Download full contact report',
+                    parameters: [{ name: 'jid', in: 'path', required: true, schema: { type: 'string' } }],
+                    responses: { '200': { description: 'Report file' } },
+                },
+            },
+            '/api/evidence/{caseId}/package': {
+                get: {
+                    tags: ['Evidence'],
+                    summary: 'Download JSON evidence package with manifest and SHA-256 hashes',
+                    parameters: [{ name: 'caseId', in: 'path', required: true, schema: { type: 'string' } }],
+                    responses: { '200': { description: 'Evidence package JSON' }, '404': { description: 'Case/evidence not found' } },
+                },
+            },
+            '/api/evidence/{caseId}/package.zip': {
+                get: {
+                    tags: ['Evidence'],
+                    summary: 'Download ZIP evidence package with separated JSON artifacts',
+                    parameters: [{ name: 'caseId', in: 'path', required: true, schema: { type: 'string' } }],
+                    responses: { '200': { description: 'Evidence package ZIP' }, '404': { description: 'Case/evidence not found' } },
+                },
+            },
+            '/api/reports/{caseId}/final': {
+                get: {
+                    tags: ['Reports'],
+                    summary: 'Download final case report as JSON',
+                    parameters: [{ name: 'caseId', in: 'path', required: true, schema: { type: 'string' } }],
+                    responses: { '200': { description: 'Final case report JSON' }, '404': { description: 'Case/evidence not found' } },
+                },
+            },
+            '/api/reports/{caseId}/final.html': {
+                get: {
+                    tags: ['Reports'],
+                    summary: 'Download final printable case report as HTML',
+                    parameters: [{ name: 'caseId', in: 'path', required: true, schema: { type: 'string' } }],
+                    responses: { '200': { description: 'Final case report HTML' }, '404': { description: 'Case/evidence not found' } },
+                },
+            },
+            '/api/reports/{caseId}/final.pdf': {
+                get: {
+                    tags: ['Reports'],
+                    summary: 'Download final case report as PDF',
+                    parameters: [{ name: 'caseId', in: 'path', required: true, schema: { type: 'string' } }],
+                    responses: { '200': { description: 'Final case report PDF' }, '404': { description: 'Case/evidence not found' } },
+                },
+            },
+        },
+    };
+}
+
+if (ENABLE_SWAGGER) {
+    app.get('/docs/openapi.json', (_req, res) => {
+        res.json(buildOpenApiDocument());
+    });
+
+    app.get('/docs', (_req, res) => {
+        res.type('html').send(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Device Activity Tracker API Docs</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>
+    window.ui = SwaggerUIBundle({
+      url: '/docs/openapi.json',
+      dom_id: '#swagger-ui',
+      deepLinking: true,
+      persistAuthorization: false
+    });
+  </script>
+</body>
+</html>`);
+    });
 }
 
 app.use('/api', (req, res, next) => {
@@ -99,7 +449,7 @@ interface CaptureAuditContext {
     authorizationNote: string;
 }
 
-let activeNetworkAuditContext: CaptureAuditContext | null = null;
+let activeNetworkAuditContext: (CaptureAuditContext & { captureSessionId: string }) | null = null;
 let activeCallAuditContext: (CaptureAuditContext & { targetJid: string; callId: string }) | null = null;
 
 function rejectCaptureUnavailable(res: express.Response): boolean {
@@ -112,16 +462,16 @@ function rejectCaptureUnavailable(res: express.Response): boolean {
 }
 
 function parseCaptureAuditContext(data: any): CaptureAuditContext | null {
-    const caseId = typeof data?.caseId === 'string' ? data.caseId.trim() : '';
-    const operatorName = typeof data?.operatorName === 'string' ? data.operatorName.trim() : '';
-    const authorizationNote = typeof data?.authorizationNote === 'string' ? data.authorizationNote.trim() : '';
+    const caseId = validateCaseId(data?.caseId);
+    const operatorName = validateRequiredText(data?.operatorName, 'operatorName', 120);
+    const authorizationNote = validateRequiredText(data?.authorizationNote, 'authorizationNote', 1000);
 
-    if (!caseId || !operatorName || !authorizationNote) return null;
+    if (!caseId.ok || !operatorName.ok || !authorizationNote.ok) return null;
 
     return {
-        caseId,
-        operatorName,
-        authorizationNote,
+        caseId: caseId.value!,
+        operatorName: operatorName.value!,
+        authorizationNote: authorizationNote.value!,
     };
 }
 
@@ -131,6 +481,42 @@ function getDefaultCaptureAuditContext(): CaptureAuditContext | null {
         operatorName: process.env.DEFAULT_OPERATOR_NAME,
         authorizationNote: process.env.DEFAULT_AUTHORIZATION_NOTE,
     });
+}
+
+async function checkCaseCanCapture(context: CaptureAuditContext): Promise<{ ok: true } | { ok: false; status: number; payload: Record<string, unknown> }> {
+    const existing = await getCase(context.caseId);
+    if (existing?.status === 'closed' || existing?.status === 'archived') {
+        return {
+            ok: false,
+            status: 409,
+            payload: {
+                error: `Case ${context.caseId} is ${existing.status}; capture is not allowed`,
+                caseId: context.caseId,
+                status: existing.status,
+            },
+        };
+    }
+
+    if (!existing) {
+        await createCase({
+            caseId: context.caseId,
+            title: context.caseId,
+            status: 'active',
+            primaryOperator: context.operatorName,
+            authorizationNote: context.authorizationNote,
+        });
+    } else if (existing.status === 'draft' || existing.status === 'authorized') {
+        await updateCase(context.caseId, { status: 'active' });
+    }
+
+    return { ok: true };
+}
+
+async function ensureCaseCanCapture(context: CaptureAuditContext, res: express.Response): Promise<boolean> {
+    const result = await checkCaseCanCapture(context);
+    if (result.ok) return true;
+    res.status(result.status).json(result.payload);
+    return false;
 }
 
 async function auditEvent(
@@ -146,6 +532,43 @@ async function auditEvent(
         scope,
         targetJid: targetJid || null,
         details,
+    });
+}
+
+async function getCaseExportContext(caseId: string, authorizationNote: string): Promise<CaptureAuditContext | null> {
+    const [caseRecord, auditEvents, evidenceLinks] = await Promise.all([
+        getCase(caseId),
+        getAuditEvents(caseId, 1),
+        getCaseEvidenceLinks(caseId),
+    ]);
+
+    if (!caseRecord && auditEvents.length === 0 && evidenceLinks.length === 0) return null;
+
+    return {
+        caseId,
+        operatorName: caseRecord?.primaryOperator || auditEvents[0]?.operatorName || 'system',
+        authorizationNote: caseRecord?.authorizationNote || auditEvents[0]?.authorizationNote || authorizationNote,
+    };
+}
+
+async function linkEvidenceToCase(
+    context: CaptureAuditContext,
+    type: 'contact' | 'network_capture' | 'call_analysis' | 'report' | 'evidence_package',
+    refId: string,
+    label: string,
+    metadata: Record<string, unknown> = {},
+    targetJid?: string | null
+) {
+    await saveCaseEvidenceLink({
+        caseId: context.caseId,
+        type,
+        refId,
+        label,
+        targetJid: targetJid || null,
+        metadata: {
+            operatorName: context.operatorName,
+            ...metadata,
+        },
     });
 }
 
@@ -343,9 +766,10 @@ async function connectToWhatsApp() {
 
 // Initialize DB, Analytics, and WhatsApp
 (async () => {
-    await connectDB();
+    dbAvailableForStartupAudit = await connectDB();
     await initAnalytics();
     connectToWhatsApp();
+    await tryRecordStartupAudit();
 })();
 
 /**
@@ -433,7 +857,7 @@ async function autoRestoreContacts() {
 // REST endpoint: get measurement history for a contact
 app.get('/api/history/:jid', async (req, res) => {
     const jid = req.params.jid;
-    const limit = parseInt(req.query.limit as string) || 200;
+    const limit = parseLimit(req.query.limit, 200, 1000);
     const history = await getRecentMeasurements(jid, limit);
     res.json(history);
 });
@@ -447,7 +871,7 @@ app.get('/api/contacts', async (_req, res) => {
 // REST endpoint: get activity history (state transitions)
 app.get('/api/activity/:jid', async (req, res) => {
     const jid = req.params.jid;
-    const limit = parseInt(req.query.limit as string) || 50;
+    const limit = parseLimit(req.query.limit, 50, 1000);
     const history = await getActivityHistory(jid, limit);
     res.json(history);
 });
@@ -595,7 +1019,7 @@ app.get('/api/report/:jid/download', async (req, res) => {
 
 app.get('/api/intel/:jid', async (req, res) => {
     try {
-        const days = parseInt(req.query.days as string) || 14;
+        const days = parseLimit(req.query.days, 14, 365);
         const intel = await getFullIntelligence(req.params.jid, days);
         res.json(intel);
     } catch (err) {
@@ -605,34 +1029,34 @@ app.get('/api/intel/:jid', async (req, res) => {
 });
 
 app.get('/api/intel/:jid/routine', async (req, res) => {
-    const days = parseInt(req.query.days as string) || 14;
+    const days = parseLimit(req.query.days, 14, 365);
     res.json(await getDailyRoutine(req.params.jid, days));
 });
 
 app.get('/api/intel/:jid/availability', async (req, res) => {
-    const days = parseInt(req.query.days as string) || 14;
+    const days = parseLimit(req.query.days, 14, 365);
     res.json(await getAvailabilityProfile(req.params.jid, days));
 });
 
 app.get('/api/intel/:jid/sessions', async (req, res) => {
-    const days = parseInt(req.query.days as string) || 14;
+    const days = parseLimit(req.query.days, 14, 365);
     res.json(await getSessionStats(req.params.jid, days));
 });
 
 app.get('/api/intel/:jid/heatmap', async (req, res) => {
-    const weeks = parseInt(req.query.weeks as string) || 4;
+    const weeks = parseLimit(req.query.weeks, 4, 52);
     res.json(await getWeeklyHeatmap(req.params.jid, weeks));
 });
 
 app.get('/api/intel/:jid/habits', async (req, res) => {
-    const days = parseInt(req.query.days as string) || 14;
+    const days = parseLimit(req.query.days, 14, 365);
     res.json(await getHabitProfile(req.params.jid, days));
 });
 
 app.get('/api/intel/correlation', async (req, res) => {
     const { jid1, jid2, days } = req.query;
     if (!jid1 || !jid2) return res.status(400).json({ error: 'jid1 and jid2 required' });
-    const d = parseInt(days as string) || 7;
+    const d = parseLimit(days, 7, 365);
     res.json(await getCorrelation(jid1 as string, jid2 as string, d));
 });
 
@@ -704,7 +1128,7 @@ app.get('/api/privacy-score/:jid', async (req, res) => {
 app.get('/api/anomalies/:jid', async (req, res) => {
     const jid = req.params.jid;
     try {
-        const days = parseInt(req.query.days as string) || 14;
+        const days = parseLimit(req.query.days, 14, 365);
         const [habits, sessions, availability] = await Promise.all([
             getHabitProfile(jid, days),
             getSessionStats(jid, days),
@@ -787,13 +1211,21 @@ app.get('/api/anomalies/:jid', async (req, res) => {
 
 app.put('/api/contact/:jid/custom-name', async (req, res) => {
     try {
-        const jid = req.params.jid;
+        const jidResult = validateJid(req.params.jid);
+        if (!jidResult.ok) {
+            validationError(res, jidResult.errors || []);
+            return;
+        }
         const { customName } = req.body || {};
-        const trimmed = typeof customName === 'string' ? customName.trim() || null : null;
-        console.log(`[CUSTOM NAME REST] ${jid} → "${trimmed}"`);
-        await updateCustomName(jid, trimmed);
-        io.emit('custom-name-updated', { jid, customName: trimmed });
-        res.json({ ok: true, jid, customName: trimmed });
+        if (customName !== null && customName !== undefined && typeof customName !== 'string') {
+            validationError(res, ['customName must be a string or null']);
+            return;
+        }
+        const trimmed = cleanText(customName, 120) || null;
+        console.log(`[CUSTOM NAME REST] ${jidResult.value!} → "${trimmed}"`);
+        await updateCustomName(jidResult.value!, trimmed);
+        io.emit('custom-name-updated', { jid: jidResult.value!, customName: trimmed });
+        res.json({ ok: true, jid: jidResult.value!, customName: trimmed });
     } catch (err) {
         console.error('[API] Error setting custom name:', err);
         res.status(500).json({ error: 'Failed to set custom name' });
@@ -812,6 +1244,8 @@ app.get('/api/runtime-capabilities', (_req, res) => {
     });
 });
 
+registerCaseRoutes(app);
+
 app.get('/api/network/interfaces', (_req, res) => {
     if (rejectCaptureUnavailable(res)) return;
     res.json(listInterfaces());
@@ -824,13 +1258,13 @@ app.get('/api/network/status', (_req, res) => {
 
 app.get('/api/network/packets', (req, res) => {
     if (rejectCaptureUnavailable(res)) return;
-    const limit = parseInt(req.query.limit as string) || 100;
+    const limit = parseLimit(req.query.limit, 100, 5000);
     res.json(getRecentPackets(limit));
 });
 
 app.get('/api/network/export/json', (req, res) => {
     if (rejectCaptureUnavailable(res)) return;
-    const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+    const limit = req.query.limit ? parseLimit(req.query.limit, 1000, 50000) : undefined;
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', `attachment; filename=packets-${Date.now()}.json`);
     res.send(exportJSON(limit));
@@ -838,7 +1272,7 @@ app.get('/api/network/export/json', (req, res) => {
 
 app.get('/api/network/export/csv', (req, res) => {
     if (rejectCaptureUnavailable(res)) return;
-    const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+    const limit = req.query.limit ? parseLimit(req.query.limit, 1000, 50000) : undefined;
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename=packets-${Date.now()}.csv`);
     res.send(exportCSV(limit));
@@ -865,7 +1299,7 @@ app.get('/api/call-analysis/:jid', async (req, res) => {
 
 app.get('/api/call-history/:jid', async (req, res) => {
     const jid = req.params.jid;
-    const limit = parseInt(req.query.limit as string) || 20;
+    const limit = parseLimit(req.query.limit, 20, 100);
     try {
         // Merge in-memory and MongoDB results
         const inMemory = getCallAnalysisHistory(jid);
@@ -889,50 +1323,14 @@ app.get('/api/call-history/:jid', async (req, res) => {
     }
 });
 
-app.get('/api/audit/:caseId', async (req, res) => {
-    const limit = parseInt(req.query.limit as string) || 100;
-    res.json(await getAuditEvents(req.params.caseId, limit));
+registerAuditRoutes(app, {
+    getCaseExportContext,
+    auditEvent,
 });
 
-app.get('/api/audit/:caseId/export', async (req, res) => {
-    const caseId = req.params.caseId;
-    const limit = parseInt(req.query.limit as string) || 1000;
-    const events = await getAuditEvents(caseId, limit);
-    const exportedAt = new Date();
-    const payload = {
-        caseId,
-        exportedAt: exportedAt.toISOString(),
-        eventCount: events.length,
-        events,
-    };
-    const payloadJson = JSON.stringify(payload, null, 2);
-    const sha256 = createHash('sha256').update(payloadJson).digest('hex');
-    const exportPackage = {
-        ...payload,
-        integrity: {
-            algorithm: 'SHA-256',
-            hash: sha256,
-            canonicalPayload: 'JSON.stringify(payload, null, 2) before adding integrity',
-        },
-    };
-
-    await saveAuditEvent({
-        caseId,
-        operatorName: 'system',
-        authorizationNote: 'Audit trail export',
-        action: 'audit_export',
-        scope: 'report',
-        targetJid: null,
-        details: {
-            eventCount: events.length,
-            sha256,
-            exportedAt: exportedAt.toISOString(),
-        },
-    });
-
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', `attachment; filename="audit-${caseId}-${exportedAt.toISOString().slice(0, 10)}.json"`);
-    res.send(JSON.stringify(exportPackage, null, 2));
+registerReportRoutes(app, {
+    getCaseExportContext,
+    auditEvent,
 });
 
 app.get('/api/call-capture/status', (_req, res) => {
@@ -947,25 +1345,38 @@ app.post('/api/call-capture/start', async (req, res) => {
         res.status(400).json({ error: 'caseId, operatorName, and authorizationNote are required' });
         return;
     }
+    if (!await ensureCaseCanCapture(auditContext, res)) return;
     const { interfaceAddr, targetJid, callId, isVideo } = req.body || {};
-    const iface = interfaceAddr || autoDetectInterface();
+    const targetResult = normalizeOptionalJid(targetJid, 'manual');
+    if (!targetResult.ok) {
+        validationError(res, targetResult.errors || []);
+        return;
+    }
+    const iface = cleanText(interfaceAddr, 200) || autoDetectInterface();
     if (!iface) {
         res.status(400).json({ error: 'No network interface available' });
         return;
     }
-    const cid = callId || `manual-${Date.now()}`;
-    const ok = startCallCapture(iface, targetJid || 'manual', cid, isVideo || false, (packet) => {
+    const cid = cleanText(callId, 120) || `manual-${Date.now()}`;
+    const target = targetResult.value!;
+    const ok = startCallCapture(iface, target, cid, isVideo || false, (packet) => {
         io.emit('call-packet', packet);
     });
     if (ok) {
-        activeCallAuditContext = { ...auditContext, targetJid: targetJid || 'manual', callId: cid };
+        activeCallAuditContext = { ...auditContext, targetJid: target, callId: cid };
+        await linkEvidenceToCase(auditContext, 'call_analysis', cid, `Call capture ${cid}`, {
+            interfaceAddr: iface,
+            isVideo: isVideo || false,
+            trigger: 'manual_rest',
+            status: 'started',
+        }, target);
         await auditEvent(auditContext, 'call_capture_start', 'call', {
             callId: cid,
             interfaceAddr: iface,
             isVideo: isVideo || false,
             trigger: 'manual_rest',
-        }, targetJid || 'manual');
-        io.emit('call-capture-started', { callId: cid, targetJid: targetJid || 'manual' });
+        }, target);
+        io.emit('call-capture-started', { callId: cid, targetJid: target });
         res.json({ ok: true, callId: cid });
     } else {
         res.status(500).json({ error: 'Failed to start capture. Already capturing or run as administrator.' });
@@ -979,6 +1390,14 @@ app.post('/api/call-capture/stop', async (_req, res) => {
         io.emit('call-analysis', result);
         await saveCallAnalysis(result);
         if (activeCallAuditContext) {
+            await linkEvidenceToCase(activeCallAuditContext, 'call_analysis', result.callId, `Call analysis ${result.callId}`, {
+                verdict: result.verdict,
+                totalPackets: result.totalPackets,
+                durationSec: result.durationSec,
+                candidateCount: result.candidateIps.filter(c => c.isP2P).length,
+                metaIpCount: result.metaIps.length,
+                status: 'completed',
+            }, result.targetJid);
             await auditEvent(activeCallAuditContext, 'call_capture_stop', 'call', {
                 callId: result.callId,
                 verdict: result.verdict,
@@ -1018,12 +1437,26 @@ io.on('connection', (socket) => {
     });
 
     // Add contact - WhatsApp only
-    socket.on('add-contact', async (data: string | { number: string; customName?: string }) => {
+    socket.on('add-contact', async (data: string | { number: string; customName?: string; caseId?: string; operatorName?: string; authorizationNote?: string }) => {
         const number = typeof data === 'string' ? data : data.number;
-        const customName = (typeof data === 'object' && data.customName?.trim()) ? data.customName.trim() : null;
+        const customName = typeof data === 'object' ? cleanText(data.customName, 120) || null : null;
+        const auditContext = typeof data === 'object' ? parseCaptureAuditContext(data) : null;
+        if (!auditContext) {
+            socketValidationError(socket, ['caseId, operatorName, and authorizationNote are required before tracking a contact']);
+            return;
+        }
+        const caseCheck = await checkCaseCanCapture(auditContext);
+        if (!caseCheck.ok) {
+            socket.emit('error', { status: caseCheck.status, ...caseCheck.payload });
+            return;
+        }
 
         console.log(`Request to track: ${number}${customName ? ` (alias: ${customName})` : ''}`);
         const cleanNumber = number.replace(/\D/g, '');
+        if (cleanNumber.length < 6 || cleanNumber.length > 20) {
+            socketValidationError(socket, ['number must contain 6-20 digits']);
+            return;
+        }
 
         const targetJid = cleanNumber + '@s.whatsapp.net';
 
@@ -1067,6 +1500,7 @@ io.on('connection', (socket) => {
                     number: cleanNumber,
                     customName: customName,
                     pushName: pushNameFromWA,
+                    caseId: auditContext.caseId,
                 });
 
                 io.emit('profile-pic', { jid: result.jid, url: ppUrl });
@@ -1074,6 +1508,19 @@ io.on('connection', (socket) => {
 
                 // Persist contact to MongoDB (with custom name)
                 saveContact(result.jid, cleanNumber, contactName, ppUrl, customName);
+                await linkEvidenceToCase(auditContext, 'contact', result.jid, `Contact ${displayName}`, {
+                    number: cleanNumber,
+                    displayName,
+                    customName,
+                    pushName: pushNameFromWA,
+                    status: 'tracking_started',
+                }, result.jid);
+                await auditEvent(auditContext, 'contact_tracking_start', 'contact', {
+                    number: cleanNumber,
+                    displayName,
+                    customName,
+                    pushName: pushNameFromWA,
+                }, result.jid);
 
                 // Fetch and persist enriched profile (about, business, etc.)
                 (async () => {
@@ -1158,6 +1605,12 @@ io.on('connection', (socket) => {
     });
 
     socket.on('remove-contact', (jid: string) => {
+        const jidResult = validateJid(jid);
+        if (!jidResult.ok) {
+            socketValidationError(socket, jidResult.errors || []);
+            return;
+        }
+        jid = jidResult.value!;
         console.log(`Request to stop tracking: ${jid}`);
         const entry = trackers.get(jid);
         if (entry) {
@@ -1171,15 +1624,26 @@ io.on('connection', (socket) => {
     // Set/update custom name (alias) for a contact
     socket.on('set-custom-name', async (data: { jid: string; customName: string | null }) => {
         const { jid, customName } = data;
-        const trimmed = customName?.trim() || null;
+        const jidResult = validateJid(jid);
+        if (!jidResult.ok) {
+            socketValidationError(socket, jidResult.errors || []);
+            return;
+        }
+        const trimmed = cleanText(customName, 120) || null;
         console.log(`[CUSTOM NAME] ${jid} → "${trimmed}"`);
-        await updateCustomName(jid, trimmed);
+        await updateCustomName(jidResult.value!, trimmed);
         // Broadcast to all clients so the name updates everywhere
-        io.emit('custom-name-updated', { jid, customName: trimmed });
+        io.emit('custom-name-updated', { jid: jidResult.value!, customName: trimmed });
     });
 
     // Re-activate a previously tracked contact from history
     socket.on('reactivate-contact', async (jid: string) => {
+        const jidResult = validateJid(jid);
+        if (!jidResult.ok) {
+            socketValidationError(socket, jidResult.errors || []);
+            return;
+        }
+        jid = jidResult.value!;
         console.log(`Request to reactivate: ${jid}`);
 
         if (trackers.has(jid)) {
@@ -1229,18 +1693,36 @@ io.on('connection', (socket) => {
         }
         const auditContext = parseCaptureAuditContext(data);
         if (!auditContext) {
-            socket.emit('error', { message: 'caseId, operatorName, and authorizationNote are required before capture' });
+            socketValidationError(socket, ['caseId, operatorName, and authorizationNote are required before capture']);
             return;
         }
-        console.log(`[NETWORK] Start capture on ${data.interfaceAddr}`);
-        const ok = startCapture(data.interfaceAddr, data.filter || {}, (packet: PacketMeta) => {
+        const caseCheck = await checkCaseCanCapture(auditContext);
+        if (!caseCheck.ok) {
+            socket.emit('error', { status: caseCheck.status, ...caseCheck.payload });
+            return;
+        }
+        const captureSessionId = `network-${Date.now()}`;
+        const interfaceAddr = cleanText(data.interfaceAddr, 200);
+        if (!interfaceAddr) {
+            socketValidationError(socket, ['interfaceAddr is required']);
+            return;
+        }
+        console.log(`[NETWORK] Start capture on ${interfaceAddr}`);
+        const ok = startCapture(interfaceAddr, data.filter || {}, (packet: PacketMeta) => {
             io.emit('network-packet', packet);
         });
         socket.emit('network-status', getCaptureStatus());
         if (ok) {
-            activeNetworkAuditContext = auditContext;
+            activeNetworkAuditContext = { ...auditContext, captureSessionId };
+            await linkEvidenceToCase(auditContext, 'network_capture', captureSessionId, `Network capture ${captureSessionId}`, {
+                interfaceAddr,
+                filter: data.filter || {},
+                trigger: 'socket',
+                status: 'started',
+            });
             await auditEvent(auditContext, 'capture_start', 'network', {
-                interfaceAddr: data.interfaceAddr,
+                captureSessionId,
+                interfaceAddr,
                 filter: data.filter || {},
                 trigger: 'socket',
             });
@@ -1259,7 +1741,13 @@ io.on('connection', (socket) => {
         const status = getCaptureStatus();
         socket.emit('network-status', status);
         if (activeNetworkAuditContext) {
+            await linkEvidenceToCase(activeNetworkAuditContext, 'network_capture', activeNetworkAuditContext.captureSessionId, `Network capture ${activeNetworkAuditContext.captureSessionId}`, {
+                stats: status.stats,
+                trigger: 'socket',
+                status: 'completed',
+            });
             await auditEvent(activeNetworkAuditContext, 'capture_stop', 'network', {
+                captureSessionId: activeNetworkAuditContext.captureSessionId,
                 stats: status.stats,
                 trigger: 'socket',
             });
@@ -1307,21 +1795,37 @@ io.on('connection', (socket) => {
         }
         const auditContext = parseCaptureAuditContext(data);
         if (!auditContext) {
-            socket.emit('error', { message: 'caseId, operatorName, and authorizationNote are required before call capture' });
+            socketValidationError(socket, ['caseId, operatorName, and authorizationNote are required before call capture']);
             return;
         }
-        const iface = data.interfaceAddr || autoDetectInterface();
+        const caseCheck = await checkCaseCanCapture(auditContext);
+        if (!caseCheck.ok) {
+            socket.emit('error', { status: caseCheck.status, ...caseCheck.payload });
+            return;
+        }
+        const targetResult = normalizeOptionalJid(data.targetJid, 'manual');
+        if (!targetResult.ok) {
+            socketValidationError(socket, targetResult.errors || []);
+            return;
+        }
+        const iface = cleanText(data.interfaceAddr, 200) || autoDetectInterface();
         if (!iface) {
             socket.emit('error', { message: 'No network interface available for capture' });
             return;
         }
-        const cid = data.callId || `manual-${Date.now()}`;
-        const jid = data.targetJid || 'manual';
+        const cid = cleanText(data.callId, 120) || `manual-${Date.now()}`;
+        const jid = targetResult.value!;
         const ok = startCallCapture(iface, jid, cid, data.isVideo || false, (packet) => {
             io.emit('call-packet', packet);
         });
         if (ok) {
             activeCallAuditContext = { ...auditContext, targetJid: jid, callId: cid };
+            await linkEvidenceToCase(auditContext, 'call_analysis', cid, `Call capture ${cid}`, {
+                interfaceAddr: iface,
+                isVideo: data.isVideo || false,
+                trigger: 'socket',
+                status: 'started',
+            }, jid);
             await auditEvent(auditContext, 'call_capture_start', 'call', {
                 callId: cid,
                 interfaceAddr: iface,
@@ -1345,6 +1849,14 @@ io.on('connection', (socket) => {
             io.emit('call-analysis', result);
             await saveCallAnalysis(result);
             if (activeCallAuditContext) {
+                await linkEvidenceToCase(activeCallAuditContext, 'call_analysis', result.callId, `Call analysis ${result.callId}`, {
+                    verdict: result.verdict,
+                    totalPackets: result.totalPackets,
+                    durationSec: result.durationSec,
+                    candidateCount: result.candidateIps.filter(c => c.isP2P).length,
+                    metaIpCount: result.metaIps.length,
+                    status: 'completed',
+                }, result.targetJid);
                 await auditEvent(activeCallAuditContext, 'call_capture_stop', 'call', {
                     callId: result.callId,
                     verdict: result.verdict,
@@ -1378,10 +1890,11 @@ io.on('connection', (socket) => {
     });
 });
 
-const PORT = parseInt(process.env.PORT || '3001', 10);
 httpServer.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log(`[RUNTIME] mode=${DEPLOYMENT_MODE} localCapture=${LOCAL_CAPTURE_ENABLED}`);
+    serverListeningForStartupAudit = true;
+    logStartupConfiguration();
+    bootLog('ok', 'Backend operational');
+    tryRecordStartupAudit();
 });
 
 // Graceful shutdown

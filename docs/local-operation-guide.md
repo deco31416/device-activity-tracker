@@ -31,6 +31,7 @@ Configurar `.env` para modo completo local:
 ```env
 DEPLOYMENT_MODE=local-full
 LOCAL_CAPTURE_ENABLED=true
+ENABLE_SWAGGER=true
 PORT=3001
 MONGODB_URI=mongodb+srv://...
 MONGODB_DB=activity-tracker
@@ -73,21 +74,29 @@ Abrir:
 http://localhost:3000
 ```
 
+Si `ENABLE_SWAGGER=true` y `NODE_ENV` no es `production`, la documentacion API queda disponible en:
+
+```text
+http://localhost:3001/docs
+```
+
 Si `DASHBOARD_TOKEN` esta activo, ingresar el token en la pantalla inicial.
 
 ## Flujo Operativo
 
 1. Iniciar backend y frontend.
-2. Conectar o validar la sesion WhatsApp.
-3. Definir `Case ID`, operador y nota de autorizacion antes de cualquier captura.
-4. Confirmar que el equipo/VM tiene permisos de captura.
-5. Seleccionar la interfaz de red correcta.
-6. Iniciar captura manual.
-7. Ejecutar la interaccion autorizada en WhatsApp Web desde la misma maquina.
-8. Detener captura.
-9. Revisar actividad, mapa de ruta observada, paquetes, relays e IPs candidatas.
-10. Consultar `Audit Trail` por `Case ID`.
-11. Exportar evidencia/auditoria cuando aplique.
+2. Crear o validar el caso en la vista `Cases`.
+3. Conectar o validar la sesion WhatsApp.
+4. Definir `Case ID`, operador y nota de autorizacion antes de agregar contactos o capturar.
+5. Confirmar que el caso no este cerrado ni archivado.
+6. Confirmar que el equipo/VM tiene permisos de captura.
+7. Seleccionar la interfaz de red correcta.
+8. Iniciar captura manual.
+9. Ejecutar la interaccion autorizada en WhatsApp Web desde la misma maquina.
+10. Detener captura.
+11. Revisar actividad, mapa de ruta observada, paquetes, relays e IPs candidatas.
+12. Consultar `Audit Trail` por `Case ID`.
+13. Exportar auditoria JSON o `Evidence Package` cuando aplique.
 
 ## Captura General
 
@@ -128,8 +137,11 @@ Eventos esperados:
 - inicio de captura de llamada
 - fin de captura de llamada
 - exportacion de auditoria
+- creacion, actualizacion o cierre de caso
 
 La exportacion de auditoria por caso incluye hash SHA-256 del paquete JSON generado.
+
+El `Evidence Package` incluye manifiesto, caso, enlaces directos de evidencia, eventos de auditoria, analisis de llamada vinculados por `callId`, resumen de red y hashes SHA-256 por seccion. Puede descargarse como JSON canonico o ZIP con archivos separados.
 
 ## Limitaciones Operativas
 
@@ -164,4 +176,3 @@ La exportacion de auditoria por caso incluye hash SHA-256 del paquete JSON gener
 
 - Verificar que `auth_info_baileys` persista.
 - En Docker/Railway, confirmar volumen montado en `/app/auth_info_baileys`.
-

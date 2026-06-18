@@ -4,7 +4,8 @@ import { Login } from './components/Login';
 import { Dashboard } from './components/Dashboard';
 import { NetworkMonitor } from './components/NetworkMonitor';
 import { AuditTrail } from './components/AuditTrail';
-import { Smartphone, Globe, Activity, ClipboardList } from 'lucide-react';
+import { Cases } from './components/Cases';
+import { Smartphone, Globe, Activity, ClipboardList, Briefcase } from 'lucide-react';
 import { API_URL, clearDashboardToken, getDashboardToken, setDashboardToken } from './auth';
 
 // Create socket with autoConnect disabled so we can add listeners before connecting
@@ -23,11 +24,11 @@ interface RuntimeCapabilities {
     authRequired?: boolean;
 }
 
-type AppTab = 'tracker' | 'network' | 'audit';
+type AppTab = 'cases' | 'tracker' | 'network' | 'audit';
 
 function App() {
     const [isConnected, setIsConnected] = useState(socket.connected);
-    const [activeTab, setActiveTab] = useState<AppTab>('tracker');
+    const [activeTab, setActiveTab] = useState<AppTab>('cases');
     const [capabilities, setCapabilities] = useState<RuntimeCapabilities | null>(null);
     const [authToken, setAuthToken] = useState(getDashboardToken());
     const [authInput, setAuthInput] = useState(getDashboardToken());
@@ -104,12 +105,14 @@ function App() {
     }, [activeTab, capabilities]);
 
     const tabs = [
+        { id: 'cases' as AppTab, label: 'Cases', icon: Briefcase },
         { id: 'tracker' as AppTab, label: 'WhatsApp Tracker', icon: Smartphone },
         ...(capabilities?.networkMonitor ? [{ id: 'network' as AppTab, label: 'Network Monitor', icon: Globe }] : []),
         { id: 'audit' as AppTab, label: 'Audit Trail', icon: ClipboardList },
     ];
 
     const pageTitle = {
+        cases: 'Cases',
         tracker: 'WhatsApp Tracker',
         network: 'Network Monitor',
         audit: 'Audit Trail',
@@ -234,6 +237,9 @@ function App() {
 
                 {/* Page content */}
                 <div className="p-6">
+                    {activeTab === 'cases' && (
+                        <Cases />
+                    )}
                     {activeTab === 'tracker' && (
                         <>
                             {!connectionState.whatsapp ? (

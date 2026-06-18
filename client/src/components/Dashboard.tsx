@@ -60,6 +60,9 @@ interface ContactInfo {
 export function Dashboard({ connectionState }: DashboardProps) {
     const [inputNumber, setInputNumber] = useState('');
     const [inputAlias, setInputAlias] = useState('');
+    const [caseId, setCaseId] = useState('');
+    const [operatorName, setOperatorName] = useState('');
+    const [authorizationNote, setAuthorizationNote] = useState('');
     const [contacts, setContacts] = useState<Map<string, ContactInfo>>(new Map());
     const [error, setError] = useState<string | null>(null);
     const [privacyMode, setPrivacyMode] = useState(false);
@@ -320,7 +323,18 @@ export function Dashboard({ connectionState }: DashboardProps) {
 
     const handleAdd = () => {
         if (!inputNumber) return;
-        socket.emit('add-contact', { number: inputNumber, customName: inputAlias || undefined });
+        if (!caseId.trim() || !operatorName.trim() || !authorizationNote.trim()) {
+            setError('Case ID, operador y autorizacion son requeridos antes de trackear');
+            setTimeout(() => setError(null), 3000);
+            return;
+        }
+        socket.emit('add-contact', {
+            number: inputNumber,
+            customName: inputAlias || undefined,
+            caseId: caseId.trim(),
+            operatorName: operatorName.trim(),
+            authorizationNote: authorizationNote.trim(),
+        });
     };
 
     const handleRemove = (jid: string) => {
@@ -411,6 +425,29 @@ export function Dashboard({ connectionState }: DashboardProps) {
                 </div>
 
                 {/* Input row */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                    <input
+                        type="text"
+                        placeholder="Case ID"
+                        className="input-field"
+                        value={caseId}
+                        onChange={(e) => setCaseId(e.target.value)}
+                    />
+                    <input
+                        type="text"
+                        placeholder="Operador"
+                        className="input-field"
+                        value={operatorName}
+                        onChange={(e) => setOperatorName(e.target.value)}
+                    />
+                    <input
+                        type="text"
+                        placeholder="Autorizacion / motivo"
+                        className="input-field"
+                        value={authorizationNote}
+                        onChange={(e) => setAuthorizationNote(e.target.value)}
+                    />
+                </div>
                 <div className="flex gap-3">
                     <input
                         type="text"
@@ -428,7 +465,11 @@ export function Dashboard({ connectionState }: DashboardProps) {
                         onChange={(e) => setInputAlias(e.target.value)}
                         onKeyPress={(e) => e.key === 'Enter' && handleAdd()}
                     />
-                    <button onClick={handleAdd} className="btn-primary flex items-center gap-2">
+                    <button
+                        onClick={handleAdd}
+                        disabled={!inputNumber.trim() || !caseId.trim() || !operatorName.trim() || !authorizationNote.trim()}
+                        className="btn-primary flex items-center gap-2 disabled:opacity-40"
+                    >
                         <Plus size={18} /> Add
                     </button>
                 </div>

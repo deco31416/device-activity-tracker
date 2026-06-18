@@ -30,6 +30,7 @@ NODE_ENV=production
 PORT=3001
 DEPLOYMENT_MODE=railway-dashboard
 LOCAL_CAPTURE_ENABLED=false
+ENABLE_SWAGGER=false
 MONGODB_URI=mongodb+srv://...
 MONGODB_DB=activity-tracker
 DASHBOARD_TOKEN=change-this-long-random-token
@@ -99,6 +100,7 @@ Networking:
 - [ ] Confirm direct request to protected endpoint without token returns `401`.
 - [ ] Confirm direct request to `/api/runtime-capabilities` works without token.
 - [ ] Confirm `Audit Trail` cannot load data without token.
+- [ ] Confirm `/docs` is not available in production.
 
 Protected endpoint example:
 

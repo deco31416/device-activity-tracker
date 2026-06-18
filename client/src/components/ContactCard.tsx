@@ -3,7 +3,7 @@ import { Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, 
 import { Square, Activity, Wifi, Smartphone, Monitor, Clock, Database, BarChart3, History, TrendingUp, User, Briefcase, Globe, Mail, MapPin, Sun, Moon, Zap, FileDown, FileText, Code, ChevronLeft, ChevronRight, Download, Pencil, Check, X, Brain, Target, CalendarDays, Timer, Coffee, Shield, Phone } from 'lucide-react';
 import clsx from 'clsx';
 import { socket } from '../App';
-import { API_URL, authFetch, authUrl } from '../auth';
+import { API_URL, authFetch, downloadAuthenticatedFile } from '../auth';
 import { CallAnalysisResult, CallCaptureStarted, CallEvent, CandidateIP } from '../types';
 
 interface TrackerData {
@@ -632,6 +632,17 @@ th{background:#f1f5f9;padding:8px;text-align:left;font-size:10px;text-transform:
         URL.revokeObjectURL(url);
     };
 
+    const downloadFullReport = useCallback(async () => {
+        try {
+            await downloadAuthenticatedFile(
+                `${API_URL}/api/report/${encodeURIComponent(jid)}/download`,
+                `report-${displayNumber}-${new Date().toISOString().slice(0, 10)}.json`
+            );
+        } catch (err) {
+            console.error('Report download failed:', err);
+        }
+    }, [jid, displayNumber]);
+
     return (
         <div className="card overflow-hidden">
             {/* Header */}
@@ -733,15 +744,14 @@ th{background:#f1f5f9;padding:8px;text-align:left;font-size:10px;text-transform:
                 </div>
 
                 <div className="flex items-center gap-2">
-                    <a
-                        href={authUrl(`${API_URL}/api/report/${encodeURIComponent(jid)}/download`)}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                    <button
+                        type="button"
+                        onClick={downloadFullReport}
                         className="btn-ghost flex items-center gap-1.5 !text-xs !py-1.5 !px-3"
                         title="Download full report"
                     >
                         <FileDown size={12} /> Report
-                    </a>
+                    </button>
                     <button onClick={onRemove} className="btn-danger flex items-center gap-1.5 !text-xs !py-1.5 !px-3">
                         <Square size={12} /> Stop
                     </button>
@@ -1059,15 +1069,14 @@ th{background:#f1f5f9;padding:8px;text-align:left;font-size:10px;text-transform:
                                         <button onClick={exportBitacoraPDF} className="btn-ghost !text-[10px] !py-1 !px-2 flex items-center gap-1" title="Imprimir / PDF">
                                             <FileDown size={10} /> PDF
                                         </button>
-                                        <a
-                                            href={authUrl(`${API_URL}/api/report/${encodeURIComponent(jid)}/download`)}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
+                                        <button
+                                            type="button"
+                                            onClick={downloadFullReport}
                                             className="btn-ghost !text-[10px] !py-1 !px-2 flex items-center gap-1"
                                             title="Reporte completo"
                                         >
                                             <Download size={10} /> Full
-                                        </a>
+                                        </button>
                                     </div>
                                 </div>
 
@@ -2062,51 +2071,93 @@ th{background:#f1f5f9;padding:8px;text-align:left;font-size:10px;text-transform:
                                             <div className="mb-4">
                                                 <h6 className="text-[11px] font-semibold text-success uppercase tracking-wider mb-2">🎯 IPs observadas candidatas</h6>
                                                 <div className="space-y-2">
-                                                    {callAnalysis.candidateIps.filter((c: CandidateIP) => c.isP2P).map((candidate: CandidateIP, idx: number) => (
-                                                        <div key={idx} className="bg-surface-hover rounded-lg p-3 border border-surface-border">
-                                                            <div className="flex items-center justify-between mb-2">
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="text-sm font-mono font-bold text-txt-primary">{candidate.ip}</span>
-                                                                    <span className={clsx(
-                                                                        "text-[10px] font-bold px-2 py-0.5 rounded-full",
-                                                                        candidate.confidence === 'high' ? "bg-emerald-500/20 text-emerald-400" :
-                                                                        candidate.confidence === 'medium' ? "bg-amber-500/20 text-amber-400" :
-                                                                        "bg-slate-500/20 text-slate-400"
-                                                                    )}>
-                                                                        {candidate.confidence === 'high' ? '🟢 Alta' :
-                                                                         candidate.confidence === 'medium' ? '🟡 Media' : '⚪ Baja'}
-                                                                    </span>
-                                                                    <span className="text-[10px] text-txt-dim">{candidate.direction === 'bidirectional' ? '↔️' : candidate.direction === 'incoming' ? '⬅️' : '➡️'} {candidate.direction}</span>
+                                                    {callAnalysis.candidateIps.filter((c: CandidateIP) => c.isP2P).map((candidate: CandidateIP, idx: number) => {
+                                                        const score = getCandidateScore(candidate);
+                                                        return (
+                                                            <div key={idx} className="bg-surface-hover rounded-lg p-3 border border-surface-border">
+                                                                <div className="flex flex-col gap-2 mb-2 sm:flex-row sm:items-start sm:justify-between">
+                                                                    <div className="min-w-0">
+                                                                        <div className="flex flex-wrap items-center gap-2">
+                                                                            <span className="text-sm font-mono font-bold text-txt-primary">{candidate.ip}</span>
+                                                                            <span className={clsx(
+                                                                                "text-[10px] font-bold px-2 py-0.5 rounded-full",
+                                                                                score >= 75 ? "bg-emerald-500/20 text-emerald-400" :
+                                                                                score >= 45 ? "bg-amber-500/20 text-amber-400" :
+                                                                                "bg-slate-500/20 text-slate-400"
+                                                                            )}>
+                                                                                Score {score}/100 · {formatCandidateConfidence(candidate)}
+                                                                            </span>
+                                                                            <span className="text-[10px] text-txt-dim">{candidate.direction === 'bidirectional' ? '↔️' : candidate.direction === 'incoming' ? '⬅️' : '➡️'} {candidate.direction}</span>
+                                                                        </div>
+                                                                        <p className="mt-1 text-[10px] text-txt-dim">
+                                                                            Categoria: <span className="font-mono text-txt-secondary">{formatNetworkCategory(candidate.networkCategory)}</span>
+                                                                        </p>
+                                                                        {candidate.networkIntelligence && (
+                                                                            <p className="mt-1 text-[10px] text-txt-dim">
+                                                                                ASN/ORG: <span className="font-mono text-txt-secondary">
+                                                                                    {candidate.networkIntelligence.asn ? `AS${candidate.networkIntelligence.asn} · ` : ''}
+                                                                                    {candidate.networkIntelligence.org}
+                                                                                </span>
+                                                                            </p>
+                                                                        )}
+                                                                    </div>
+                                                                    <span className="text-[10px] text-txt-muted font-mono">{candidate.packets} pkts</span>
                                                                 </div>
-                                                                <span className="text-[10px] text-txt-muted font-mono">{candidate.packets} pkts</span>
+
+                                                                {candidate.reasonCodes && candidate.reasonCodes.length > 0 && (
+                                                                    <div className="mb-2 flex flex-wrap gap-1.5">
+                                                                        {candidate.reasonCodes.slice(0, 4).map(reason => (
+                                                                            <span
+                                                                                key={reason.code}
+                                                                                className={clsx(
+                                                                                    "text-[10px] rounded px-2 py-0.5 border",
+                                                                                    reason.delta >= 0
+                                                                                        ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+                                                                                        : "border-amber-500/20 bg-amber-500/10 text-amber-300"
+                                                                                )}
+                                                                            >
+                                                                                {reason.delta >= 0 ? '+' : ''}{reason.delta} · {reason.label}
+                                                                            </span>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+
+                                                                {candidate.geo && (
+                                                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                                                                        <div>
+                                                                            <span className="text-txt-dim">🌍 País:</span>{' '}
+                                                                            <span className="text-txt-primary font-medium">{candidate.geo.country || '—'}</span>
+                                                                        </div>
+                                                                        <div>
+                                                                            <span className="text-txt-dim">🏙️ Ciudad:</span>{' '}
+                                                                            <span className="text-txt-primary font-medium">{candidate.geo.city || candidate.geo.region || '—'}</span>
+                                                                        </div>
+                                                                        <div>
+                                                                            <span className="text-txt-dim">📍 Coords:</span>{' '}
+                                                                            <span className="text-txt-primary font-mono text-[10px]">
+                                                                                {candidate.geo.lat?.toFixed(4)}, {candidate.geo.lon?.toFixed(4)}
+                                                                            </span>
+                                                                        </div>
+                                                                        <div>
+                                                                            <span className="text-txt-dim">🕐 TZ:</span>{' '}
+                                                                            <span className="text-txt-primary font-medium">{candidate.geo.timezone || '—'}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                                {!candidate.geo && (
+                                                                    <p className="text-[10px] text-txt-dim italic">Sin datos de geolocalización disponibles</p>
+                                                                )}
+                                                                <p className="mt-2 text-[10px] text-txt-dim">
+                                                                    {candidate.technicalNote || 'IP publica observada como candidata tecnica. No confirma identidad, ubicacion exacta ni titularidad.'}
+                                                                </p>
+                                                                {candidate.networkIntelligence?.caution && (
+                                                                    <p className="mt-1 text-[10px] text-amber-300/80">
+                                                                        {candidate.networkIntelligence.caution}
+                                                                    </p>
+                                                                )}
                                                             </div>
-                                                            {candidate.geo && (
-                                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
-                                                                    <div>
-                                                                        <span className="text-txt-dim">🌍 País:</span>{' '}
-                                                                        <span className="text-txt-primary font-medium">{candidate.geo.country || '—'}</span>
-                                                                    </div>
-                                                                    <div>
-                                                                        <span className="text-txt-dim">🏙️ Ciudad:</span>{' '}
-                                                                        <span className="text-txt-primary font-medium">{candidate.geo.city || candidate.geo.region || '—'}</span>
-                                                                    </div>
-                                                                    <div>
-                                                                        <span className="text-txt-dim">📍 Coords:</span>{' '}
-                                                                        <span className="text-txt-primary font-mono text-[10px]">
-                                                                            {candidate.geo.lat?.toFixed(4)}, {candidate.geo.lon?.toFixed(4)}
-                                                                        </span>
-                                                                    </div>
-                                                                    <div>
-                                                                        <span className="text-txt-dim">🕐 TZ:</span>{' '}
-                                                                        <span className="text-txt-primary font-medium">{candidate.geo.timezone || '—'}</span>
-                                                                    </div>
-                                                                </div>
-                                                            )}
-                                                            {!candidate.geo && (
-                                                                <p className="text-[10px] text-txt-dim italic">Sin datos de geolocalización disponibles</p>
-                                                            )}
-                                                        </div>
-                                                    ))}
+                                                        );
+                                                    })}
                                                 </div>
                                             </div>
                                         )}
@@ -2137,7 +2188,9 @@ th{background:#f1f5f9;padding:8px;text-align:left;font-size:10px;text-transform:
                                                     {callAnalysis.candidateIps.filter((c: CandidateIP) => !c.isP2P).map((c: CandidateIP, idx: number) => (
                                                         <div key={idx} className="flex items-center justify-between text-[10px]">
                                                             <span className="font-mono text-txt-dim">{c.ip}</span>
-                                                            <span className="text-txt-muted">{c.provider} · {c.packets} pkts</span>
+                                                            <span className="text-txt-muted">
+                                                                {c.networkIntelligence?.org || c.provider} · {formatNetworkCategory(c.networkCategory)} · score {getCandidateScore(c)}/100 · {c.packets} pkts
+                                                            </span>
                                                         </div>
                                                     ))}
                                                 </div>
@@ -2218,6 +2271,34 @@ th{background:#f1f5f9;padding:8px;text-align:left;font-size:10px;text-transform:
 
 /* ── Sub-components ─── */
 
+function getCandidateScore(candidate: CandidateIP): number {
+    if (typeof candidate.confidenceScore === 'number') {
+        return Math.max(0, Math.min(100, Math.round(candidate.confidenceScore)));
+    }
+    if (candidate.confidence === 'high') return 80;
+    if (candidate.confidence === 'medium') return 55;
+    return 25;
+}
+
+function formatCandidateConfidence(candidate: CandidateIP): string {
+    const score = getCandidateScore(candidate);
+    if (score >= 75) return 'Alta';
+    if (score >= 45) return 'Media';
+    return 'Baja';
+}
+
+function formatNetworkCategory(category?: CandidateIP['networkCategory']): string {
+    const labels: Record<NonNullable<CandidateIP['networkCategory']>, string> = {
+        meta: 'Meta/relay',
+        stun_turn: 'STUN/TURN probable',
+        cdn: 'CDN',
+        cloud_hosting: 'Cloud/hosting probable',
+        consumer_isp_or_unknown: 'ISP/unknown no verificado',
+        unknown_public: 'Publica desconocida',
+    };
+    return category ? labels[category] : 'Publica desconocida';
+}
+
 function MetricCard({ label, value, unit, icon, color }: {
     label: string;
     value: string;
@@ -2277,13 +2358,13 @@ function CallTrafficMap({ analysis }: { analysis: CallAnalysisResult }) {
         },
         ...infrastructure.map((item: CandidateIP) => ({
             title: item.provider || 'infraestructura',
-            subtitle: `${item.ip} · ${item.packets || 0} pkts`,
+            subtitle: `${item.ip} · ${formatNetworkCategory(item.networkCategory)} · ${item.packets || 0} pkts`,
             icon: <Globe size={15} />,
             tone: 'warning',
         })),
         ...observedCandidates.map((item: CandidateIP) => ({
             title: 'IP observada candidata',
-            subtitle: `${item.ip} · ${item.confidence || 'low'} · ${item.packets || 0} pkts`,
+            subtitle: `${item.ip} · score ${getCandidateScore(item)}/100 · ${item.packets || 0} pkts`,
             icon: <Target size={15} />,
             tone: 'success',
         })),

@@ -17,8 +17,24 @@ export interface CandidateIP {
     ports: number[];
     direction: 'incoming' | 'outgoing' | 'bidirectional';
     provider: 'meta' | 'google' | 'cloudflare' | 'unknown';
+    networkCategory?: 'meta' | 'stun_turn' | 'cdn' | 'cloud_hosting' | 'consumer_isp_or_unknown' | 'unknown_public';
+    networkIntelligence?: {
+        asn: number | null;
+        org: string;
+        category: 'meta' | 'stun_turn' | 'cdn' | 'cloud_hosting' | 'consumer_isp_or_unknown' | 'unknown';
+        source: 'local_rules';
+        isDatacenterLikely: boolean;
+        caution: string;
+    };
     geo: CallGeoInfo | null;
     confidence: 'high' | 'medium' | 'low';
+    confidenceScore?: number;
+    reasonCodes?: Array<{
+        code: string;
+        label: string;
+        delta: number;
+    }>;
+    technicalNote?: string;
     isP2P: boolean;
 }
 
@@ -62,4 +78,23 @@ export interface AuditEvent {
     details?: Record<string, unknown>;
     timestamp: string;
     timestampUtc: string;
+}
+
+export type CaseStatus = 'draft' | 'authorized' | 'active' | 'closed' | 'archived';
+
+export interface CaseRecord {
+    _id?: string;
+    caseId: string;
+    title: string;
+    description: string | null;
+    status: CaseStatus;
+    primaryOperator: string;
+    authorizationNote: string;
+    tags: string[];
+    createdAt: string;
+    updatedAt: string;
+    openedAt: string | null;
+    closedAt: string | null;
+    lastAuditAt: string | null;
+    lastAuditAction: string | null;
 }

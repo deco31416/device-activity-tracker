@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
-import { ClipboardList, Search, ShieldCheck, Clock, Database, Download } from 'lucide-react';
-import { API_URL, authFetch, authUrl } from '../auth';
+import { ClipboardList, Search, ShieldCheck, Clock, Database, Download, FileText } from 'lucide-react';
+import { API_URL, authFetch, downloadAuthenticatedFile } from '../auth';
 import { AuditEvent } from '../types';
 
 const SCOPE_STYLES: Record<string, string> = {
@@ -43,6 +43,78 @@ export function AuditTrail() {
         event.preventDefault();
         fetchAudit();
     };
+
+    const downloadAuditExport = useCallback(async () => {
+        if (!searchedCase) return;
+        try {
+            await downloadAuthenticatedFile(
+                `${API_URL}/api/audit/${encodeURIComponent(searchedCase)}/export?limit=1000`,
+                `audit-${searchedCase}.json`
+            );
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to download audit export');
+        }
+    }, [searchedCase]);
+
+    const downloadEvidencePackage = useCallback(async () => {
+        if (!searchedCase) return;
+        try {
+            await downloadAuthenticatedFile(
+                `${API_URL}/api/evidence/${encodeURIComponent(searchedCase)}/package`,
+                `evidence-${searchedCase}.json`
+            );
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to download evidence package');
+        }
+    }, [searchedCase]);
+
+    const downloadEvidenceZip = useCallback(async () => {
+        if (!searchedCase) return;
+        try {
+            await downloadAuthenticatedFile(
+                `${API_URL}/api/evidence/${encodeURIComponent(searchedCase)}/package.zip`,
+                `evidence-${searchedCase}.zip`
+            );
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to download evidence ZIP');
+        }
+    }, [searchedCase]);
+
+    const downloadFinalReportJson = useCallback(async () => {
+        if (!searchedCase) return;
+        try {
+            await downloadAuthenticatedFile(
+                `${API_URL}/api/reports/${encodeURIComponent(searchedCase)}/final`,
+                `final-report-${searchedCase}.json`
+            );
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to download final report JSON');
+        }
+    }, [searchedCase]);
+
+    const downloadFinalReportHtml = useCallback(async () => {
+        if (!searchedCase) return;
+        try {
+            await downloadAuthenticatedFile(
+                `${API_URL}/api/reports/${encodeURIComponent(searchedCase)}/final.html`,
+                `final-report-${searchedCase}.html`
+            );
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to download final report HTML');
+        }
+    }, [searchedCase]);
+
+    const downloadFinalReportPdf = useCallback(async () => {
+        if (!searchedCase) return;
+        try {
+            await downloadAuthenticatedFile(
+                `${API_URL}/api/reports/${encodeURIComponent(searchedCase)}/final.pdf`,
+                `final-report-${searchedCase}.pdf`
+            );
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to download final report PDF');
+        }
+    }, [searchedCase]);
 
     const firstEvent = events[events.length - 1];
     const lastEvent = events[0];
@@ -100,13 +172,56 @@ export function AuditTrail() {
                         <p className="text-sm font-semibold text-txt-primary">Exportacion con integridad</p>
                         <p className="text-xs text-txt-dim">Descarga JSON con hash SHA-256 y registra el evento de exportacion.</p>
                     </div>
-                    <a
-                        href={authUrl(`${API_URL}/api/audit/${encodeURIComponent(searchedCase)}/export?limit=1000`)}
-                        className="btn-primary flex items-center justify-center gap-2"
-                    >
-                        <Download size={16} />
-                        Descargar JSON
-                    </a>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                        <button
+                            type="button"
+                            onClick={downloadFinalReportPdf}
+                            className="btn-primary flex items-center justify-center gap-2"
+                        >
+                            <FileText size={16} />
+                            Final PDF
+                        </button>
+                        <button
+                            type="button"
+                            onClick={downloadFinalReportHtml}
+                            className="btn-primary flex items-center justify-center gap-2"
+                        >
+                            <FileText size={16} />
+                            Final HTML
+                        </button>
+                        <button
+                            type="button"
+                            onClick={downloadFinalReportJson}
+                            className="btn-ghost flex items-center justify-center gap-2"
+                        >
+                            <Download size={16} />
+                            Final JSON
+                        </button>
+                        <button
+                            type="button"
+                            onClick={downloadAuditExport}
+                            className="btn-ghost flex items-center justify-center gap-2"
+                        >
+                            <Download size={16} />
+                            Audit JSON
+                        </button>
+                        <button
+                            type="button"
+                            onClick={downloadEvidencePackage}
+                            className="btn-primary flex items-center justify-center gap-2"
+                        >
+                            <Download size={16} />
+                            Evidence Package
+                        </button>
+                        <button
+                            type="button"
+                            onClick={downloadEvidenceZip}
+                            className="btn-primary flex items-center justify-center gap-2"
+                        >
+                            <Download size={16} />
+                            Evidence ZIP
+                        </button>
+                    </div>
                 </div>
             )}
 

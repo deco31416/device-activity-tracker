@@ -69,6 +69,37 @@ export interface AuditEventDoc {
     timestampUtc: string;
 }
 
+export type CaseStatus = 'draft' | 'authorized' | 'active' | 'closed' | 'archived';
+
+export interface CaseDoc {
+    caseId: string;
+    title: string;
+    description: string | null;
+    status: CaseStatus;
+    primaryOperator: string;
+    authorizationNote: string;
+    tags: string[];
+    createdAt: Date;
+    updatedAt: Date;
+    openedAt: Date | null;
+    closedAt: Date | null;
+    lastAuditAt: Date | null;
+    lastAuditAction: string | null;
+}
+
+export type CaseEvidenceType = 'contact' | 'network_capture' | 'call_analysis' | 'report' | 'evidence_package';
+
+export interface CaseEvidenceLinkDoc {
+    caseId: string;
+    type: CaseEvidenceType;
+    refId: string;
+    label: string;
+    targetJid?: string | null;
+    metadata: Record<string, unknown>;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
 // Singleton
 let client: MongoClient | null = null;
 let db: Db | null = null;
@@ -78,6 +109,8 @@ let contacts: Collection<ContactDoc>;
 let sessions: Collection<SessionDoc>;
 let callAnalyses: Collection<CallAnalysisResult & { savedAt?: Date; updatedAt?: Date }>;
 let auditEvents: Collection<AuditEventDoc>;
+let caseRecords: Collection<CaseDoc>;
+let caseEvidenceLinks: Collection<CaseEvidenceLinkDoc>;
 
 const MONGO_URI = process.env.MONGODB_URI || '';
 const DB_NAME = process.env.MONGODB_DB || 'activity-tracker';
@@ -102,6 +135,8 @@ export async function connectDB(): Promise<boolean> {
         sessions = db.collection<SessionDoc>('sessions');
         callAnalyses = db.collection<CallAnalysisResult & { savedAt?: Date; updatedAt?: Date }>('call_analyses');
         auditEvents = db.collection<AuditEventDoc>('audit_events');
+        caseRecords = db.collection<CaseDoc>('cases');
+        caseEvidenceLinks = db.collection<CaseEvidenceLinkDoc>('case_evidence_links');
 
         // Create indexes for efficient queries
         await measurements.createIndex({ jid: 1, timestamp: -1 });
@@ -112,6 +147,10 @@ export async function connectDB(): Promise<boolean> {
         await callAnalyses.createIndex({ startTime: 1 }, { expireAfterSeconds: 90 * 24 * 3600 }); // TTL: 90 days
         await auditEvents.createIndex({ caseId: 1, timestamp: -1 });
         await auditEvents.createIndex({ scope: 1, action: 1, timestamp: -1 });
+        await caseRecords.createIndex({ caseId: 1 }, { unique: true });
+        await caseRecords.createIndex({ status: 1, updatedAt: -1 });
+        await caseEvidenceLinks.createIndex({ caseId: 1, type: 1, updatedAt: -1 });
+        await caseEvidenceLinks.createIndex({ caseId: 1, type: 1, refId: 1 }, { unique: true });
 
         console.log('[DB] Connected to MongoDB');
         return true;
@@ -672,10 +711,195 @@ export async function getCallAnalyses(jid: string, limit: number = 20): Promise<
 
 // ── Audit Log Persistence ─────────────────────────────────────
 
+export interface CaseInput {
+    caseId: string;
+    title?: string;
+    description?: string | null;
+    status?: CaseStatus;
+    primaryOperator: string;
+    authorizationNote: string;
+    tags?: string[];
+}
+
+export async function createCase(input: CaseInput): Promise<CaseDoc | null> {
+    if (!db) return null;
+    const now = new Date();
+    const caseId = input.caseId.trim();
+    if (!caseId) return null;
+
+    const doc: CaseDoc = {
+        caseId,
+        title: input.title?.trim() || caseId,
+        description: input.description?.trim() || null,
+        status: input.status || 'authorized',
+        primaryOperator: input.primaryOperator.trim(),
+        authorizationNote: input.authorizationNote.trim(),
+        tags: input.tags || [],
+        createdAt: now,
+        updatedAt: now,
+        openedAt: input.status === 'active' ? now : null,
+        closedAt: null,
+        lastAuditAt: null,
+        lastAuditAction: null,
+    };
+
+    try {
+        const existing = await caseRecords.findOne({ caseId });
+        if (!existing) {
+            await caseRecords.insertOne(doc);
+        } else {
+            await caseRecords.updateOne(
+                { caseId },
+                {
+                    $set: {
+                        title: doc.title,
+                        description: doc.description,
+                        primaryOperator: doc.primaryOperator,
+                        authorizationNote: doc.authorizationNote,
+                        tags: doc.tags,
+                        updatedAt: now,
+                    },
+                }
+            );
+        }
+        return await getCase(caseId);
+    } catch (err) {
+        console.error('[DB] Error creating case:', err);
+        return null;
+    }
+}
+
+export async function getCase(caseId: string): Promise<CaseDoc | null> {
+    if (!db) return null;
+    try {
+        return await caseRecords.findOne({ caseId });
+    } catch (err) {
+        console.error('[DB] Error fetching case:', err);
+        return null;
+    }
+}
+
+export async function listCases(limit: number = 50, status?: CaseStatus): Promise<CaseDoc[]> {
+    if (!db) return [];
+    try {
+        const query = status ? { status } : {};
+        return await caseRecords
+            .find(query)
+            .sort({ updatedAt: -1 })
+            .limit(limit)
+            .toArray();
+    } catch (err) {
+        console.error('[DB] Error listing cases:', err);
+        return [];
+    }
+}
+
+export async function getCallAnalysesByCallIds(callIds: string[]): Promise<CallAnalysisResult[]> {
+    if (!db || callIds.length === 0) return [];
+    try {
+        return await callAnalyses
+            .find({ callId: { $in: Array.from(new Set(callIds)) } })
+            .sort({ startTime: -1 })
+            .toArray();
+    } catch (err) {
+        console.error('[DB] Error fetching call analyses by callId:', err);
+        return [];
+    }
+}
+
+export async function updateCase(caseId: string, patch: Partial<Pick<CaseDoc, 'title' | 'description' | 'status' | 'primaryOperator' | 'authorizationNote' | 'tags'>>): Promise<CaseDoc | null> {
+    if (!db) return null;
+    const update: Partial<CaseDoc> = { updatedAt: new Date() };
+    if (patch.title !== undefined) update.title = patch.title.trim();
+    if (patch.description !== undefined) update.description = patch.description?.trim() || null;
+    if (patch.status !== undefined) update.status = patch.status;
+    if (patch.primaryOperator !== undefined) update.primaryOperator = patch.primaryOperator.trim();
+    if (patch.authorizationNote !== undefined) update.authorizationNote = patch.authorizationNote.trim();
+    if (patch.tags !== undefined) update.tags = patch.tags;
+
+    if (patch.status === 'active') update.openedAt = new Date();
+    if (patch.status === 'closed') update.closedAt = new Date();
+
+    try {
+        await caseRecords.updateOne({ caseId }, { $set: update });
+        return await getCase(caseId);
+    } catch (err) {
+        console.error('[DB] Error updating case:', err);
+        return null;
+    }
+}
+
+export async function closeCase(caseId: string): Promise<CaseDoc | null> {
+    return updateCase(caseId, { status: 'closed' });
+}
+
+export async function saveCaseEvidenceLink(link: Omit<CaseEvidenceLinkDoc, 'createdAt' | 'updatedAt'>): Promise<void> {
+    if (!db) return;
+    const now = new Date();
+    try {
+        await caseEvidenceLinks.updateOne(
+            { caseId: link.caseId, type: link.type, refId: link.refId },
+            {
+                $set: {
+                    label: link.label,
+                    targetJid: link.targetJid || null,
+                    metadata: link.metadata,
+                    updatedAt: now,
+                },
+                $setOnInsert: {
+                    caseId: link.caseId,
+                    type: link.type,
+                    refId: link.refId,
+                    createdAt: now,
+                },
+            },
+            { upsert: true }
+        );
+    } catch (err) {
+        console.error('[DB] Error saving case evidence link:', err);
+    }
+}
+
+export async function getCaseEvidenceLinks(caseId: string): Promise<CaseEvidenceLinkDoc[]> {
+    if (!db) return [];
+    try {
+        return await caseEvidenceLinks
+            .find({ caseId })
+            .sort({ updatedAt: -1 })
+            .toArray();
+    } catch (err) {
+        console.error('[DB] Error fetching case evidence links:', err);
+        return [];
+    }
+}
+
 export async function saveAuditEvent(event: Omit<AuditEventDoc, 'timestamp' | 'timestampUtc'>): Promise<void> {
     if (!db) return;
     try {
         const timestamp = new Date();
+        await caseRecords.updateOne(
+            { caseId: event.caseId },
+            {
+                $setOnInsert: {
+                    caseId: event.caseId,
+                    title: event.caseId,
+                    description: null,
+                    status: event.scope === 'system' ? 'authorized' : 'active',
+                    primaryOperator: event.operatorName,
+                    authorizationNote: event.authorizationNote,
+                    tags: [],
+                    createdAt: timestamp,
+                    openedAt: event.scope === 'system' ? null : timestamp,
+                    closedAt: null,
+                },
+                $set: {
+                    updatedAt: timestamp,
+                    lastAuditAt: timestamp,
+                    lastAuditAction: event.action,
+                },
+            },
+            { upsert: true }
+        );
         await auditEvents.insertOne({
             ...event,
             timestamp,

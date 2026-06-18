@@ -8,7 +8,7 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell, Legend
 } from 'recharts';
-import { API_URL, authFetch, authUrl } from '../auth';
+import { API_URL, authFetch, downloadAuthenticatedFile } from '../auth';
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -167,8 +167,15 @@ export function NetworkMonitor() {
         socket.emit('network-stop');
     }, []);
 
-    const handleExport = useCallback((format: 'csv' | 'json') => {
-        window.open(authUrl(`${API_URL}/api/network/export/${format}`), '_blank');
+    const handleExport = useCallback(async (format: 'csv' | 'json') => {
+        try {
+            await downloadAuthenticatedFile(
+                `${API_URL}/api/network/export/${format}`,
+                `network-packets.${format}`
+            );
+        } catch (err) {
+            console.error('Export failed:', err);
+        }
     }, []);
 
     // ── Protocol chart data ────────────────────────────────────

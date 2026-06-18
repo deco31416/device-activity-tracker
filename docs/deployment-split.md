@@ -19,6 +19,7 @@ Recommended backend variables:
 DEPLOYMENT_MODE=railway-dashboard
 LOCAL_CAPTURE_ENABLED=false
 NODE_ENV=production
+ENABLE_SWAGGER=false
 PORT=3001
 MONGODB_URI=mongodb+srv://...
 MONGODB_DB=activity-tracker
@@ -56,6 +57,7 @@ Recommended local variables:
 ```env
 DEPLOYMENT_MODE=local-full
 LOCAL_CAPTURE_ENABLED=true
+ENABLE_SWAGGER=true
 PORT=3001
 MONGODB_URI=mongodb+srv://...
 MONGODB_DB=activity-tracker
@@ -68,6 +70,8 @@ Run the backend locally with administrator/root permissions when packet capture 
 The call traffic analyzer reports observed IPs, relays, providers, ports, packet counts, direction, and geolocation hints. Treat non-infrastructure IPs as candidates only; WhatsApp/WebRTC may use relays, and the analysis should not claim that an observed IP identifies a person.
 
 Use `docs/local-operation-guide.md` for the local operating procedure, capture prerequisites, audit metadata, troubleshooting, and known limitations.
+
+Swagger/OpenAPI documentation is available at `/docs` only when `ENABLE_SWAGGER=true` and `NODE_ENV` is not `production`.
 
 ## Audit exports
 

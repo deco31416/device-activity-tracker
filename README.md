@@ -35,7 +35,9 @@ Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to M
 | **💾 Contact History** | Persistent contacts across restarts with auto-restore and one-click re-tracking |
 | **🌐 Network Monitor** | Real-time packet capture with protocol analysis, IP geolocation, and data export |
 | **📞 Call Traffic Analysis** | Local authorized packet capture during WhatsApp Web calls with route visualization and candidate IP classification |
-| **🧾 Audit Trail** | Case-based capture metadata, event log, and SHA-256 hashed audit export |
+| **🗂️ Case Management** | Formal case records with status, operator, authorization note, audit linkage, and closure controls |
+| **🧾 Audit Trail** | Case-based capture metadata, event log, SHA-256 hashed audit export, and evidence package export |
+| **📑 Final Case Report** | Case-level JSON/HTML report with executive summary, candidate IP scoring, timeline, hashes, and limitations |
 | **🚆 Railway Dashboard Mode** | Remote dashboard/statistics mode with local capture disabled for safe cloud deployment |
 
 ---
@@ -133,6 +135,7 @@ Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to M
 - 📞 Manual authorized capture window during WhatsApp Web calls or interactions
 - 🗺️ Visual route map: local host → local network/ISP → WhatsApp/Meta infrastructure → relays/cloud → candidate IPs
 - 🧭 Provider classification for Meta/WhatsApp, Google, Cloudflare, private ranges, and unknown public IPs
+- 🧮 Candidate IP scoring 0-100 with explainable reason codes and technical limitations
 - 📊 Packet counters, ports, directions, geolocation hints, and historical call analysis
 - ⚠️ Candidate IP language by design: observed IPs are not treated as verified person identity
 
@@ -142,6 +145,8 @@ Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to M
 - 🔎 Audit Trail tab to search events by Case ID
 - 📤 JSON audit export via `/api/audit/:caseId/export`
 - 🔐 SHA-256 hash included with audit export payload
+- 📑 Final case report export via `/api/reports/:caseId/final` and `/api/reports/:caseId/final.html`
+- 🖨️ Native PDF export via `/api/reports/:caseId/final.pdf`
 
 ### Runtime Modes
 - 🚆 `railway-dashboard`: dashboard, contacts, reports, activity, audit lookup, and WhatsApp session persistence without local packet capture
@@ -223,6 +228,9 @@ LOCAL_CAPTURE_ENABLED=true                  # false in Railway dashboard mode
 # Optional auth for public dashboards
 DASHBOARD_TOKEN=change-this-long-random-token
 
+# API docs. Served only when true and NODE_ENV is not production.
+ENABLE_SWAGGER=false
+
 # Optional automatic call-capture defaults
 DEFAULT_CASE_ID=CASO-2026-001
 DEFAULT_OPERATOR_NAME=Operator name
@@ -230,6 +238,30 @@ DEFAULT_AUTHORIZATION_NOTE=Authorization reference
 ```
 
 For Railway, use `DEPLOYMENT_MODE=railway-dashboard` and `LOCAL_CAPTURE_ENABLED=false`.
+
+### Swagger / OpenAPI
+
+Swagger UI is available only when:
+
+```env
+ENABLE_SWAGGER=true
+NODE_ENV!=production
+```
+
+Local route:
+
+```txt
+http://localhost:3001/docs
+```
+
+In production, `/docs` is not registered.
+
+Startup logs validate operational configuration without printing secrets:
+
+- `🟢` OK / operational
+- `🟠` warning / degraded
+- `🔴` critical
+- `🔵` info / process
 
 ---
 
@@ -318,6 +350,22 @@ See [docs/railway-checklist.md](docs/railway-checklist.md) for the full deployme
 | `GET` | `/api/runtime-capabilities` | Public runtime capability check for dashboard/local mode |
 | `GET` | `/api/audit/:caseId` | Audit events for a Case ID |
 | `GET` | `/api/audit/:caseId/export` | Export audit JSON with SHA-256 hash |
+| `GET` | `/api/evidence/:caseId/package` | Export JSON evidence package with manifest and SHA-256 hashes |
+| `GET` | `/api/evidence/:caseId/package.zip` | Export ZIP evidence package with separated JSON artifacts |
+| `GET` | `/api/reports/:caseId/final` | Export final case report JSON |
+| `GET` | `/api/reports/:caseId/final.html` | Export final case report HTML |
+| `GET` | `/api/reports/:caseId/final.pdf` | Export final case report PDF |
+
+### Case Management
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/cases` | List cases, optionally filtered by status |
+| `POST` | `/api/cases` | Create or update a formal case record |
+| `GET` | `/api/cases/:caseId` | Get one case |
+| `PATCH` | `/api/cases/:caseId` | Update case metadata/status |
+| `POST` | `/api/cases/:caseId/close` | Close a case and register audit event |
+| `GET` | `/api/cases/:caseId/evidence` | List direct evidence links for a case |
 
 ### WhatsApp Tracker
 
@@ -503,6 +551,27 @@ Manual capture flows require:
 
 Audit events are saved in MongoDB and can be reviewed from the `Audit Trail` tab. Audit export returns a JSON payload plus SHA-256 hash so the exported package can be referenced later.
 
+### Evidence Package
+
+The first evidence package format is JSON and includes:
+
+- manifest with software version, generated timestamp, case ID, and limitations
+- case record
+- direct evidence links
+- audit events
+- call analyses linked by audited `callId`
+- network summary from capture audit events
+- SHA-256 hash per section
+- SHA-256 package hash
+
+Endpoint:
+
+```txt
+GET /api/evidence/:caseId/package
+```
+
+ZIP export is also available with separated JSON artifacts: `manifest.json`, `case.json`, `audit.json`, `evidence-links.json`, `call-analysis.json`, `network-summary.json`, `integrity.json`, and `full-package.json`. Contacts, network captures, call analyses, and generated evidence packages are linked directly to the case through `case_evidence_links`.
+
 ### Deployment Split
 
 The project intentionally separates cloud dashboard features from local packet capture:
@@ -511,6 +580,20 @@ The project intentionally separates cloud dashboard features from local packet c
 - **Local full mode**: full capture stack, Network Monitor, call traffic analysis, and route visualization.
 
 Railway containers cannot see your local network adapter, so packet capture belongs on the local machine, VM, or authorized lab host where the traffic is generated.
+
+### Case Management
+
+Cases are formal records used to group capture metadata, audit events, contact observations, and future evidence packages.
+
+Supported states:
+
+- `draft`
+- `authorized`
+- `active`
+- `closed`
+- `archived`
+
+Manual capture flows can automatically create or activate a case from `caseId`, `operatorName`, and `authorizationNote`. Captures are rejected when the case is `closed` or `archived`.
 
 ---
 

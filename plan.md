@@ -99,6 +99,121 @@ Pendiente:
 
 ## Roadmap
 
+### Epica 0 - Producto Profesional y Alcance
+
+- [x] Definir separacion conceptual entre dashboard remoto y captura local.
+- [x] Definir lenguaje tecnico: trafico observado, relays, infraestructura e IPs candidatas.
+- [x] Documentar que una IP candidata no prueba identidad ni ubicacion exacta.
+- [ ] Congelar alcance v1 profesional antes de QA manual.
+- [ ] Definir roles: admin, operador, auditor, solo lectura.
+- [ ] Definir matriz de permisos por rol.
+- [ ] Definir politica de retencion de evidencia y auditoria.
+- [ ] Definir plantilla oficial de informe final.
+
+### Epica 9 - Case Management Profesional
+
+- [x] Crear modelo `Case`.
+- [x] Crear coleccion MongoDB `cases`.
+- [x] Crear endpoints:
+  - `POST /api/cases`
+  - `GET /api/cases`
+  - `GET /api/cases/:caseId`
+  - `PATCH /api/cases/:caseId`
+  - `POST /api/cases/:caseId/close`
+- [x] Crear vista frontend de casos.
+- [x] Asociar contactos observados a un caso.
+- [x] Asociar capturas de red a un caso.
+- [x] Asociar analisis de llamada a un caso.
+- [x] Validar que no se capture contra un caso cerrado.
+- [x] Registrar cambios de estado del caso en auditoria.
+
+### Epica 10 - Evidence Package
+
+- [x] Exportacion inicial de auditoria por `caseId` con SHA-256.
+- [x] Crear entidad `EvidencePackage` v1 en JSON canonico.
+- [x] Crear manifiesto con version del software, caso, timestamps, limitaciones y hashes.
+- [x] Incluir auditoria.
+- [x] Incluir enlaces directos de evidencia del caso.
+- [x] Incluir analisis de llamada vinculados por `callId`.
+- [x] Incluir resumen de red.
+- [x] Incluir reporte final `HTML`.
+- [x] Incluir reporte `PDF` nativo.
+- [x] Incluir export tecnico `JSON`.
+- [x] Crear ZIP final con hashes por archivo.
+- [x] Registrar evento `evidence_package_export`.
+- [x] Registrar evento `evidence_package_zip_export`.
+- [x] Registrar eventos `*_export_requested` antes de construir archivos exportados.
+- [x] Mostrar Evidence Package en UI.
+
+### Epica 11 - Scoring Tecnico de IP Candidata
+
+- [x] Clasificacion inicial de Meta/Google/Cloudflare/unknown.
+- [x] Confianza inicial `high/medium/low`.
+- [x] Convertir confianza a score numerico 0-100.
+- [x] Agregar `reasonCodes` explicables.
+- [ ] Agregar ASN/ORG lookup.
+- [x] Agregar categoria de red inicial: Meta/relay, STUN/TURN probable, CDN, publica desconocida.
+- [ ] Ampliar categoria de red: cloud, hosting, ISP, VPN/proxy.
+- [ ] Correlacionar candidato con ventana exacta de llamada.
+- [x] Detectar STUN/TURN inicial cuando sea visible por puertos conocidos.
+- [ ] Penalizar proveedores cloud/VPN/hosting.
+- [x] Mostrar disclaimer tecnico junto a cada candidato.
+- [x] Documentar metodologia de scoring.
+
+### Epica 12 - Reporte Final Profesional
+
+- [x] Reportes existentes por contacto.
+- [x] Crear `Final Report Builder` por caso.
+- [x] Portada con caso, operador, fecha, version y hash.
+- [x] Resumen ejecutivo.
+- [x] Alcance autorizado.
+- [x] Timeline de auditoria.
+- [ ] Timeline de capturas.
+- [x] Tabla de IPs observadas e IPs candidatas.
+- [ ] ASN/ORG completo.
+- [x] GeoIP, proveedor, puertos, paquetes y confidence score cuando existan en el analisis.
+- [ ] Mapa visual de ruta observada.
+- [x] Limitaciones tecnicas.
+- [x] Anexo JSON dentro del Evidence ZIP.
+- [x] Export HTML.
+- [x] Export PDF.
+- [x] Export JSON.
+- [x] Registrar `final_report_*_export_requested` antes de construir informes.
+
+### Epica 13 - UX de Centro de Operaciones
+
+- [ ] Crear dashboard de casos activos.
+- [ ] Crear flujo guiado de captura:
+  - seleccionar caso
+  - confirmar autorizacion
+  - seleccionar contacto
+  - seleccionar tipo de captura
+  - iniciar/detener
+  - revisar hallazgos
+  - generar informe
+- [ ] Crear estado visible de modo runtime: Railway dashboard vs Local full.
+- [ ] Mostrar recurso ocupado si ya hay captura activa.
+- [ ] Mejorar mapa visual con timeline.
+- [ ] Agregar vista de replay/resumen de sesion.
+- [ ] Crear panel de conclusiones tecnicas editables por operador.
+
+### Epica 14 - Auditoria de Codigo Activa
+
+- [x] Crear auditoria de codigo inicial en `docs/code-audit-2026-06-18.md`.
+- [x] Corregir token en URL para descargas autenticadas.
+- [x] Crear validacion centralizada de entrada v1 sin dependencias externas.
+- [x] Validar `caseId`, metadata de captura, alias, JID, limites y tags.
+- [x] Extraer Evidence Package, Final Report, ZIP y PDF a `src/evidence-package.ts`.
+- [x] Extraer endpoints de Evidence Package y Final Report a `src/routes/reports.ts`.
+- [x] Extraer endpoints de auditoria a `src/routes/audit.ts`.
+- [x] Extraer endpoints de casos a `src/routes/cases.ts`.
+- [ ] Separar `ContactCard` en componentes por panel.
+- [ ] Documentar contrato de API para runtime, audit, call capture y reports.
+- [ ] Agregar pruebas unitarias para `meta-ip-ranges`.
+- [ ] Agregar pruebas unitarias para scoring de llamada.
+- [ ] Agregar pruebas de endpoints de modo Railway/local.
+- [ ] Agregar prueba manual QA para `/api/runtime-capabilities`.
+
 ### Epica 1 - Separacion Railway vs Local
 
 - [x] Agregar flags de modo runtime.
@@ -163,8 +278,8 @@ Pendiente:
 
 ### Epica 6 - QA y Auditoria de Codigo
 
-- [ ] Auditoria TypeScript backend.
-- [ ] Auditoria React frontend.
+- [x] Auditoria TypeScript backend iniciada.
+- [x] Auditoria React frontend iniciada.
 - [ ] Auditoria de seguridad de variables `.env`.
 - [ ] Auditoria de dependencias.
 - [ ] Auditoria de Dockerfile.
@@ -207,6 +322,9 @@ Pendiente:
 - [x] Tipar modelos compartidos de llamada/auditoria.
 - [x] Reducir `any` en `ContactCard`, `db.ts` y rutas nuevas.
 - [x] Documentar flujo operativo local antes de capturar.
+- [x] Agregar Swagger/OpenAPI controlado por `ENABLE_SWAGGER` y bloqueado en produccion.
+- [x] Agregar logs profesionales de arranque sin imprimir secretos.
+- [x] Extraer validadores compartidos a `src/validation.ts`.
 - [ ] Congelar alcance de features antes de QA manual.
 
 ## Checklist de Verificacion Recurrente
@@ -261,10 +379,19 @@ Antes de cerrar cada bloque de trabajo:
 - [x] Tipados modelos frontend de llamada/auditoria y persistencia de analisis de llamada.
 - [x] Creada guia operativa local con requisitos, flujo, auditoria y limites.
 - [x] Actualizados `.gitignore`, `.dockerignore`, `CHANGELOG.md`, `README.md` y `docs/README.md`.
+- [x] Creada auditoria de codigo inicial en `docs/code-audit-2026-06-18.md`.
+- [x] Agregadas epicas profesionales: Case Management, Evidence Package, scoring de IP candidata, reporte final y UX de centro de operaciones.
+- [x] Corregido hallazgo P1: descargas autenticadas ya no exponen token en query params.
+- [x] Agregado modelo formal `Case`, endpoints `/api/cases`, vista `Cases` y bloqueo de capturas en casos cerrados/archivados.
+- [x] Agregado Swagger `/docs` solo fuera de produccion y logs de arranque `MONITORIZACION-DECO`.
+- [x] Agregada coleccion `case_evidence_links` y enlaces directos para capturas de red, analisis de llamada y Evidence Package.
+- [x] Asociado contacto observado al caso desde el flujo `add-contact`.
+- [x] Extraidos validadores compartidos a `src/validation.ts` y rutas conectadas directamente al modulo comun.
+- [x] Validado bloque con `yarn build`, `pnpm run build` y `git diff --check`.
 
 ## Proximo Bloque Sugerido
 
-1. Congelar alcance de features antes de QA manual.
-2. Ejecutar checklist Railway.
-3. QA manual del flujo local con permisos de captura.
-4. Preparar commit/PR cuando el usuario lo pida.
+1. Mejorar scoring tecnico de IP candidata con ASN/ORG.
+2. Agregar anexos CSV al Evidence Package.
+3. Extraer componentes grandes del frontend.
+4. Ejecutar checklist Railway y QA manual local.
