@@ -4,13 +4,13 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        - PORT=${BACKEND_PORT:-3001}
+        - PORT=${BACKEND_PORT:-4000}
     extra_hosts:
       - "localhost:host-gateway"
     ports:
-      - "${BACKEND_PORT:-3001}:${BACKEND_PORT:-3001}"
+      - "${BACKEND_PORT:-4000}:${BACKEND_PORT:-4000}"
     environment:
-      - PORT=${BACKEND_PORT:-3001}
+      - PORT=${BACKEND_PORT:-4000}
       - SIGNAL_API_URL=${SIGNAL_API_URL:-http://localhost:8080}
       - NODE_ENV=${NODE_ENV:-production}
     volumes:
@@ -25,12 +25,12 @@ services:
       context: ./client
       dockerfile: Dockerfile
       args:
-        - PORT=${CLIENT_PORT:-3000}
-        - REACT_APP_API_URL=${BACKEND_URL:-http://localhost:3001}
+        - PORT=${CLIENT_PORT:-4001}
+        - REACT_APP_API_URL=${BACKEND_URL:-http://localhost:4000}
     ports:
-      - "${CLIENT_PORT:-3000}:${CLIENT_PORT:-3000}"
+      - "${CLIENT_PORT:-4001}:${CLIENT_PORT:-4001}"
     environment:
-      - PORT=${CLIENT_PORT:-3000}
+      - PORT=${CLIENT_PORT:-4001}
     depends_on:
       - backend
     networks:

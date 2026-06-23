@@ -115,6 +115,21 @@ export interface CheckInDoc {
         pageTitle?: string;
         pageDescription?: string;
         ogImageUrl?: string | null;
+        brandName?: string;
+        accentColor?: string;
+        backgroundColor?: string;
+        panelColor?: string;
+        textColor?: string;
+        layout?: 'classic' | 'hero' | 'compact';
+        requestGps?: boolean;
+        caseLabel?: string;
+        operatorLabel?: string;
+        checkInLabel?: string;
+        expiresLabel?: string;
+        consentText?: string;
+        submitButtonText?: string;
+        successMessage?: string;
+        redirectUrl?: string | null;
     };
     status: CheckInStatus;
     createdAt: Date;
@@ -185,6 +200,16 @@ export interface CheckInDoc {
         heading?: number | null;
         speed?: number | null;
         capturedAt?: Date | null;
+    } | null;
+    consistency?: {
+        score: number;
+        level: 'high' | 'medium' | 'low';
+        summary: string;
+        signals: Array<{
+            severity: 'ok' | 'info' | 'warning' | 'danger';
+            label: string;
+            detail: string;
+        }>;
     } | null;
     ipEnrichment?: Record<string, unknown> | null;
     hash: string;

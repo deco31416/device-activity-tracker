@@ -2,13 +2,14 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { socket } from '../App';
 import {
     Activity, Play, Square, Download, Filter, Globe, AlertTriangle,
-    Shield, Info, Wifi, BarChart3, MapPin
+    Shield, Info, Wifi, BarChart3, MapPin, CheckCircle2, Clock, Database, BellRing
 } from 'lucide-react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell, Legend
 } from 'recharts';
 import { API_URL, authFetch, downloadAuthenticatedFile } from '../auth';
+import { CaseRecord } from '../types';
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -89,9 +90,20 @@ export function NetworkMonitor() {
     const [caseId, setCaseId] = useState('');
     const [operatorName, setOperatorName] = useState('');
     const [authorizationNote, setAuthorizationNote] = useState('');
+    const [cases, setCases] = useState<CaseRecord[]>([]);
+    const [caseMode, setCaseMode] = useState<'existing' | 'new'>('existing');
+    const [hideKnownInfrastructure, setHideKnownInfrastructure] = useState(true);
+    const [udpOnlyView, setUdpOnlyView] = useState(false);
+    const [operatorNotice, setOperatorNotice] = useState<{ tone: 'info' | 'success' | 'warning'; text: string } | null>(null);
 
     const tableEndRef = useRef<HTMLDivElement | null>(null);
     const packetsRef = useRef<PacketMeta[]>([]);
+
+    const selectCase = useCallback((record: CaseRecord) => {
+        setCaseId(record.caseId);
+        setOperatorName(record.primaryOperator || '');
+        setAuthorizationNote(record.authorizationNote || '');
+    }, []);
 
     // Load interfaces on mount
     useEffect(() => {
@@ -103,13 +115,29 @@ export function NetworkMonitor() {
             })
             .catch(console.error);
 
+        authFetch(`${API_URL}/api/cases?limit=100`)
+            .then(r => r.json())
+            .then((data: CaseRecord[]) => {
+                const activeCases = Array.isArray(data)
+                    ? data.filter(item => item.status !== 'closed' && item.status !== 'archived')
+                    : [];
+                setCases(activeCases);
+                if (activeCases.length > 0) {
+                    selectCase(activeCases[0]);
+                }
+            })
+            .catch(console.error);
+
         // Get initial status
         socket.emit('network-get-status');
-    }, []);
+    }, [selectCase]);
 
     // Socket listeners
     useEffect(() => {
         function onPacket(packet: PacketMeta) {
+            if (packetsRef.current.length === 0) {
+                setOperatorNotice({ tone: 'success', text: 'Primer paquete capturado. La interfaz seleccionada esta entregando trafico.' });
+            }
             packetsRef.current = [...packetsRef.current.slice(-MAX_DISPLAY_PACKETS + 1), packet];
             setPackets(packetsRef.current);
         }
@@ -144,6 +172,17 @@ export function NetworkMonitor() {
         return () => clearInterval(interval);
     }, [isCapturing]);
 
+    useEffect(() => {
+        if (!isCapturing || packets.length > 0) return;
+        const timeout = window.setTimeout(() => {
+            setOperatorNotice({
+                tone: 'warning',
+                text: 'No entran paquetes aun. Verifica que elegiste la interfaz correcta, que Npcap funciona y que WhatsApp Web/Desktop esta usando esta red.',
+            });
+        }, 12000);
+        return () => window.clearTimeout(timeout);
+    }, [isCapturing, packets.length]);
+
     const handleStart = useCallback(() => {
         if (!selectedInterface) return;
         if (!caseId.trim() || !operatorName.trim() || !authorizationNote.trim()) return;
@@ -154,6 +193,7 @@ export function NetworkMonitor() {
         };
         packetsRef.current = [];
         setPackets([]);
+        setOperatorNotice({ tone: 'info', text: 'Prueba iniciada. Haz la llamada/interaccion desde WhatsApp Web/Desktop y espera entrada de paquetes.' });
         socket.emit('network-start', {
             interfaceAddr: selectedInterface,
             filter: captureFilter,
@@ -164,6 +204,7 @@ export function NetworkMonitor() {
     }, [selectedInterface, filterProtocol, filterPort, filterIp, caseId, operatorName, authorizationNote]);
 
     const handleStop = useCallback(() => {
+        setOperatorNotice({ tone: 'info', text: 'Captura detenida. Revisa IPs candidatas, infraestructura conocida, estadisticas y exporta evidencia si aplica.' });
         socket.emit('network-stop');
     }, []);
 
@@ -185,6 +226,12 @@ export function NetworkMonitor() {
         value,
         fill: PROTOCOL_COLORS[name] || PROTOCOL_COLORS.OTHER,
     })) : [];
+    const investigativePackets = packets.filter(packet => {
+        if (udpOnlyView && packet.protocol !== 'UDP') return false;
+        if (hideKnownInfrastructure && isKnownInfrastructurePacket(packet)) return false;
+        return true;
+    });
+    const investigationSummary = summarizeInvestigation(packets);
 
     const formatBytes = (bytes: number) => {
         if (bytes < 1024) return `${bytes} B`;
@@ -196,19 +243,135 @@ export function NetworkMonitor() {
         return new Date(ts).toLocaleTimeString('es-ES', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3 } as any);
     };
 
+    const captureReady = Boolean(selectedInterface && caseId.trim() && operatorName.trim() && authorizationNote.trim());
+    const status = getMonitorStatus(isCapturing, interfaces.length, captureReady, stats);
+
     // ── Render ─────────────────────────────────────────────────
 
     return (
         <div className="space-y-4">
+            <div className="card p-4 border border-accent/20">
+                <div className="flex items-start gap-3">
+                    <div className="p-2 rounded-xl bg-accent/10 text-accent">
+                        <Info size={18} />
+                    </div>
+                    <div className="space-y-2">
+                        <div>
+                            <h3 className="text-sm font-semibold text-txt-primary">Guia operativa</h3>
+                            <p className="text-xs text-txt-muted mt-1">
+                                Network Monitor captura trafico general de esta computadora. Para llamadas WhatsApp, usalo como apoyo para linea base y evidencia cruda; el analisis especializado esta en la pestana Llamada del contacto.
+                            </p>
+                        </div>
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 text-xs">
+                            <div className="rounded-lg border border-border bg-bg-panel/60 px-3 py-2">
+                                <div className="font-semibold text-txt-primary">1. Prepara el caso</div>
+                                <div className="text-txt-muted mt-1">Completa Case ID, operador y autorizacion/motivo. Sin esos datos, Start Capture queda bloqueado.</div>
+                            </div>
+                            <div className="rounded-lg border border-border bg-bg-panel/60 px-3 py-2">
+                                <div className="font-semibold text-txt-primary">2. Usa la misma maquina</div>
+                                <div className="text-txt-muted mt-1">Haz la llamada desde WhatsApp Web o WhatsApp Desktop en este equipo, usando la misma red/interfaz seleccionada.</div>
+                            </div>
+                            <div className="rounded-lg border border-border bg-bg-panel/60 px-3 py-2">
+                                <div className="font-semibold text-txt-primary">3. Filtra con criterio</div>
+                                <div className="text-txt-muted mt-1">UDP y volumen nuevo durante la llamada suelen ser mas utiles. Meta/Google/Cloudflare suelen ser relays o infraestructura.</div>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 text-xs">
+                            <RequirementCard
+                                title="Windows + Npcap"
+                                text="Instala Npcap con compatibilidad WinPcap. Es el driver que permite capturar paquetes desde la tarjeta de red local."
+                                href="https://npcap.com/#download"
+                                linkText="Descargar Npcap"
+                            />
+                            <RequirementCard
+                                title="WhatsApp en este equipo"
+                                text="Usa WhatsApp Web o WhatsApp Desktop en la misma computadora donde corre WP MONITOR para que la captura vea el trafico de la llamada."
+                                href="https://web.whatsapp.com/"
+                                linkText="Abrir WhatsApp Web"
+                            />
+                            <RequirementCard
+                                title="Backend local con permisos"
+                                text="Ejecuta WP MONITOR en modo local-full. Si Start Capture falla, abre la terminal como Administrador y verifica la interfaz Wi-Fi/Ethernet."
+                                href="https://github.com/nmap/npcap/wiki/Npcap-Users%27-Guide"
+                                linkText="Guia Npcap"
+                            />
+                        </div>
+                        <div className="rounded-lg border border-accent/20 bg-accent/5 px-3 py-2 text-xs text-txt-muted">
+                            Investigacion profesional: cada captura se enlaza al Case ID como evidencia de red. Usa esta vista para linea base y ruido general; para llamadas WhatsApp usa tambien la pestana Llamada del contacto, que aplica scoring especializado y filtra relays.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {operatorNotice && (
+                <div className={`card p-4 border ${noticeClass(operatorNotice.tone)}`}>
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-xl bg-bg-panel/70">
+                            <BellRing size={18} />
+                        </div>
+                        <p className="text-sm text-txt-primary">{operatorNotice.text}</p>
+                    </div>
+                </div>
+            )}
+
+            <div className={`card p-4 border ${status.border}`}>
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                        <div className={`p-2 rounded-xl ${status.iconBg} ${status.text}`}>
+                            <status.icon size={18} />
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-semibold text-txt-primary">{status.title}</h3>
+                            <p className="text-xs text-txt-muted mt-1">{status.description}</p>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 min-w-[320px]">
+                        <MiniStatus label="Paquetes" value={String(stats?.totalPackets || packets.length || 0)} />
+                        <MiniStatus label="Datos" value={formatBytes(stats?.totalBytes || 0)} />
+                        <MiniStatus label="Inicio" value={stats?.startTime ? new Date(stats.startTime).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' }) : '-'} />
+                        <MiniStatus label="Candidatas" value={String(investigationSummary.candidateIps)} />
+                    </div>
+                </div>
+            </div>
+
             <div className="card p-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <input
-                        value={caseId}
-                        onChange={e => setCaseId(e.target.value)}
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_96px] gap-3 mb-3">
+                    {caseMode === 'existing' ? (
+                        <select
+                            value={caseId}
+                            onChange={e => {
+                                const selected = cases.find(item => item.caseId === e.target.value);
+                                if (selected) selectCase(selected);
+                            }}
+                            disabled={isCapturing}
+                            className="select-field"
+                        >
+                            <option value="">Seleccionar caso activo</option>
+                            {cases.map(item => (
+                                <option key={item.caseId} value={item.caseId}>
+                                    {item.caseId} - {item.title || item.status}
+                                </option>
+                            ))}
+                        </select>
+                    ) : (
+                        <input
+                            value={caseId}
+                            onChange={e => setCaseId(e.target.value)}
+                            disabled={isCapturing}
+                            placeholder="Nuevo Case ID"
+                            className="input-field"
+                        />
+                    )}
+                    <button
+                        type="button"
+                        onClick={() => setCaseMode(caseMode === 'existing' ? 'new' : 'existing')}
                         disabled={isCapturing}
-                        placeholder="Case ID"
-                        className="input-field"
-                    />
+                        className="btn-secondary !px-3 !py-2 !text-xs"
+                    >
+                        {caseMode === 'existing' ? 'Nuevo' : 'Lista'}
+                    </button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <input
                         value={operatorName}
                         onChange={e => setOperatorName(e.target.value)}
@@ -300,6 +463,13 @@ export function NetworkMonitor() {
                     </label>
                 </div>
 
+                <div className="px-4 pb-4 grid grid-cols-1 lg:grid-cols-4 gap-3">
+                    <InvestigationMetric label="IPs candidatas" value={String(investigationSummary.candidateIps)} tone="success" />
+                    <InvestigationMetric label="Infraestructura conocida" value={String(investigationSummary.infrastructureIps)} tone="warning" />
+                    <InvestigationMetric label="UDP observado" value={String(investigationSummary.udpPackets)} tone="accent" />
+                    <InvestigationMetric label="Caso enlazado" value={caseId || '-'} tone="neutral" />
+                </div>
+
                 {/* Filter panel */}
                 {showFilters && (
                     <div className="px-4 pb-4 pt-0">
@@ -329,6 +499,24 @@ export function NetworkMonitor() {
                                 className="input-field !py-1.5 w-40"
                             />
                             <span className="text-xs text-txt-dim">Filters apply on next capture start</span>
+                            <label className="flex items-center gap-1.5 text-xs text-txt-muted cursor-pointer select-none">
+                                <input
+                                    type="checkbox"
+                                    checked={hideKnownInfrastructure}
+                                    onChange={e => setHideKnownInfrastructure(e.target.checked)}
+                                    className="rounded border-surface-border-strong bg-surface-overlay accent-accent"
+                                />
+                                Ocultar Meta/Google/Cloudflare/local en tabla
+                            </label>
+                            <label className="flex items-center gap-1.5 text-xs text-txt-muted cursor-pointer select-none">
+                                <input
+                                    type="checkbox"
+                                    checked={udpOnlyView}
+                                    onChange={e => setUdpOnlyView(e.target.checked)}
+                                    className="rounded border-surface-border-strong bg-surface-overlay accent-accent"
+                                />
+                                Ver solo UDP
+                            </label>
                         </div>
                     </div>
                 )}
@@ -359,7 +547,7 @@ export function NetworkMonitor() {
 
             {/* Tab content */}
             {activeTab === 'packets' && (
-                <PacketTable packets={packets} formatTime={formatTime} tableEndRef={tableEndRef} autoScroll={autoScroll} />
+                <PacketTable packets={investigativePackets} formatTime={formatTime} tableEndRef={tableEndRef} autoScroll={autoScroll} />
             )}
 
             {activeTab === 'stats' && stats && (
@@ -378,8 +566,179 @@ export function NetworkMonitor() {
                     <p className="text-txt-dim text-sm mt-2">Select a network interface and click Start Capture</p>
                 </div>
             )}
+            {packets.length > 0 && investigativePackets.length === 0 && (
+                <div className="empty-state">
+                    <Database size={42} className="mx-auto text-txt-dim mb-4" />
+                    <p className="text-txt-secondary text-lg">Todo el trafico visible esta filtrado</p>
+                    <p className="text-txt-dim text-sm mt-2">Desactiva ocultar infraestructura o solo UDP para ver paquetes crudos.</p>
+                </div>
+            )}
         </div>
     );
+}
+
+function MiniStatus({ label, value }: { label: string; value: string }) {
+    return (
+        <div className="rounded-lg border border-border bg-bg-panel/60 px-3 py-2">
+            <div className="text-[11px] uppercase tracking-[0.12em] text-txt-dim">{label}</div>
+            <div className="text-sm font-semibold text-txt-primary truncate">{value}</div>
+        </div>
+    );
+}
+
+function InvestigationMetric({ label, value, tone }: { label: string; value: string; tone: 'success' | 'warning' | 'accent' | 'neutral' }) {
+    const colors = {
+        success: 'border-success/25 bg-success/10 text-success',
+        warning: 'border-warning/25 bg-warning/10 text-warning',
+        accent: 'border-accent/25 bg-accent/10 text-accent',
+        neutral: 'border-border bg-bg-panel/60 text-txt-secondary',
+    };
+    return (
+        <div className={`rounded-lg border px-3 py-2 ${colors[tone]}`}>
+            <div className="text-[11px] uppercase tracking-[0.12em] opacity-75">{label}</div>
+            <div className="text-sm font-semibold truncate">{value}</div>
+        </div>
+    );
+}
+
+function noticeClass(tone: 'info' | 'success' | 'warning'): string {
+    if (tone === 'success') return 'border-success/30 text-success';
+    if (tone === 'warning') return 'border-warning/30 text-warning';
+    return 'border-accent/30 text-accent';
+}
+
+function RequirementCard({ title, text, href, linkText }: { title: string; text: string; href: string; linkText: string }) {
+    return (
+        <div className="rounded-lg border border-warning/25 bg-warning/5 px-3 py-2">
+            <div className="font-semibold text-txt-primary">{title}</div>
+            <div className="text-txt-muted mt-1">{text}</div>
+            <a href={href} target="_blank" rel="noreferrer" className="inline-flex mt-2 text-warning font-semibold hover:underline">
+                {linkText}
+            </a>
+        </div>
+    );
+}
+
+function summarizeInvestigation(packets: PacketMeta[]) {
+    const candidateIps = new Set<string>();
+    const infrastructureIps = new Set<string>();
+    let udpPackets = 0;
+
+    packets.forEach(packet => {
+        if (packet.protocol === 'UDP') udpPackets++;
+        [packet.srcIp, packet.dstIp].forEach(ip => {
+            if (isKnownInfrastructureIp(ip)) infrastructureIps.add(ip);
+            else if (!isLocalOrPrivateIp(ip)) candidateIps.add(ip);
+        });
+    });
+
+    return {
+        candidateIps: candidateIps.size,
+        infrastructureIps: infrastructureIps.size,
+        udpPackets,
+    };
+}
+
+function isKnownInfrastructurePacket(packet: PacketMeta): boolean {
+    return isKnownInfrastructureIp(packet.srcIp) || isKnownInfrastructureIp(packet.dstIp);
+}
+
+function isKnownInfrastructureIp(ip: string): boolean {
+    if (isLocalOrPrivateIp(ip)) return true;
+    return isMetaIp(ip) || isGoogleIp(ip) || isCloudflareIp(ip);
+}
+
+function isLocalOrPrivateIp(ip: string): boolean {
+    const parts = ip.split('.').map(Number);
+    const isPrivate172 = parts.length === 4 && parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31;
+    return ip.startsWith('10.')
+        || ip.startsWith('127.')
+        || ip.startsWith('192.168.')
+        || ip.startsWith('169.254.')
+        || ip.startsWith('224.')
+        || isPrivate172;
+}
+
+function isMetaIp(ip: string): boolean {
+    return ip.startsWith('31.13.')
+        || ip.startsWith('57.144.')
+        || ip.startsWith('157.240.')
+        || ip.startsWith('163.70.')
+        || ip.startsWith('173.252.')
+        || ip.startsWith('179.60.')
+        || ip.startsWith('185.60.')
+        || ip.startsWith('204.15.');
+}
+
+function isGoogleIp(ip: string): boolean {
+    return ip.startsWith('142.250.')
+        || ip.startsWith('142.251.')
+        || ip.startsWith('172.217.')
+        || ip.startsWith('172.253.')
+        || ip.startsWith('216.58.')
+        || ip.startsWith('216.239.')
+        || ip.startsWith('74.125.')
+        || ip.startsWith('64.233.');
+}
+
+function isCloudflareIp(ip: string): boolean {
+    const parts = ip.split('.').map(Number);
+    if (parts.length !== 4) return false;
+    return (parts[0] === 104 && parts[1] >= 16 && parts[1] <= 31)
+        || (parts[0] === 172 && parts[1] >= 64 && parts[1] <= 71)
+        || ip.startsWith('162.159.')
+        || ip.startsWith('188.114.');
+}
+
+function getMonitorStatus(isCapturing: boolean, interfaceCount: number, ready: boolean, stats: CaptureStats | null): {
+    title: string;
+    description: string;
+    border: string;
+    iconBg: string;
+    text: string;
+    icon: typeof Activity;
+} {
+    if (isCapturing) {
+        return {
+            title: 'Captura local activa',
+            description: `Network Monitor esta capturando metadata de paquetes en tiempo real. Total actual: ${stats?.totalPackets || 0} paquetes.`,
+            border: 'border-success/30',
+            iconBg: 'bg-success/10',
+            text: 'text-success',
+            icon: Activity,
+        };
+    }
+
+    if (interfaceCount === 0) {
+        return {
+            title: 'Sin interfaces disponibles',
+            description: 'No se detectaron interfaces de red para captura local. Revisa Npcap/permisos o ejecuta como administrador.',
+            border: 'border-danger/30',
+            iconBg: 'bg-danger/10',
+            text: 'text-danger',
+            icon: AlertTriangle,
+        };
+    }
+
+    if (!ready) {
+        return {
+            title: 'Esperando metadatos de auditoria',
+            description: 'Completa Case ID, operador y autorizacion/motivo para habilitar Start Capture.',
+            border: 'border-warning/30',
+            iconBg: 'bg-warning/10',
+            text: 'text-warning',
+            icon: Clock,
+        };
+    }
+
+    return {
+        title: 'Listo para capturar',
+        description: 'Modulo local activo. Selecciona la interfaz correcta y presiona Start Capture para iniciar.',
+        border: 'border-accent/30',
+        iconBg: 'bg-accent/10',
+        text: 'text-accent',
+        icon: CheckCircle2,
+    };
 }
 
 // ── Sub-components ─────────────────────────────────────────────

@@ -6,7 +6,7 @@ import { NetworkMonitor } from './components/NetworkMonitor';
 import { AuditTrail } from './components/AuditTrail';
 import { Cases } from './components/Cases';
 import { CheckIns } from './components/CheckIns';
-import { Smartphone, Globe, Activity, ClipboardList, Briefcase, MapPin } from 'lucide-react';
+import { Smartphone, Globe, Activity, ClipboardList, Briefcase, MapPin, Drone, Menu, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
 import { API_URL, clearDashboardToken, getDashboardToken, setDashboardToken } from './auth';
 
 // Create socket with autoConnect disabled so we can add listeners before connecting
@@ -36,6 +36,7 @@ interface RuntimeHealth {
 
 type AppTab = 'cases' | 'tracker' | 'network' | 'checkins' | 'audit';
 const ACTIVE_TAB_KEY = 'dat_active_tab';
+const SIDEBAR_COLLAPSED_KEY = 'dat_sidebar_collapsed';
 
 function getInitialTab(): AppTab {
     const saved = localStorage.getItem(ACTIVE_TAB_KEY);
@@ -50,6 +51,8 @@ function App() {
     const [capabilities, setCapabilities] = useState<RuntimeCapabilities | null>(null);
     const [authToken, setAuthToken] = useState(getDashboardToken());
     const [authInput, setAuthInput] = useState(getDashboardToken());
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true');
+    const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
     const [connectionState, setConnectionState] = useState<ConnectionState>({
         whatsapp: false,
         whatsappQr: null
@@ -150,6 +153,10 @@ function App() {
         localStorage.setItem(ACTIVE_TAB_KEY, activeTab);
     }, [activeTab]);
 
+    useEffect(() => {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed));
+    }, [sidebarCollapsed]);
+
     const tabs = [
         { id: 'cases' as AppTab, label: 'Cases', icon: Briefcase },
         { id: 'tracker' as AppTab, label: 'WhatsApp Tracker', icon: Smartphone },
@@ -180,6 +187,11 @@ function App() {
         socket.disconnect();
     };
 
+    const selectTab = (tab: AppTab) => {
+        setActiveTab(tab);
+        setMobileSidebarOpen(false);
+    };
+
     if (capabilities?.authRequired && !authToken) {
         return (
             <div className="min-h-screen bg-surface bg-grid flex items-center justify-center p-6">
@@ -206,58 +218,102 @@ function App() {
 
     return (
         <div className="min-h-screen bg-surface bg-grid">
+            {mobileSidebarOpen && (
+                <button
+                    type="button"
+                    aria-label="Cerrar menu"
+                    onClick={() => setMobileSidebarOpen(false)}
+                    className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm lg:hidden"
+                />
+            )}
+
             {/* ── Sidebar ───────────────────────────── */}
-            <aside className="fixed left-0 top-0 bottom-0 w-56 bg-surface-raised border-r border-surface-border flex flex-col z-20">
+            <aside
+                className={`fixed left-0 top-0 bottom-0 bg-surface-raised border-r border-surface-border flex flex-col z-40
+                    transition-all duration-300 ease-out
+                    ${sidebarCollapsed ? 'lg:w-20' : 'lg:w-56'}
+                    ${mobileSidebarOpen ? 'translate-x-0 w-72' : '-translate-x-full lg:translate-x-0'}
+                `}
+            >
                 {/* Brand */}
-                <div className="px-5 py-5 border-b border-surface-border">
-                    <h1 className="text-xl font-extrabold tracking-tight">
-                        <span className="text-txt-primary">DECO31416</span>
-                        <span className="text-accent">.</span>
+                <div className={`h-[73px] border-b border-surface-border flex items-center gap-2 ${sidebarCollapsed ? 'lg:px-3 lg:justify-center' : 'px-5 justify-between'}`}>
+                    <h1 className={`flex items-center gap-2 text-xl font-extrabold tracking-tight min-w-0 ${sidebarCollapsed ? 'lg:justify-center' : ''}`}>
+                        <Drone size={sidebarCollapsed ? 30 : 26} className="text-accent shrink-0" strokeWidth={2.4} />
+                        <span className={`text-txt-primary whitespace-nowrap ${sidebarCollapsed ? 'lg:hidden' : ''}`}>WP MONITOR</span>
                     </h1>
+                    <div className={`flex items-center gap-1 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>
+                        <button
+                            type="button"
+                            aria-label="Cerrar menu"
+                            onClick={() => setMobileSidebarOpen(false)}
+                            className="inline-flex lg:hidden p-2 rounded-xl text-txt-muted hover:text-txt-primary hover:bg-surface-hover transition-colors"
+                        >
+                            <X size={18} />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Navigation */}
-                <nav className="flex-1 px-3 py-4 space-y-1">
+                <nav className={`flex-1 py-4 space-y-1 ${sidebarCollapsed ? 'lg:px-3 px-3' : 'px-3'}`}>
                     {tabs.map(tab => {
                         const Icon = tab.icon;
                         const isActive = activeTab === tab.id;
                         return (
                             <button
                                 key={tab.id}
-                                onClick={() => setActiveTab(tab.id)}
-                                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
+                                onClick={() => selectTab(tab.id)}
+                                title={sidebarCollapsed ? tab.label : undefined}
+                                className={`w-full flex items-center rounded-xl text-sm font-medium transition-all duration-200 ${
+                                    sidebarCollapsed ? 'lg:justify-center lg:px-0 lg:py-3 gap-3 px-3 py-2.5' : 'gap-3 px-3 py-2.5'
+                                } ${
                                     isActive
                                         ? 'bg-accent text-white shadow-glow-sm'
                                         : 'text-txt-muted hover:text-txt-primary hover:bg-surface-hover'
                                 }`}
                             >
                                 <Icon size={18} />
-                                {tab.label}
+                                <span className={sidebarCollapsed ? 'lg:hidden' : ''}>{tab.label}</span>
                             </button>
                         );
                     })}
                 </nav>
 
                 {/* Status footer */}
-                <div className="px-4 py-4 border-t border-surface-border space-y-2">
-                    <div className="flex items-center gap-2">
+                <div className={`px-4 py-4 border-t border-surface-border space-y-2 ${sidebarCollapsed ? 'lg:px-0' : ''}`}>
+                    <div className={`flex items-center gap-2 ${sidebarCollapsed ? 'lg:justify-center' : ''}`}>
                         <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-success animate-pulse-slow' : 'bg-danger'}`} />
-                        <span className="text-xs text-txt-muted">{isConnected ? 'Server Connected' : 'Disconnected'}</span>
+                        <span className={`text-xs text-txt-muted ${sidebarCollapsed ? 'lg:hidden' : ''}`}>{isConnected ? 'Server Connected' : 'Disconnected'}</span>
                     </div>
                     {isConnected && connectionState.whatsapp && (
-                        <div className="flex items-center gap-2">
+                        <div className={`flex items-center gap-2 ${sidebarCollapsed ? 'lg:justify-center' : ''}`}>
                             <div className="w-2 h-2 rounded-full bg-success animate-pulse-slow" />
-                            <span className="text-xs text-txt-muted">WhatsApp Active</span>
+                            <span className={`text-xs text-txt-muted ${sidebarCollapsed ? 'lg:hidden' : ''}`}>WhatsApp Active</span>
                         </div>
                     )}
                 </div>
             </aside>
 
             {/* ── Main Content ──────────────────────── */}
-            <main className="ml-56 min-h-screen">
+            <main className={`min-h-screen transition-all duration-300 ${sidebarCollapsed ? 'lg:ml-20' : 'lg:ml-56'}`}>
                 {/* Top bar */}
-                <header className="sticky top-0 z-10 glass px-6 py-3 flex items-center justify-between border-b border-surface-border">
+                <header className="sticky top-0 z-10 glass h-[73px] px-6 flex items-center justify-between border-b border-surface-border">
                     <div className="flex items-center gap-3">
+                        <button
+                            type="button"
+                            aria-label="Abrir menu"
+                            onClick={() => setMobileSidebarOpen(true)}
+                            className="inline-flex lg:hidden p-2 -ml-2 rounded-xl text-txt-muted hover:text-txt-primary hover:bg-surface-hover transition-colors"
+                        >
+                            <Menu size={20} />
+                        </button>
+                        <button
+                            type="button"
+                            aria-label={sidebarCollapsed ? 'Expandir menu lateral' : 'Colapsar menu lateral'}
+                            onClick={() => setSidebarCollapsed(prev => !prev)}
+                            className="hidden lg:inline-flex p-2 -ml-2 rounded-xl text-txt-muted hover:text-txt-primary hover:bg-surface-hover transition-colors"
+                        >
+                            {sidebarCollapsed ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}
+                        </button>
                         <Activity size={18} className="text-accent" />
                         <h2 className="text-lg font-semibold text-txt-primary">
                             {pageTitle}
@@ -284,7 +340,7 @@ function App() {
                 </header>
 
                 {/* Page content */}
-                <div className="p-6">
+                <div className="p-4 sm:p-6">
                     {activeTab === 'cases' && (
                         <Cases />
                     )}

@@ -1,8 +1,8 @@
-<h1 align="center">Device Activity Tracker v2.8.0</h1>
+<h1 align="center">Device Activity Tracker v2.9.0</h1>
 <p align="center">WhatsApp Activity Tracker — RTT Analysis · Real-Time Bitácora · Behavior Intelligence · Audit Trail · Railway Dashboard · Local Network Monitor</p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.8.0-blue?style=flat" alt="Version 2.8.0"/>
+  <img src="https://img.shields.io/badge/version-2.9.0-blue?style=flat" alt="Version 2.9.0"/>
   <img src="https://img.shields.io/badge/Node.js-22+-339933?style=flat&logo=node.js&logoColor=white" alt="Node.js"/>
   <img src="https://img.shields.io/badge/TypeScript-5.7+-3178C6?style=flat&logo=typescript&logoColor=white" alt="TypeScript"/>
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat&logo=react&logoColor=black" alt="React"/>
@@ -37,7 +37,7 @@ Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to M
 | **📞 Call Traffic Analysis** | Local authorized packet capture during WhatsApp Web calls with route visualization, candidate IP classification, and optional IP enrichment |
 | **📍 Authorized Check-In** | Consent-based case link with editable Open Graph preview, uploaded preview image, observed IP, device/browser/network metadata, optional GPS, Maps links, audit event, and evidence hash |
 | **🗂️ Case Management** | Formal case records with status, operator, authorization note, audit linkage, and closure controls |
-| **🧾 Audit Trail** | Case-based capture metadata, event log, SHA-256 hashed audit export, and evidence package export |
+| **🧾 Audit Trail** | Investigative case console with event filters, paginated custody timeline, readable summaries, SHA-256 audit export, and evidence package export |
 | **📑 Final Case Report** | Case-level JSON/HTML/PDF report with executive summary, activity stats, candidate IP scoring, timeline, hashes, and limitations |
 | **🚆 Railway Dashboard Mode** | Remote dashboard/statistics mode with local capture disabled for safe cloud deployment |
 | **🟢 Operational Health** | `/api/health` exposes operational/degraded status for MongoDB, WhatsApp, capture mode, and runtime dependencies without secrets |
@@ -132,6 +132,8 @@ Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to M
 - 📊 Statistics: protocol distribution pie chart, top IPs bar chart
 - 📤 Export to CSV and JSON
 - 🧾 Requires `caseId`, operator, and authorization note before starting manual capture
+- 🗂️ Active case selector auto-fills operator and authorization context so captures are linked as case evidence
+- 🧭 Investigative view separates candidate public IPs from known local/Meta/Google/Cloudflare infrastructure and can show UDP-only traffic
 
 ### Call Traffic Analysis (Local Full Mode)
 - 📞 Manual authorized capture window during WhatsApp Web calls or interactions
@@ -139,18 +141,23 @@ Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to M
 - 🧭 Provider classification for Meta/WhatsApp, Google, Cloudflare, private ranges, and unknown public IPs
 - 🧮 Candidate IP scoring 0-100 with explainable reason codes and technical limitations
 - 📊 Packet counters, ports, directions, geolocation hints, external IP enrichment, and historical call analysis
-- 🗺️ Optional `ip-api.com` enrichment adds estimated city/region/postal/coords, ISP, organization, ASN, mobile/proxy/hosting flags, and Google Maps links
+- 🗺️ Optional DB-IP-first enrichment adds estimated city/region/country and complements with ip-api for coordinates, ISP, organization, ASN, mobile/proxy/hosting flags, and Google Maps links when needed
+- 🧹 Enriched CDN/cloud/hosting/proxy networks are demoted after lookup so AWS CloudFront, Akamai, Fastly, Google Cloud, Cloudflare, and similar infrastructure are not treated as user IP candidates
 - ⚠️ Candidate IP language by design: observed IPs are not treated as verified person identity
 
 ### Authorized Check-In
 - 📍 Protected dashboard tab to generate consent-based check-in links tied to an active case
 - 🧩 Case selector supports existing monitored cases or a new Case ID for authorized intake
 - 🖼️ Editable public page title/description plus optional uploaded Open Graph preview image
+- 🎨 Landing builder with brand name, layout (`classic`, `hero`, `compact`), accent/background/panel/text colors, and GPS request toggle
+- 🧾 Client policy builder with editable metadata labels, consent/policy text, submit button text, completion message, and optional post-check-in redirect URL
 - ✅ Public page requires explicit user acceptance before submission
 - 🌐 Records server-observed IP, user agent, language, timezone, device type, OS/browser, CPU/RAM hints, screen/viewport, browser network hints, and optional browser GPS if the user grants permission
 - 🗺️ Adds optional IP enrichment with ISP/organization/ASN, estimated network coordinates, and Google Maps links
+- 🧭 Calculates a transparent consistency score from IP reputation flags, timezone/language alignment, GPS-vs-IP distance, referer, mobile/hosting/proxy flags, and browser metadata
 - 🔐 Stores SHA-256 evidence hash and links the result to the case evidence timeline
 - 🧾 Emits audit events for creation, completion, edit, revocation, and administrative deletion
+- 🔄 Dashboard updates automatically through Socket.IO events with a short polling fallback; no manual refresh required for completed check-ins
 - 🗑️ Administrative delete removes the check-in record and related case evidence link from MongoDB
 - 🔗 `PUBLIC_BASE_URL` must be a public HTTPS URL for third-party previews and external recipients; `127.0.0.1` only works on the local machine
 - ⚠️ GeoIP is estimated network/ISP location. GPS is only available when the browser/user explicitly permits it.
@@ -158,7 +165,9 @@ Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to M
 ### Audit Trail & Evidence Metadata
 - 🧾 Required capture metadata: `caseId`, `operatorName`, `authorizationNote`
 - 🕐 UTC timestamps for local capture and call-capture events
-- 🔎 Audit Trail tab to search events by Case ID
+- 🔎 Audit Trail tab with active case selector, manual Case ID search, scope/action filters, free-text search, and paginated timeline/table views
+- 🧭 Investigative summary cards for operators, event range, check-ins, calls, network captures, and report/export activity
+- 🧱 Collapsible desktop sidebar and mobile drawer navigation keep audit views usable on narrow screens
 - 📤 JSON audit export via `/api/audit/:caseId/export`
 - 🔐 SHA-256 hash included with audit export payload
 - 📦 Evidence Package ZIP with JSON artifacts, CSV annexes, and SHA-256 integrity manifest
@@ -230,11 +239,11 @@ cp .env.example .env
 
 ```env
 # Server / frontend defaults
-BACKEND_PORT=3001
-CLIENT_PORT=3000
-BACKEND_URL=http://localhost:3001
-ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001
-PUBLIC_BASE_URL=http://localhost:3001
+BACKEND_PORT=4000
+CLIENT_PORT=4001
+BACKEND_URL=http://127.0.0.1:4000
+ALLOWED_ORIGINS=http://localhost:4001,http://127.0.0.1:4001
+PUBLIC_BASE_URL=http://127.0.0.1:4000
 
 # MongoDB
 MONGODB_URI=mongodb://localhost:27017       # or mongodb+srv://... for Atlas
@@ -252,8 +261,10 @@ DASHBOARD_TOKEN=change-this-long-random-token
 ENABLE_SWAGGER=false
 
 # Optional IP enrichment for call-analysis candidates.
-# Uses ip-api.com free endpoint by default (HTTP, non-commercial/free-tier terms).
+# Default: DB-IP as primary GeoIP source, ip-api as technical fallback/complement.
 ENABLE_IP_ENRICHMENT=true
+IP_ENRICHMENT_PRIMARY_PROVIDER=db-ip          # db-ip | ip-api
+DB_IP_API_KEY=free                            # use paid key for DB-IP extended fields
 IP_ENRICHMENT_CACHE_TTL_SEC=604800
 IP_ENRICHMENT_TIMEOUT_MS=3500
 
@@ -279,7 +290,7 @@ NODE_ENV!=production
 Local route:
 
 ```txt
-http://localhost:3001/docs
+http://127.0.0.1:4000/docs
 ```
 
 In production, `/docs` is not registered.
@@ -305,9 +316,9 @@ yarn start:server
 cd client && pnpm start
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://127.0.0.1:4001](http://127.0.0.1:4001).
 
-If ports `3000/3001` are already occupied locally, you can run the backend/frontend on alternate ports such as:
+Recommended local ports for this project are `4000/4001` so it does not collide with other local apps using `3000`:
 
 ```powershell
 # Backend
@@ -321,7 +332,7 @@ Then open [http://127.0.0.1:4001](http://127.0.0.1:4001) and verify backend stat
 
 1. **📱 WhatsApp Tracker tab** — Scan QR, add contacts, monitor RTT + bitácora
 2. **🌐 Network Monitor tab** — Select interface, add audit metadata, apply filters, capture packets
-3. **🧾 Audit Trail tab** — Search events by Case ID and export hashed audit JSON
+3. **🧾 Audit Trail tab** — Select a case, filter/paginate custody events, and export hashed audit/evidence packages
 4. **📞 Call panel** — In a contact card, use local call traffic analysis when Local full mode is enabled
 
 > **Note:** Packet capture requires **administrator/root privileges** and only works on the local machine, VM, or authorized host where the traffic is visible.
@@ -350,8 +361,8 @@ cp .env.example .env
 docker compose up --build
 ```
 
-- Frontend: [http://localhost:3000](http://localhost:3000)
-- Backend: [http://localhost:3001](http://localhost:3001)
+- Frontend: [http://127.0.0.1:4001](http://127.0.0.1:4001)
+- Backend: [http://127.0.0.1:4000](http://127.0.0.1:4000)
 - WhatsApp auth is persisted at `/app/auth_info_baileys`
 
 ### Railway Dashboard Deployment
@@ -364,7 +375,7 @@ Required production shape:
 DEPLOYMENT_MODE=railway-dashboard
 LOCAL_CAPTURE_ENABLED=false
 NODE_ENV=production
-PORT=3001
+PORT=4000
 MONGODB_URI=mongodb+srv://...
 MONGODB_DB=activity-tracker
 ALLOWED_ORIGINS=https://your-frontend.up.railway.app
@@ -580,7 +591,7 @@ The UI presents a route map and packet summary using cautious language:
 4. **Relays / cloud providers** → infrastructure that may proxy traffic
 5. **Candidate IPs** → non-verified observed IPs for further authorized analysis
 
-The result is an investigative aid, not proof that an IP belongs to a person. When enabled, IP enrichment uses `ip-api.com` to attach estimated network location, ISP, organization, ASN, mobile/proxy/hosting flags, and a Google Maps URL. These values describe provider/network registration or routing hints, not GPS or verified user location.
+The result is an investigative aid, not proof that an IP belongs to a person. When enabled, IP enrichment uses DB-IP as the primary GeoIP source and complements with `ip-api.com` for coordinates, ISP, organization, ASN, mobile/proxy/hosting flags, and a Google Maps URL when those fields are unavailable from DB-IP free tier. These values describe provider/network registration or routing hints, not GPS or verified user location. After enrichment, CDN/cloud/hosting/proxy networks are recategorized as infrastructure and their candidate score is capped even if the packet flow was bidirectional.
 
 ### Audit Flow
 
@@ -692,10 +703,21 @@ For **network monitoring**: Use a VPN to encrypt and tunnel all traffic.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
-### v2.8.0 (June 2026) — Current
+### v2.9.0 (June 2026) — Current
+- 🧾 **Audit Trail console** — active case selector, operational summary, scope/action/search filters, paginated custody timeline, readable event cards, and technical table
+- 🧷 **Call audit consistency** — call-capture stop now snapshots active audit context before async enrichment to reduce mismatched `callId` evidence entries
+- 🧭 **Navigation UX** — collapsible desktop sidebar, mobile drawer menu, persistent sidebar state, and cleaner WP MONITOR branding with drone icon
+- 🔌 **Local ports** — frontend fallback API now points to `http://localhost:4000`, with docs recommending backend `4000` and frontend `4001`
+- 📄 **Audit pagination** — timeline/table render only the current page, with page-size controls and filter reset behavior
+
+### v2.8.0 (June 2026)
 - 🖼️ **Check-In Open Graph preview** — uploaded preview image, editable title/description, and public meta tags for authorized shared links
+- 🎨 **Authorized landing builder** — configurable brand, layout, colors, preview image, and GPS permission request per link
+- 🧾 **Client policy customization** — editable field labels, consent/policy text, submit button, success message, and redirect URL while preserving a minimum technical disclosure
+- 🔄 **Realtime Check-In dashboard** — create/update/complete/delete events refresh the Check-In list automatically with a polling fallback
 - 🧭 **Case-bound check-ins** — existing case dropdown, new-case mode, operator/authorization relation, and active tab persistence after refresh
 - 💻 **Extended device evidence** — OS/browser/device type, CPU/RAM hints, screen/viewport, network hints, language/timezone, optional GPS, Maps links, and SHA-256 hash
+- 🧭 **Consistency analysis** — compares IP GeoIP, proxy/hosting/mobile flags, browser timezone/language, GPS distance, referer, and privacy signals into an explainable score
 - 🛠️ **Check-In administration** — edit pending links, revoke links, delete completed records from MongoDB, and clean related evidence links with audit logging
 - ✅ **Frontend robustness** — safer JSON parsing for backend/HTML errors and 3MB upload limit for preview assets
 
@@ -710,7 +732,7 @@ See [CHANGELOG.md](CHANGELOG.md) for full version history.
 - 📚 **Swagger/OpenAPI** — `/docs` available only outside production when `ENABLE_SWAGGER=true`
 - 🔐 **Dashboard token auth** — optional `DASHBOARD_TOKEN` for REST, Socket.IO, dashboard, and downloads
 - 📞 **Call Traffic Analysis** — local authorized capture window, observed route map, relays/providers, and candidate IP classification
-- 🌍 **IP enrichment** — optional `ip-api.com` lookup for candidate/infrastructure IPs with estimated network location, ISP/ORG/ASN, flags, caching, and Maps links
+- 🌍 **IP enrichment** — optional DB-IP-first lookup for candidate/infrastructure IPs with estimated network location, ISP/ORG/ASN, flags, caching, and Maps links
 - 🧾 **Case audit/evidence** — required capture metadata, Case ID event lookup, SHA-256 audit export, Evidence ZIP, CSV annexes, and final report JSON/HTML/PDF
 - 📊 **Activity insights** — 24h/7d/30d trends, coverage, reliability, report integration, and Evidence ZIP annexes
 - ✅ **QA automation** — `test:unit`, `qa:report-fixture`, HTTP runtime contracts, and local CORS coverage for ports `4000/4001`

@@ -393,6 +393,8 @@ function formatCoords(lat?: number, lon?: number): string {
 }
 
 function formatEnrichmentSource(provider: string): string {
+    if (provider === 'db-ip+ip-api') return 'DB-IP + ip-api';
+    if (provider === 'db-ip') return 'DB-IP';
     if (provider === 'ip-api') return 'ip-api.com';
     return provider;
 }

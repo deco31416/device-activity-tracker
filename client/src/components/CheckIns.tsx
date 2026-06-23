@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, Copy, ExternalLink, MapPin, Pencil, Plus, RefreshCw, Save, ShieldCheck, Trash2, XCircle } from 'lucide-react';
 import { API_URL, authFetch } from '../auth';
 import { CaseRecord } from '../types';
+import { socket } from '../App';
 
 interface CheckInItem {
     token: string;
@@ -16,6 +17,21 @@ interface CheckInItem {
         pageTitle?: string;
         pageDescription?: string;
         ogImageUrl?: string | null;
+        brandName?: string;
+        accentColor?: string;
+        backgroundColor?: string;
+        panelColor?: string;
+        textColor?: string;
+        layout?: 'classic' | 'hero' | 'compact';
+        requestGps?: boolean;
+        caseLabel?: string;
+        operatorLabel?: string;
+        checkInLabel?: string;
+        expiresLabel?: string;
+        consentText?: string;
+        submitButtonText?: string;
+        successMessage?: string;
+        redirectUrl?: string | null;
     };
     status: 'pending' | 'completed' | 'expired' | 'revoked';
     createdAt: string;
@@ -77,9 +93,11 @@ interface CheckInItem {
         accuracy?: number;
     } | null;
     ipEnrichment?: {
+        provider?: 'db-ip' | 'db-ip+ip-api' | 'ip-api';
         city?: string;
         regionName?: string;
         country?: string;
+        countryCode?: string;
         isp?: string;
         org?: string;
         lat?: number;
@@ -87,6 +105,16 @@ interface CheckInItem {
         mapsUrl?: string;
         accuracyNote?: string;
         status?: string;
+    } | null;
+    consistency?: {
+        score: number;
+        level: 'high' | 'medium' | 'low';
+        summary: string;
+        signals: Array<{
+            severity: 'ok' | 'info' | 'warning' | 'danger';
+            label: string;
+            detail: string;
+        }>;
     } | null;
     hash: string;
 }
@@ -97,6 +125,9 @@ const STATUS_CLASS: Record<CheckInItem['status'], string> = {
     expired: 'badge-neutral',
     revoked: 'badge-danger',
 };
+
+const DEFAULT_CONSENT_GPS = 'Acepto enviar este check-in autorizado. Entiendo que se registrara mi IP publica observada por el servidor, sistema operativo, navegador, tipo de dispositivo, pantalla, idioma, zona horaria, datos basicos de red del navegador y, si doy permiso, mi ubicacion aproximada.';
+const DEFAULT_CONSENT_NO_GPS = 'Acepto enviar este check-in autorizado. Entiendo que se registrara mi IP publica observada por el servidor, sistema operativo, navegador, tipo de dispositivo, pantalla, idioma, zona horaria y datos basicos de red del navegador.';
 
 async function readJson<T = any>(response: Response): Promise<T> {
     const text = await response.text();
@@ -118,7 +149,30 @@ export function CheckIns() {
     const [copied, setCopied] = useState(false);
     const [uploadingImage, setUploadingImage] = useState(false);
     const [editingToken, setEditingToken] = useState<string | null>(null);
-    const [editForm, setEditForm] = useState({ label: '', targetName: '', ttlHours: '24', pageTitle: '', pageDescription: '', ogImageUrl: '' });
+    const [lastRealtimeUpdate, setLastRealtimeUpdate] = useState<string | null>(null);
+    const [editForm, setEditForm] = useState({
+        label: '',
+        targetName: '',
+        ttlHours: '24',
+        pageTitle: '',
+        pageDescription: '',
+        ogImageUrl: '',
+        brandName: 'Developed by Deco31416',
+        accentColor: '#7c3aed',
+        backgroundColor: '#0b1020',
+        panelColor: '#151b31',
+        textColor: '#eef4ff',
+        layout: 'classic' as 'classic' | 'hero' | 'compact',
+        requestGps: true,
+        caseLabel: 'Caso',
+        operatorLabel: 'Operador',
+        checkInLabel: 'Etiqueta',
+        expiresLabel: 'Vence',
+        consentText: DEFAULT_CONSENT_GPS,
+        submitButtonText: 'Aceptar y enviar check-in',
+        successMessage: 'Check-in recibido. Hash de evidencia:',
+        redirectUrl: '',
+    });
     const [form, setForm] = useState({
         caseId: '',
         operatorName: '',
@@ -130,6 +184,21 @@ export function CheckIns() {
         pageTitle: 'Check-in autorizado',
         pageDescription: 'Verificacion autorizada de identidad tecnica y ubicacion opcional.',
         ogImageUrl: '',
+        brandName: 'Developed by Deco31416',
+        accentColor: '#7c3aed',
+        backgroundColor: '#0b1020',
+        panelColor: '#151b31',
+        textColor: '#eef4ff',
+        layout: 'classic' as 'classic' | 'hero' | 'compact',
+        requestGps: true,
+        caseLabel: 'Caso',
+        operatorLabel: 'Operador',
+        checkInLabel: 'Etiqueta',
+        expiresLabel: 'Vence',
+        consentText: DEFAULT_CONSENT_GPS,
+        submitButtonText: 'Aceptar y enviar check-in',
+        successMessage: 'Check-in recibido. Hash de evidencia:',
+        redirectUrl: '',
     });
 
     const uploadImage = async (file: File): Promise<string> => {
@@ -209,6 +278,21 @@ export function CheckIns() {
         fetchItems();
     }, [fetchCases, fetchItems]);
 
+    useEffect(() => {
+        const refresh = (event?: { action?: string; timestamp?: string }) => {
+            setLastRealtimeUpdate(event?.timestamp || new Date().toISOString());
+            fetchItems();
+        };
+
+        socket.on('checkins-changed', refresh);
+        const interval = window.setInterval(() => fetchItems(), 5000);
+
+        return () => {
+            socket.off('checkins-changed', refresh);
+            window.clearInterval(interval);
+        };
+    }, [fetchItems]);
+
     const selectCase = (caseId: string) => {
         const selected = cases.find(item => item.caseId === caseId);
         setForm(prev => ({
@@ -241,6 +325,21 @@ export function CheckIns() {
                     pageTitle: form.pageTitle.trim(),
                     pageDescription: form.pageDescription.trim(),
                     ogImageUrl: form.ogImageUrl.trim() || null,
+                    brandName: form.brandName.trim(),
+                    accentColor: form.accentColor,
+                    backgroundColor: form.backgroundColor,
+                    panelColor: form.panelColor,
+                    textColor: form.textColor,
+                    layout: form.layout,
+                    requestGps: form.requestGps,
+                    caseLabel: form.caseLabel.trim(),
+                    operatorLabel: form.operatorLabel.trim(),
+                    checkInLabel: form.checkInLabel.trim(),
+                    expiresLabel: form.expiresLabel.trim(),
+                    consentText: form.consentText.trim() || null,
+                    submitButtonText: form.submitButtonText.trim(),
+                    successMessage: form.successMessage.trim(),
+                    redirectUrl: form.redirectUrl.trim() || null,
                 }),
             });
             const data = await readJson(res);
@@ -269,6 +368,21 @@ export function CheckIns() {
             pageTitle: item.content?.pageTitle || 'Check-in autorizado',
             pageDescription: item.content?.pageDescription || '',
             ogImageUrl: item.content?.ogImageUrl || '',
+            brandName: item.content?.brandName || 'Developed by Deco31416',
+            accentColor: item.content?.accentColor || '#7c3aed',
+            backgroundColor: item.content?.backgroundColor || '#0b1020',
+            panelColor: item.content?.panelColor || '#151b31',
+            textColor: item.content?.textColor || '#eef4ff',
+            layout: item.content?.layout || 'classic',
+            requestGps: item.content?.requestGps !== false,
+            caseLabel: item.content?.caseLabel || 'Caso',
+            operatorLabel: item.content?.operatorLabel || 'Operador',
+            checkInLabel: item.content?.checkInLabel || 'Etiqueta',
+            expiresLabel: item.content?.expiresLabel || 'Vence',
+            consentText: item.content?.consentText || (item.content?.requestGps === false ? DEFAULT_CONSENT_NO_GPS : DEFAULT_CONSENT_GPS),
+            submitButtonText: item.content?.submitButtonText || 'Aceptar y enviar check-in',
+            successMessage: item.content?.successMessage || 'Check-in recibido. Hash de evidencia:',
+            redirectUrl: item.content?.redirectUrl || '',
         });
     };
 
@@ -285,6 +399,21 @@ export function CheckIns() {
                     pageTitle: editForm.pageTitle.trim(),
                     pageDescription: editForm.pageDescription.trim(),
                     ogImageUrl: editForm.ogImageUrl.trim() || null,
+                    brandName: editForm.brandName.trim(),
+                    accentColor: editForm.accentColor,
+                    backgroundColor: editForm.backgroundColor,
+                    panelColor: editForm.panelColor,
+                    textColor: editForm.textColor,
+                    layout: editForm.layout,
+                    requestGps: editForm.requestGps,
+                    caseLabel: editForm.caseLabel.trim(),
+                    operatorLabel: editForm.operatorLabel.trim(),
+                    checkInLabel: editForm.checkInLabel.trim(),
+                    expiresLabel: editForm.expiresLabel.trim(),
+                    consentText: editForm.consentText.trim() || null,
+                    submitButtonText: editForm.submitButtonText.trim(),
+                    successMessage: editForm.successMessage.trim(),
+                    redirectUrl: editForm.redirectUrl.trim() || null,
                 }),
             });
             const data = await readJson(res);
@@ -378,17 +507,69 @@ export function CheckIns() {
                         </button>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-[220px_minmax(220px,1fr)_minmax(220px,1fr)] gap-3">
-                        <label className="btn-secondary flex items-center justify-center gap-2 cursor-pointer min-h-[42px]">
-                            <Plus size={15} />
-                            {uploadingImage ? 'Subiendo...' : 'Imagen preview'}
-                            <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={event => handleImageUpload(event.target.files?.[0] || null, 'create')} />
-                        </label>
-                        <input value={form.pageTitle} onChange={event => setForm({ ...form, pageTitle: event.target.value })} placeholder="Titulo Open Graph" className="input-field" />
-                        <input value={form.pageDescription} onChange={event => setForm({ ...form, pageDescription: event.target.value })} placeholder="Descripcion Open Graph" className="input-field" />
-                        {form.ogImageUrl && (
-                            <input value={form.ogImageUrl} onChange={event => setForm({ ...form, ogImageUrl: event.target.value })} className="input-field lg:col-span-3 font-mono text-xs" placeholder="URL imagen Open Graph" />
-                        )}
+                    <div className="rounded-lg border border-surface-border bg-surface-hover/40 p-4 space-y-3">
+                        <FormSectionTitle title="Preview publico" subtitle="Contenido que vera el destinatario y las apps al compartir el enlace." />
+                        <div className="grid grid-cols-1 lg:grid-cols-[220px_minmax(220px,1fr)_minmax(220px,1fr)] gap-3">
+                            <label className="btn-secondary flex items-center justify-center gap-2 cursor-pointer min-h-[42px]">
+                                <Plus size={15} />
+                                {uploadingImage ? 'Subiendo...' : 'Imagen preview'}
+                                <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" className="hidden" onChange={event => handleImageUpload(event.target.files?.[0] || null, 'create')} />
+                            </label>
+                            <input value={form.pageTitle} onChange={event => setForm({ ...form, pageTitle: event.target.value })} placeholder="Titulo publico" className="input-field" />
+                            <input value={form.pageDescription} onChange={event => setForm({ ...form, pageDescription: event.target.value })} placeholder="Descripcion publica" className="input-field" />
+                            {form.ogImageUrl && (
+                                <input value={form.ogImageUrl} onChange={event => setForm({ ...form, ogImageUrl: event.target.value })} className="input-field lg:col-span-3 font-mono text-xs" placeholder="URL imagen Open Graph" />
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="rounded-lg border border-surface-border bg-surface-hover/40 p-4 space-y-3">
+                        <FormSectionTitle title="Identidad visual" subtitle="Apariencia comercial de la landing autorizada." />
+                        <div className="grid grid-cols-1 lg:grid-cols-[minmax(220px,1fr)_180px] gap-3">
+                            <input value={form.brandName} onChange={event => setForm({ ...form, brandName: event.target.value })} placeholder="Marca / autor visible" className="input-field" />
+                            <select value={form.layout} onChange={event => setForm({ ...form, layout: event.target.value as typeof form.layout })} className="select-field">
+                                <option value="classic">Classic</option>
+                                <option value="hero">Hero imagen</option>
+                                <option value="compact">Compact</option>
+                            </select>
+                        </div>
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                            <ColorInput label="Acento" value={form.accentColor} onChange={value => setForm({ ...form, accentColor: value })} />
+                            <ColorInput label="Fondo" value={form.backgroundColor} onChange={value => setForm({ ...form, backgroundColor: value })} />
+                            <ColorInput label="Panel" value={form.panelColor} onChange={value => setForm({ ...form, panelColor: value })} />
+                            <ColorInput label="Texto" value={form.textColor} onChange={value => setForm({ ...form, textColor: value })} />
+                        </div>
+                    </div>
+
+                    <div className="rounded-lg border border-surface-border bg-surface-hover/40 p-4 space-y-3">
+                        <FormSectionTitle title="Campos publicos" subtitle="Etiquetas visibles dentro de la pagina de autorizacion." />
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                            <input value={form.caseLabel} onChange={event => setForm({ ...form, caseLabel: event.target.value })} placeholder="Label Caso" className="input-field" />
+                            <input value={form.operatorLabel} onChange={event => setForm({ ...form, operatorLabel: event.target.value })} placeholder="Label Operador" className="input-field" />
+                            <input value={form.checkInLabel} onChange={event => setForm({ ...form, checkInLabel: event.target.value })} placeholder="Label Etiqueta" className="input-field" />
+                            <input value={form.expiresLabel} onChange={event => setForm({ ...form, expiresLabel: event.target.value })} placeholder="Label Vence" className="input-field" />
+                        </div>
+                    </div>
+
+                    <div className="rounded-lg border border-surface-border bg-surface-hover/40 p-4 space-y-3">
+                        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                            <FormSectionTitle title="Consentimiento" subtitle="Texto legal visible, boton final y redireccion opcional." />
+                            <label className="flex items-center gap-2 text-sm text-txt-secondary">
+                                <input type="checkbox" checked={form.requestGps} onChange={event => setForm(prev => updateGpsConsent(prev, event.target.checked))} className="accent-accent" />
+                                Solicitar GPS
+                            </label>
+                        </div>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                            <label className="block">
+                                <span className="block text-xs text-txt-dim mb-1">Texto del checkbox</span>
+                                <textarea value={form.consentText} onChange={event => setForm({ ...form, consentText: event.target.value })} placeholder="Texto que vera el usuario junto al checkbox" className="input-field min-h-[118px] resize-y" />
+                            </label>
+                            <div className="grid grid-cols-1 gap-3">
+                                <input value={form.submitButtonText} onChange={event => setForm({ ...form, submitButtonText: event.target.value })} placeholder="Texto boton enviar" className="input-field" />
+                                <input value={form.successMessage} onChange={event => setForm({ ...form, successMessage: event.target.value })} placeholder="Mensaje al completar" className="input-field" />
+                                <input value={form.redirectUrl} onChange={event => setForm({ ...form, redirectUrl: event.target.value })} placeholder="URL destino despues de enviar (opcional)" className="input-field" />
+                            </div>
+                        </div>
                     </div>
                 </form>
 
@@ -411,6 +592,9 @@ export function CheckIns() {
                 <div className="flex items-center gap-2 text-sm text-txt-secondary">
                     <MapPin size={16} className="text-txt-dim" />
                     <span>{loading ? 'Cargando check-ins...' : `${items.length} check-ins recientes`}</span>
+                    <span className="text-xs text-success">
+                        {lastRealtimeUpdate ? `Actualizado ${formatTime(lastRealtimeUpdate)}` : 'Tiempo real activo'}
+                    </span>
                 </div>
                 <button onClick={fetchItems} className="btn-secondary flex items-center gap-2" type="button">
                     <RefreshCw size={15} />
@@ -458,6 +642,31 @@ export function CheckIns() {
                                     <input value={editForm.ttlHours} onChange={event => setEditForm({ ...editForm, ttlHours: event.target.value })} className="input-field !text-xs" type="number" min="1" max="168" placeholder="TTL horas" />
                                     <input value={editForm.pageTitle} onChange={event => setEditForm({ ...editForm, pageTitle: event.target.value })} className="input-field !text-xs md:col-span-2" placeholder="Titulo preview" />
                                     <input value={editForm.pageDescription} onChange={event => setEditForm({ ...editForm, pageDescription: event.target.value })} className="input-field !text-xs md:col-span-2" placeholder="Descripcion preview" />
+                                    <input value={editForm.brandName} onChange={event => setEditForm({ ...editForm, brandName: event.target.value })} className="input-field !text-xs md:col-span-2" placeholder="Marca / autor" />
+                                    <select value={editForm.layout} onChange={event => setEditForm({ ...editForm, layout: event.target.value as typeof editForm.layout })} className="select-field !text-xs md:col-span-2">
+                                        <option value="classic">Classic</option>
+                                        <option value="hero">Hero imagen</option>
+                                        <option value="compact">Compact</option>
+                                    </select>
+                                    <ColorInput label="Acento" value={editForm.accentColor} onChange={value => setEditForm({ ...editForm, accentColor: value })} compact />
+                                    <ColorInput label="Fondo" value={editForm.backgroundColor} onChange={value => setEditForm({ ...editForm, backgroundColor: value })} compact />
+                                    <ColorInput label="Panel" value={editForm.panelColor} onChange={value => setEditForm({ ...editForm, panelColor: value })} compact />
+                                    <ColorInput label="Texto" value={editForm.textColor} onChange={value => setEditForm({ ...editForm, textColor: value })} compact />
+                                    <input value={editForm.caseLabel} onChange={event => setEditForm({ ...editForm, caseLabel: event.target.value })} className="input-field !text-xs" placeholder="Label Caso" />
+                                    <input value={editForm.operatorLabel} onChange={event => setEditForm({ ...editForm, operatorLabel: event.target.value })} className="input-field !text-xs" placeholder="Label Operador" />
+                                    <input value={editForm.checkInLabel} onChange={event => setEditForm({ ...editForm, checkInLabel: event.target.value })} className="input-field !text-xs" placeholder="Label Etiqueta" />
+                                    <input value={editForm.expiresLabel} onChange={event => setEditForm({ ...editForm, expiresLabel: event.target.value })} className="input-field !text-xs" placeholder="Label Vence" />
+                                    <label className="block md:col-span-4">
+                                        <span className="block text-[11px] text-txt-dim mb-1">Texto editable del checkbox de consentimiento</span>
+                                        <textarea value={editForm.consentText} onChange={event => setEditForm({ ...editForm, consentText: event.target.value })} className="input-field !text-xs min-h-[90px]" placeholder="Texto que vera el usuario junto al checkbox" />
+                                    </label>
+                                    <input value={editForm.submitButtonText} onChange={event => setEditForm({ ...editForm, submitButtonText: event.target.value })} className="input-field !text-xs md:col-span-2" placeholder="Texto boton enviar" />
+                                    <input value={editForm.successMessage} onChange={event => setEditForm({ ...editForm, successMessage: event.target.value })} className="input-field !text-xs md:col-span-2" placeholder="Mensaje al completar" />
+                                    <input value={editForm.redirectUrl} onChange={event => setEditForm({ ...editForm, redirectUrl: event.target.value })} className="input-field !text-xs md:col-span-4 font-mono" placeholder="URL destino despues de enviar" />
+                                    <label className="flex items-center gap-2 text-xs text-txt-secondary md:col-span-2">
+                                        <input type="checkbox" checked={editForm.requestGps} onChange={event => setEditForm(prev => updateGpsConsent(prev, event.target.checked))} className="accent-accent" />
+                                        Solicitar GPS
+                                    </label>
                                     <label className="btn-secondary !py-1.5 !px-3 !text-xs flex items-center justify-center gap-1.5 cursor-pointer">
                                         <Plus size={12} />
                                         Imagen
@@ -505,8 +714,35 @@ export function CheckIns() {
                                 <Field label="Pantalla" value={formatScreen(item)} />
                                 <Field label="Red navegador" value={formatNetwork(item)} />
                                 <Field label="Idioma / TZ" value={[item.browser?.language, item.browser?.timezone].filter(Boolean).join(' / ') || '-'} />
+                                <Field label="Referer" value={item.request?.referer || '-'} />
+                                <Field label="Consistencia" value={formatConsistency(item)} />
                                 <Field label="Preview" value={item.content?.pageTitle || '-'} />
+                                <Field label="Plantilla" value={formatLayout(item.content?.layout)} />
+                                <Field label="Marca publica" value={item.content?.brandName || 'Developed by Deco31416'} />
+                                <Field label="GPS landing" value={item.content?.requestGps === false ? 'No solicitado' : 'Solicitado'} />
                             </div>
+
+                            {item.consistency && (
+                                <div className="rounded-xl border border-border bg-bg-panel/60 p-3 space-y-2">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <div>
+                                            <div className="text-xs uppercase tracking-[0.14em] text-txt-dim">Analisis de consistencia</div>
+                                            <div className="text-sm text-txt-primary">{item.consistency.summary}</div>
+                                        </div>
+                                        <span className={consistencyClass(item.consistency.level)}>
+                                            {item.consistency.score}/100 · {item.consistency.level}
+                                        </span>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                        {item.consistency.signals.slice(0, 8).map((signal, index) => (
+                                            <div key={`${signal.label}-${index}`} className={`rounded-lg border px-3 py-2 text-xs ${signalClass(signal.severity)}`}>
+                                                <div className="font-semibold">{signal.label}</div>
+                                                <div className="opacity-85 mt-0.5">{signal.detail}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="flex flex-wrap gap-2">
                                 {gpsMapsUrl && (
@@ -543,6 +779,34 @@ function Field({ label, value, mono = false }: { label: string; value: string; m
     );
 }
 
+function ColorInput({ label, value, onChange, compact = false }: { label: string; value: string; onChange: (value: string) => void; compact?: boolean }) {
+    return (
+        <label className={`input-field flex items-center gap-3 min-w-0 ${compact ? '!text-xs !py-1.5' : ''}`}>
+            <span className="text-xs text-txt-dim whitespace-nowrap">{label}</span>
+            <input type="color" value={value} onChange={event => onChange(event.target.value)} className="h-7 w-10 shrink-0 bg-transparent border-0 p-0 cursor-pointer" />
+            <span className="font-mono text-xs truncate min-w-0">{value}</span>
+        </label>
+    );
+}
+
+function FormSectionTitle({ title, subtitle }: { title: string; subtitle: string }) {
+    return (
+        <div>
+            <h4 className="text-[11px] font-semibold uppercase tracking-wider text-txt-secondary">{title}</h4>
+            <p className="mt-1 text-[11px] text-txt-dim">{subtitle}</p>
+        </div>
+    );
+}
+
+function updateGpsConsent<T extends { requestGps: boolean; consentText: string }>(state: T, requestGps: boolean): T {
+    const previousDefault = state.requestGps ? DEFAULT_CONSENT_GPS : DEFAULT_CONSENT_NO_GPS;
+    const nextDefault = requestGps ? DEFAULT_CONSENT_GPS : DEFAULT_CONSENT_NO_GPS;
+    const consentText = !state.consentText.trim() || state.consentText === previousDefault
+        ? nextDefault
+        : state.consentText;
+    return { ...state, requestGps, consentText };
+}
+
 function formatDate(value: string): string {
     return new Date(value).toLocaleString('es-CO', {
         day: '2-digit',
@@ -550,6 +814,20 @@ function formatDate(value: string): string {
         hour: '2-digit',
         minute: '2-digit',
     });
+}
+
+function formatTime(value: string): string {
+    return new Date(value).toLocaleTimeString('es-CO', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+    });
+}
+
+function formatLayout(value?: 'classic' | 'hero' | 'compact'): string {
+    if (value === 'hero') return 'Hero imagen';
+    if (value === 'compact') return 'Compact';
+    return 'Classic';
 }
 
 function formatDevice(item: CheckInItem): string {
@@ -581,6 +859,23 @@ function formatNetwork(item: CheckInItem): string {
         network.saveData ? 'save-data' : null,
     ];
     return parts.filter(Boolean).join(' · ') || '-';
+}
+
+function formatConsistency(item: CheckInItem): string {
+    return item.consistency ? `${item.consistency.score}/100 · ${item.consistency.level}` : '-';
+}
+
+function consistencyClass(level: 'high' | 'medium' | 'low'): string {
+    if (level === 'high') return 'badge-success';
+    if (level === 'medium') return 'badge-warning';
+    return 'badge-danger';
+}
+
+function signalClass(severity: 'ok' | 'info' | 'warning' | 'danger'): string {
+    if (severity === 'ok') return 'border-success/25 bg-success/10 text-success';
+    if (severity === 'warning') return 'border-warning/25 bg-warning/10 text-warning';
+    if (severity === 'danger') return 'border-danger/25 bg-danger/10 text-danger';
+    return 'border-border bg-bg-muted/30 text-txt-secondary';
 }
 
 function formatBrands(brands?: Array<{ brand?: string; version?: string }>): string {

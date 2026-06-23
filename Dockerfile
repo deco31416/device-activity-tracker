@@ -20,7 +20,7 @@ COPY src ./src
 RUN npm run build
 
 # Expose port (can be overridden by environment variable)
-ARG PORT=3001
+ARG PORT=4000
 ENV PORT=${PORT}
 EXPOSE ${PORT}
 

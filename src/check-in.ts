@@ -2,6 +2,9 @@ import crypto from 'crypto';
 import type { CheckInDoc } from './db.js';
 
 export const CHECK_IN_CONSENT_TEXT = 'Acepto enviar este check-in autorizado. Entiendo que se registrara mi IP publica observada por el servidor, sistema operativo, navegador, tipo de dispositivo, pantalla, idioma, zona horaria, datos basicos de red del navegador y, si doy permiso, mi ubicacion aproximada.';
+export const CHECK_IN_CONSENT_TEXT_NO_GPS = 'Acepto enviar este check-in autorizado. Entiendo que se registrara mi IP publica observada por el servidor, sistema operativo, navegador, tipo de dispositivo, pantalla, idioma, zona horaria y datos basicos de red del navegador.';
+const REQUIRED_DISCLOSURE_GPS = 'Aviso tecnico minimo: este envio registra IP publica observada por el servidor, navegador, sistema/dispositivo aproximado, pantalla, idioma, zona horaria, datos basicos de red del navegador y ubicacion aproximada solo si se concede permiso GPS.';
+const REQUIRED_DISCLOSURE_NO_GPS = 'Aviso tecnico minimo: este envio registra IP publica observada por el servidor, navegador, sistema/dispositivo aproximado, pantalla, idioma, zona horaria y datos basicos de red del navegador.';
 
 export interface CheckInSubmission {
     consentAccepted: boolean;
@@ -61,6 +64,17 @@ export interface CheckInSubmission {
     };
 }
 
+export interface CheckInConsistency {
+    score: number;
+    level: 'high' | 'medium' | 'low';
+    summary: string;
+    signals: Array<{
+        severity: 'ok' | 'info' | 'warning' | 'danger';
+        label: string;
+        detail: string;
+    }>;
+}
+
 export function createCheckInToken(): string {
     return crypto.randomBytes(24).toString('base64url');
 }
@@ -68,6 +82,116 @@ export function createCheckInToken(): string {
 export function buildCheckInHash(doc: Partial<CheckInDoc>): string {
     const canonical = JSON.stringify(sortKeys(omitHash(doc)));
     return crypto.createHash('sha256').update(canonical).digest('hex');
+}
+
+export function buildCheckInConsistency(doc: Partial<CheckInDoc>): CheckInConsistency {
+    const signals: CheckInConsistency['signals'] = [];
+    const enrichment = (doc.ipEnrichment || {}) as Record<string, unknown>;
+    const browser = doc.browser || {};
+    const request = doc.request || null;
+    const location = doc.location || null;
+    let score = 70;
+
+    const ipStatus = stringValue(enrichment.status);
+    const proxy = booleanValue(enrichment.proxy);
+    const hosting = booleanValue(enrichment.hosting);
+    const mobileNetwork = booleanValue(enrichment.mobile);
+    const ipTimezone = stringValue(enrichment.timezone);
+    const ipCountry = stringValue(enrichment.countryCode);
+    const ipCity = stringValue(enrichment.city);
+    const browserTimezone = stringValue(browser.timezone);
+    const browserLanguage = stringValue(browser.language);
+    const deviceType = stringValue(browser.device?.type);
+
+    if (ipStatus === 'success') {
+        score += 8;
+        signals.push({ severity: 'ok', label: 'GeoIP disponible', detail: `Proveedor IP reporta ${[ipCity, ipCountry].filter(Boolean).join(', ') || 'ubicacion estimada'}.` });
+    } else {
+        score -= 8;
+        signals.push({ severity: 'info', label: 'GeoIP limitado', detail: stringValue(enrichment.message) || 'No hay enriquecimiento publico para esta IP.' });
+    }
+
+    if (proxy) {
+        score -= 22;
+        signals.push({ severity: 'warning', label: 'Proxy/VPN posible', detail: 'El proveedor de IP marco la red como proxy.' });
+    }
+    if (hosting) {
+        score -= 20;
+        signals.push({ severity: 'warning', label: 'Hosting/datacenter', detail: 'La IP parece pertenecer a infraestructura cloud/hosting.' });
+    }
+    if (mobileNetwork) {
+        score += deviceType === 'mobile' ? 8 : 2;
+        signals.push({ severity: 'info', label: 'Red movil', detail: 'El proveedor reporta la IP como red movil.' });
+    }
+
+    if (ipTimezone && browserTimezone) {
+        if (ipTimezone === browserTimezone) {
+            score += 14;
+            signals.push({ severity: 'ok', label: 'Zona horaria coherente', detail: `${browserTimezone} coincide con la zona estimada por IP.` });
+        } else {
+            score -= 18;
+            signals.push({ severity: 'warning', label: 'Zona horaria divergente', detail: `Navegador ${browserTimezone}; IP ${ipTimezone}.` });
+        }
+    } else {
+        score -= 4;
+        signals.push({ severity: 'info', label: 'Zona horaria incompleta', detail: 'No se pudo comparar zona horaria del navegador contra GeoIP.' });
+    }
+
+    const languageRegion = browserLanguage.match(/-([A-Z]{2})$/i)?.[1]?.toUpperCase();
+    if (languageRegion && ipCountry) {
+        if (languageRegion === ipCountry) {
+            score += 8;
+            signals.push({ severity: 'ok', label: 'Idioma coherente', detail: `${browserLanguage} coincide con pais GeoIP ${ipCountry}.` });
+        } else {
+            score -= 8;
+            signals.push({ severity: 'info', label: 'Idioma diferente', detail: `${browserLanguage} no coincide con pais GeoIP ${ipCountry}. Puede ser normal en equipos multiregion.` });
+        }
+    }
+
+    const ipLat = numberValue(enrichment.lat);
+    const ipLon = numberValue(enrichment.lon);
+    if (location?.permission === 'granted' && typeof location.lat === 'number' && typeof location.lon === 'number') {
+        if (typeof ipLat === 'number' && typeof ipLon === 'number') {
+            const km = distanceKm(location.lat, location.lon, ipLat, ipLon);
+            if (km <= 50) {
+                score += 15;
+                signals.push({ severity: 'ok', label: 'GPS/IP cercanos', detail: `Distancia aproximada ${Math.round(km)} km entre GPS e IP estimada.` });
+            } else if (km <= 250) {
+                score += 4;
+                signals.push({ severity: 'info', label: 'GPS/IP razonablemente cercanos', detail: `Distancia aproximada ${Math.round(km)} km; puede depender del ISP.` });
+            } else {
+                score -= 14;
+                signals.push({ severity: 'warning', label: 'GPS/IP distantes', detail: `Distancia aproximada ${Math.round(km)} km. Puede indicar VPN, CGNAT, salida centralizada del ISP o GeoIP impreciso.` });
+            }
+        } else {
+            score += 10;
+            signals.push({ severity: 'ok', label: 'GPS autorizado', detail: 'El navegador entrego coordenadas GPS con consentimiento.' });
+        }
+    } else if (location?.permission === 'denied') {
+        score -= 5;
+        signals.push({ severity: 'info', label: 'GPS denegado', detail: 'El usuario no concedio permiso de ubicacion del navegador.' });
+    } else {
+        signals.push({ severity: 'info', label: 'GPS no disponible', detail: 'No hay coordenadas GPS para comparar contra la IP.' });
+    }
+
+    if (request?.referer) {
+        score += 3;
+        signals.push({ severity: 'ok', label: 'Referer presente', detail: 'El navegador envio pagina de referencia.' });
+    }
+
+    if (browser.privacy?.doNotTrack && browser.privacy.doNotTrack !== '0') {
+        signals.push({ severity: 'info', label: 'Do Not Track', detail: 'El navegador reporta preferencia de privacidad activa.' });
+    }
+
+    const normalizedScore = Math.max(0, Math.min(100, Math.round(score)));
+    const level: CheckInConsistency['level'] = normalizedScore >= 75 ? 'high' : normalizedScore >= 45 ? 'medium' : 'low';
+    const summary = level === 'high'
+        ? 'Senales tecnicas mayormente coherentes.'
+        : level === 'medium'
+            ? 'Senales tecnicas mixtas; revisar contexto antes de concluir.'
+            : 'Senales tecnicas divergentes o de baja confianza; requiere corroboracion externa.';
+
+    return { score: normalizedScore, level, summary, signals };
 }
 
 export function normalizeCheckInSubmission(input: unknown): CheckInSubmission {
@@ -163,6 +287,21 @@ export function renderCheckInPage(doc: CheckInDoc, options: { status?: 'ready' |
     const title = doc.content?.pageTitle || fallbackTitle;
     const description = doc.content?.pageDescription || 'Esta verificacion pertenece a un proceso autorizado. El envio registra IP observada por el servidor, navegador, sistema, tipo de dispositivo, pantalla, red y puede incluir ubicacion aproximada solo si aceptas el permiso del navegador.';
     const ogImageUrl = doc.content?.ogImageUrl || '';
+    const brandName = doc.content?.brandName || 'Developed by Deco31416';
+    const accentColor = safeColor(doc.content?.accentColor, '#7c3aed');
+    const backgroundColor = safeColor(doc.content?.backgroundColor, '#0b1020');
+    const panelColor = safeColor(doc.content?.panelColor, '#151b31');
+    const textColor = safeColor(doc.content?.textColor, '#eef4ff');
+    const layout = ['classic', 'hero', 'compact'].includes(doc.content?.layout || '') ? doc.content?.layout : 'classic';
+    const requestGps = doc.content?.requestGps !== false;
+    const consentParts = buildConsentParts(doc.content?.consentText, requestGps);
+    const submitButtonText = doc.content?.submitButtonText || 'Aceptar y enviar check-in';
+    const successMessage = doc.content?.successMessage || 'Check-in recibido. Hash de evidencia:';
+    const redirectUrl = safeRedirectUrl(doc.content?.redirectUrl);
+    const heroClass = layout === 'hero' && ogImageUrl ? ' hero' : layout === 'compact' ? ' compact' : '';
+    const heroMarkup = layout === 'hero' && ogImageUrl ? `<div class="hero-image" aria-hidden="true"></div>` : '';
+    const publicReference = doc.label || doc.caseId;
+    const publicExpires = doc.expiresAt ? formatPublicDate(doc.expiresAt) : 'Sin vencimiento';
 
     return `<!doctype html>
 <html lang="es">
@@ -180,44 +319,68 @@ export function renderCheckInPage(doc: CheckInDoc, options: { status?: 'ready' |
   <meta name="twitter:title" content="${escapeHtml(title)}" />
   <meta name="twitter:description" content="${escapeHtml(description)}" />
   <style>
-    :root { color-scheme: dark; --bg:#0b1020; --panel:#151b31; --line:#27304d; --text:#eef4ff; --muted:#8ea0c4; --accent:#7c3aed; --ok:#10b981; --warn:#f59e0b; --danger:#ef4444; }
+    :root { color-scheme: dark; --bg:${backgroundColor}; --panel:${panelColor}; --line:rgba(142,160,196,.22); --text:${textColor}; --muted:#9fb2d7; --accent:${accentColor}; --ok:#10b981; --warn:#f59e0b; --danger:#ef4444; --surface:#0f172a; }
     * { box-sizing: border-box; }
-    body { margin:0; min-height:100vh; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: radial-gradient(circle at top, #17203b 0, var(--bg) 48%); color:var(--text); display:flex; align-items:center; justify-content:center; padding:24px; }
-    main { width:min(720px, 100%); background:rgba(21,27,49,.94); border:1px solid var(--line); border-radius:14px; padding:28px; box-shadow:0 24px 70px rgba(0,0,0,.38); }
-    .brand { color:var(--muted); font-size:12px; letter-spacing:.14em; text-transform:uppercase; font-weight:800; margin-bottom:16px; }
-    h1 { margin:0 0 10px; font-size:28px; line-height:1.15; letter-spacing:0; }
-    p { color:var(--muted); line-height:1.6; margin:0 0 16px; }
-    .meta { display:grid; gap:10px; grid-template-columns: repeat(2, minmax(0,1fr)); margin:22px 0; }
-    .item { border:1px solid var(--line); border-radius:10px; padding:12px; background:#11172b; min-width:0; }
-    .label { color:var(--muted); font-size:12px; margin-bottom:4px; }
-    .value { font-weight:700; overflow-wrap:anywhere; }
-    label { display:flex; gap:10px; align-items:flex-start; color:var(--text); line-height:1.5; margin:18px 0; }
-    input[type="checkbox"] { margin-top:4px; width:18px; height:18px; accent-color:var(--accent); flex:0 0 auto; }
-    button { appearance:none; border:0; border-radius:10px; padding:13px 18px; font-weight:800; color:#fff; background:var(--accent); cursor:pointer; min-height:46px; }
-    button:disabled { opacity:.55; cursor:not-allowed; }
-    .status { margin-top:18px; padding:14px; border-radius:10px; border:1px solid var(--line); background:#10172d; color:var(--muted); }
+    html { min-height:100%; scrollbar-width:thin; scrollbar-color:#4b5563 #0f172a; }
+    html::-webkit-scrollbar { width:12px; height:12px; }
+    html::-webkit-scrollbar-track { background:#0f172a; }
+    html::-webkit-scrollbar-thumb { background:linear-gradient(180deg, #64748b, #374151); border:3px solid #0f172a; border-radius:999px; }
+    html::-webkit-scrollbar-thumb:hover { background:linear-gradient(180deg, #94a3b8, #4b5563); }
+    body { margin:0; min-height:100vh; font-family: "Inter", "Aptos", "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif; background:linear-gradient(135deg, color-mix(in srgb, var(--bg) 92%, #fff 8%), var(--bg)); color:var(--text); display:flex; align-items:center; justify-content:center; padding:clamp(18px, 4vw, 42px); overflow-x:hidden; }
+    body::before { content:""; position:fixed; inset:0; pointer-events:none; background:radial-gradient(circle at 18% 8%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 34%), radial-gradient(circle at 88% 18%, rgba(255,255,255,.12), transparent 28%); opacity:.9; }
+    main { position:relative; width:min(880px, calc(100vw - clamp(32px, 8vw, 84px))); background:color-mix(in srgb, var(--panel) 94%, #ffffff 6%); border:1px solid var(--line); border-radius:28px; padding:0; box-shadow:0 30px 90px rgba(0,0,0,.34); overflow:hidden; }
+    main.hero { width:min(1040px, 100%); display:grid; grid-template-columns:minmax(280px, .82fr) minmax(0, 1fr); }
+    main.compact { width:min(640px, calc(100vw - clamp(32px, 8vw, 84px))); }
+    .hero-image { min-height:100%; background:linear-gradient(180deg, rgba(11,16,32,.02), rgba(11,16,32,.56)), url('${escapeCssUrl(ogImageUrl)}') center/cover; }
+    .content { padding:40px; min-width:0; }
+    main.compact .content { padding:30px; }
+    .brand { color:var(--muted); font-size:11px; letter-spacing:.16em; text-transform:uppercase; font-weight:850; margin-bottom:18px; }
+    h1 { margin:0 0 10px; font-size:clamp(30px, 5vw, 44px); line-height:1.04; letter-spacing:0; max-width:780px; overflow-wrap:anywhere; }
+    p { color:var(--muted); line-height:1.62; margin:0 0 18px; font-size:16px; max-width:780px; overflow-wrap:anywhere; }
+    .meta { display:grid; gap:10px; grid-template-columns: repeat(2, minmax(0,1fr)); margin:26px 0 20px; }
+    .item { border:1px solid var(--line); border-radius:16px; padding:14px 16px; background:rgba(15,23,42,.58); min-width:0; }
+    .label { color:var(--muted); font-size:12px; margin-bottom:6px; }
+    .value { font-weight:800; overflow-wrap:anywhere; font-size:17px; }
+    .summary-strip { display:flex; flex-wrap:wrap; gap:10px; margin:24px 0 14px; }
+    .summary-pill { display:inline-flex; align-items:center; gap:8px; border:1px solid var(--line); border-radius:999px; padding:9px 13px; background:rgba(15,23,42,.44); color:var(--muted); font-size:13px; }
+    .summary-pill strong { color:var(--text); font-size:14px; }
+    .consent-card { display:grid; grid-template-columns:24px minmax(0,1fr); gap:14px; align-items:start; margin:22px 0 14px; padding:18px; border:1px solid color-mix(in srgb, var(--accent) 28%, var(--line)); border-radius:18px; background:color-mix(in srgb, var(--accent) 9%, transparent); }
+    .consent-card span { line-height:1.52; font-size:16px; color:var(--text); overflow-wrap:anywhere; }
+    input[type="checkbox"] { margin-top:2px; width:22px; height:22px; accent-color:var(--accent); flex:0 0 auto; }
+    .disclosure { margin:0 0 18px; padding:14px 16px; border:1px solid var(--line); border-radius:16px; background:rgba(15,23,42,.46); color:var(--muted); font-size:13px; line-height:1.52; overflow-wrap:anywhere; }
+    .actions { display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin-top:16px; }
+    button { appearance:none; border:0; border-radius:16px; padding:14px 22px; font-weight:850; color:#fff; background:linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 72%, #2563eb 28%)); cursor:pointer; min-height:48px; box-shadow:0 12px 26px color-mix(in srgb, var(--accent) 28%, transparent); }
+    button:disabled { opacity:.58; cursor:not-allowed; box-shadow:none; filter:saturate(.7); }
+    .status { margin-top:18px; padding:14px 16px; border-radius:16px; border:1px solid var(--line); background:rgba(15,23,42,.62); color:var(--muted); }
     .ok { border-color:rgba(16,185,129,.45); color:#b7f7df; }
     .warn { border-color:rgba(245,158,11,.45); color:#ffe2a6; }
     .danger { border-color:rgba(239,68,68,.5); color:#ffc6c6; }
-    @media (max-width: 640px) { main { padding:20px; } .meta { grid-template-columns:1fr; } h1 { font-size:24px; } }
+    @media (max-width: 760px) { body { padding:18px; align-items:flex-start; justify-content:center; } main, main.compact, main.hero { width:min(100%, calc(100vw - 36px)); } main.hero { display:block; } .hero-image { min-height:190px; } .content { padding:26px; } }
+    @media (max-width: 640px) { .meta { grid-template-columns:1fr; } h1 { font-size:30px; } .summary-pill { width:100%; justify-content:space-between; } .consent-card { grid-template-columns:22px minmax(0,1fr); padding:14px; } }
+    @media (max-width: 480px) { body { padding:12px; } main, main.compact, main.hero { width:calc(100vw - 24px); border-radius:22px; } .content { padding:22px 18px; } .brand { font-size:10px; } h1 { font-size:28px; } p, .consent-card span { font-size:15px; } button { width:100%; } }
   </style>
 </head>
 <body>
-  <main>
-    <div class="brand">Developed by Deco31416</div>
+  <main class="${heroClass.trim()}">
+    ${heroMarkup}
+    <section class="content">
+    <div class="brand">${escapeHtml(brandName)}</div>
     <h1>${escapeHtml(title)}</h1>
     <p>${escapeHtml(description)}</p>
-    <div class="meta">
-      <div class="item"><div class="label">Caso</div><div class="value">${escapeHtml(doc.caseId)}</div></div>
-      <div class="item"><div class="label">Operador</div><div class="value">${escapeHtml(doc.operatorName)}</div></div>
-      <div class="item"><div class="label">Etiqueta</div><div class="value">${escapeHtml(doc.label)}</div></div>
-      <div class="item"><div class="label">Vence</div><div class="value">${escapeHtml(doc.expiresAt ? doc.expiresAt.toISOString() : 'Sin vencimiento')}</div></div>
+    <div class="summary-strip" aria-label="Resumen de solicitud">
+      <div class="summary-pill">Referencia <strong>${escapeHtml(publicReference)}</strong></div>
+      <div class="summary-pill">Valido hasta <strong>${escapeHtml(publicExpires)}</strong></div>
     </div>
-    ${isReady ? `<label><input id="consent" type="checkbox" /><span>${escapeHtml(CHECK_IN_CONSENT_TEXT)}</span></label>
-    <button id="send" disabled>Aceptar y enviar check-in</button>
+    ${isReady ? `<label class="consent-card"><input id="consent" type="checkbox" /><span>${escapeHtml(consentParts.primary)}</span></label>
+    <div class="disclosure">${escapeHtml(consentParts.disclosure)}</div>
+    <div class="actions"><button id="send" disabled>${escapeHtml(submitButtonText)}</button></div>
     <div id="status" class="status">Esperando autorizacion del usuario.</div>` : `<div class="status ${status === 'completed' ? 'ok' : status === 'expired' ? 'warn' : 'danger'}">${escapeHtml(statusMessage(status))}</div>`}
+    </section>
   </main>
   ${isReady ? `<script>
+    const REQUEST_GPS = ${requestGps ? 'true' : 'false'};
+    const REDIRECT_URL = ${JSON.stringify(redirectUrl || '')};
+    const SUCCESS_MESSAGE = ${JSON.stringify(successMessage)};
     const consent = document.getElementById('consent');
     const button = document.getElementById('send');
     const statusBox = document.getElementById('status');
@@ -228,6 +391,10 @@ export function renderCheckInPage(doc: CheckInDoc, options: { status?: 'ready' |
     }
     function getLocation() {
       return new Promise(resolve => {
+        if (!REQUEST_GPS) {
+          resolve({ permission: 'unsupported' });
+          return;
+        }
         if (!navigator.geolocation) {
           resolve({ permission: 'unsupported' });
           return;
@@ -252,7 +419,7 @@ export function renderCheckInPage(doc: CheckInDoc, options: { status?: 'ready' |
     button.addEventListener('click', async () => {
       if (!consent.checked) return;
       button.disabled = true;
-      setStatus('Recolectando datos tecnicos autorizados y solicitando ubicacion...', 'warn');
+      setStatus(REQUEST_GPS ? 'Recolectando datos tecnicos autorizados y solicitando ubicacion...' : 'Recolectando datos tecnicos autorizados...', 'warn');
       const location = await getLocation();
       const uaData = navigator.userAgentData ? {
         platform: navigator.userAgentData.platform,
@@ -309,7 +476,10 @@ export function renderCheckInPage(doc: CheckInDoc, options: { status?: 'ready' |
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || 'No se pudo enviar');
-        setStatus('Check-in recibido. Hash de evidencia: ' + data.receipt.hash, 'ok');
+        setStatus(SUCCESS_MESSAGE + ' ' + data.receipt.hash, 'ok');
+        if (REDIRECT_URL) {
+          window.setTimeout(() => { window.location.href = REDIRECT_URL; }, 900);
+        }
       } catch (err) {
         button.disabled = false;
         setStatus(err.message || 'Error enviando check-in', 'danger');
@@ -352,6 +522,17 @@ function statusMessage(status: string): string {
     return 'Este check-in no esta disponible.';
 }
 
+function formatPublicDate(value: Date): string {
+    return new Intl.DateTimeFormat('es-CO', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'America/Bogota',
+    }).format(value);
+}
+
 function clean(value: unknown, max: number): string | undefined {
     return typeof value === 'string' ? value.trim().slice(0, max) || undefined : undefined;
 }
@@ -369,6 +550,71 @@ function numberOrNull(value: unknown): number | null {
 
 function booleanOrUndefined(value: unknown): boolean | undefined {
     return typeof value === 'boolean' ? value : undefined;
+}
+
+function safeColor(value: unknown, fallback: string): string {
+    const text = typeof value === 'string' ? value.trim() : '';
+    return /^#[0-9a-f]{6}$/i.test(text) ? text : fallback;
+}
+
+function buildConsentText(customText: unknown, requestGps: boolean): string {
+    const parts = buildConsentParts(customText, requestGps);
+    return `${parts.primary}\n\n${parts.disclosure}`;
+}
+
+function buildConsentParts(customText: unknown, requestGps: boolean): { primary: string; disclosure: string } {
+    const custom = clean(customText, 1200);
+    const minimum = requestGps ? REQUIRED_DISCLOSURE_GPS : REQUIRED_DISCLOSURE_NO_GPS;
+    const fallback = requestGps ? CHECK_IN_CONSENT_TEXT : CHECK_IN_CONSENT_TEXT_NO_GPS;
+    if (!custom) return { primary: fallback, disclosure: minimum };
+    const [primary, ...rest] = custom.split(/Aviso tecnico minimo:/i);
+    if (rest.length > 0) {
+        return {
+            primary: primary.trim() || fallback,
+            disclosure: `Aviso tecnico minimo:${rest.join('Aviso tecnico minimo:')}`.trim(),
+        };
+    }
+    return { primary: custom, disclosure: minimum };
+}
+
+function safeRedirectUrl(value: unknown): string {
+    const text = clean(value, 1000);
+    if (!text) return '';
+    try {
+        const url = new URL(text);
+        return ['http:', 'https:'].includes(url.protocol) ? url.toString() : '';
+    } catch {
+        return '';
+    }
+}
+
+function escapeCssUrl(value: string): string {
+    return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\)/g, '\\)');
+}
+
+function stringValue(value: unknown): string {
+    return typeof value === 'string' ? value.trim() : '';
+}
+
+function booleanValue(value: unknown): boolean {
+    return value === true;
+}
+
+function numberValue(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function distanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const earthKm = 6371;
+    const dLat = toRadians(lat2 - lat1);
+    const dLon = toRadians(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2
+        + Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) ** 2;
+    return earthKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function toRadians(value: number): number {
+    return value * Math.PI / 180;
 }
 
 function escapeHtml(value: unknown): string {

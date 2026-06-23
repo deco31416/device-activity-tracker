@@ -23,7 +23,7 @@ import { listInterfaces, startCapture, stopCapture, getCaptureStatus, getRecentP
 import { initAnalytics, getFullIntelligence, getDailyRoutine, getAvailabilityProfile, getSessionStats, getWeeklyHeatmap, getHabitProfile, getCorrelation } from './analytics.js';
 import { startCallCapture, stopCallCapture, getCallCaptureStatus, getCallAnalysisHistory, getLatestCallAnalysis, autoDetectInterface } from './call-analyzer.js';
 import { enrichCallAnalysis, lookupIpEnrichment } from './ip-enrichment.js';
-import { CHECK_IN_CONSENT_TEXT, buildCheckInHash, createCheckInToken, normalizeCheckInSubmission, renderCheckInPage } from './check-in.js';
+import { CHECK_IN_CONSENT_TEXT, CHECK_IN_CONSENT_TEXT_NO_GPS, buildCheckInConsistency, buildCheckInHash, createCheckInToken, normalizeCheckInSubmission, renderCheckInPage } from './check-in.js';
 import { registerAuditRoutes } from './routes/audit.js';
 import { registerCaseRoutes } from './routes/cases.js';
 import { registerReportRoutes } from './routes/reports.js';
@@ -679,6 +679,31 @@ function parseImageDataUrl(value: unknown): { ext: string; buffer: Buffer } | nu
     return { ext, buffer };
 }
 
+function cleanHexColor(value: unknown, fallback: string): string {
+    const text = cleanText(value, 16);
+    return text && /^#[0-9a-f]{6}$/i.test(text) ? text : fallback;
+}
+
+function cleanOptionalUrl(value: unknown): string | null {
+    const text = cleanText(value, 1000);
+    if (!text) return null;
+    try {
+        const url = new URL(text);
+        return ['http:', 'https:'].includes(url.protocol) ? url.toString() : null;
+    } catch {
+        return null;
+    }
+}
+
+async function emitCheckInsChanged(action: string, token: string, caseId?: string): Promise<void> {
+    io.emit('checkins-changed', {
+        action,
+        token,
+        caseId,
+        timestamp: new Date().toISOString(),
+    });
+}
+
 app.post('/api/checkins/assets', async (req, res) => {
     const parsed = parseImageDataUrl(req.body?.dataUrl);
     if (!parsed) {
@@ -708,6 +733,21 @@ app.post('/api/checkins', async (req, res) => {
     const pageTitle = cleanText(req.body?.pageTitle, 120) || 'Check-in autorizado';
     const pageDescription = cleanText(req.body?.pageDescription, 260) || undefined;
     const ogImageUrl = cleanText(req.body?.ogImageUrl, 1000) || null;
+    const brandName = cleanText(req.body?.brandName, 80) || 'Developed by Deco31416';
+    const accentColor = cleanHexColor(req.body?.accentColor, '#7c3aed');
+    const backgroundColor = cleanHexColor(req.body?.backgroundColor, '#0b1020');
+    const panelColor = cleanHexColor(req.body?.panelColor, '#151b31');
+    const textColor = cleanHexColor(req.body?.textColor, '#eef4ff');
+    const layout = ['classic', 'hero', 'compact'].includes(req.body?.layout) ? req.body.layout : 'classic';
+    const requestGps = req.body?.requestGps !== false;
+    const caseLabel = cleanText(req.body?.caseLabel, 60) || 'Caso';
+    const operatorLabel = cleanText(req.body?.operatorLabel, 60) || 'Operador';
+    const checkInLabel = cleanText(req.body?.checkInLabel, 60) || 'Etiqueta';
+    const expiresLabel = cleanText(req.body?.expiresLabel, 60) || 'Vence';
+    const consentText = cleanText(req.body?.consentText, 1200) || undefined;
+    const submitButtonText = cleanText(req.body?.submitButtonText, 80) || 'Aceptar y enviar check-in';
+    const successMessage = cleanText(req.body?.successMessage, 180) || 'Check-in recibido. Hash de evidencia:';
+    const redirectUrl = cleanOptionalUrl(req.body?.redirectUrl);
     const targetJidResult = normalizeOptionalJid(req.body?.targetJid, '');
     if (!targetJidResult.ok) {
         validationError(res, targetJidResult.errors || ['Invalid targetJid']);
@@ -731,6 +771,21 @@ app.post('/api/checkins', async (req, res) => {
             pageTitle,
             pageDescription,
             ogImageUrl,
+            brandName,
+            accentColor,
+            backgroundColor,
+            panelColor,
+            textColor,
+            layout,
+            requestGps,
+            caseLabel,
+            operatorLabel,
+            checkInLabel,
+            expiresLabel,
+            consentText,
+            submitButtonText,
+            successMessage,
+            redirectUrl,
         },
         status: 'pending',
         createdAt: now,
@@ -741,7 +796,7 @@ app.post('/api/checkins', async (req, res) => {
         browser: null,
         consent: {
             accepted: false,
-            text: CHECK_IN_CONSENT_TEXT,
+            text: requestGps ? CHECK_IN_CONSENT_TEXT : CHECK_IN_CONSENT_TEXT_NO_GPS,
             acceptedAt: null,
         },
         location: null,
@@ -768,6 +823,7 @@ app.post('/api/checkins', async (req, res) => {
         targetName,
         expiresAt: expiresAt.toISOString(),
     }, targetJid);
+    await emitCheckInsChanged('created', token, context.caseId);
 
     res.status(201).json({
         token,
@@ -825,6 +881,7 @@ app.patch('/api/checkins/:token', async (req, res) => {
             token: existing.token,
             label: existing.label,
         }, existing.targetJid);
+        await emitCheckInsChanged('revoked', existing.token, existing.caseId);
         res.json(revoked);
         return;
     }
@@ -840,17 +897,58 @@ app.patch('/api/checkins/:token', async (req, res) => {
     const pageTitle = cleanText(req.body?.pageTitle, 120);
     const pageDescription = cleanText(req.body?.pageDescription, 260);
     const ogImageUrl = cleanText(req.body?.ogImageUrl, 1000);
+    const brandName = cleanText(req.body?.brandName, 80);
+    const accentColor = cleanHexColor(req.body?.accentColor, existing.content?.accentColor || '#7c3aed');
+    const backgroundColor = cleanHexColor(req.body?.backgroundColor, existing.content?.backgroundColor || '#0b1020');
+    const panelColor = cleanHexColor(req.body?.panelColor, existing.content?.panelColor || '#151b31');
+    const textColor = cleanHexColor(req.body?.textColor, existing.content?.textColor || '#eef4ff');
+    const layout = ['classic', 'hero', 'compact'].includes(req.body?.layout) ? req.body.layout : existing.content?.layout;
+    const requestGps = typeof req.body?.requestGps === 'boolean' ? req.body.requestGps : existing.content?.requestGps;
+    const caseLabel = cleanText(req.body?.caseLabel, 60);
+    const operatorLabel = cleanText(req.body?.operatorLabel, 60);
+    const checkInLabel = cleanText(req.body?.checkInLabel, 60);
+    const expiresLabel = cleanText(req.body?.expiresLabel, 60);
+    const consentText = cleanText(req.body?.consentText, 1200);
+    const submitButtonText = cleanText(req.body?.submitButtonText, 80);
+    const successMessage = cleanText(req.body?.successMessage, 180);
+    const redirectUrl = cleanOptionalUrl(req.body?.redirectUrl);
     const ttlHours = req.body?.ttlHours === undefined ? null : parseTtlHours(req.body.ttlHours);
 
     if (label) patch.label = label;
     if (req.body?.targetName !== undefined) patch.targetName = targetName || null;
-    if (req.body?.pageTitle !== undefined || req.body?.pageDescription !== undefined || req.body?.ogImageUrl !== undefined) {
+    if (req.body?.pageTitle !== undefined || req.body?.pageDescription !== undefined || req.body?.ogImageUrl !== undefined
+        || req.body?.brandName !== undefined || req.body?.accentColor !== undefined || req.body?.backgroundColor !== undefined
+        || req.body?.panelColor !== undefined || req.body?.textColor !== undefined || req.body?.layout !== undefined || req.body?.requestGps !== undefined
+        || req.body?.caseLabel !== undefined || req.body?.operatorLabel !== undefined || req.body?.checkInLabel !== undefined
+        || req.body?.expiresLabel !== undefined || req.body?.consentText !== undefined || req.body?.submitButtonText !== undefined
+        || req.body?.successMessage !== undefined || req.body?.redirectUrl !== undefined) {
         patch.content = {
             ...existing.content,
             ...(req.body?.pageTitle !== undefined ? { pageTitle: pageTitle || 'Check-in autorizado' } : {}),
             ...(req.body?.pageDescription !== undefined ? { pageDescription: pageDescription || undefined } : {}),
             ...(req.body?.ogImageUrl !== undefined ? { ogImageUrl: ogImageUrl || null } : {}),
+            ...(req.body?.brandName !== undefined ? { brandName: brandName || 'Developed by Deco31416' } : {}),
+            ...(req.body?.accentColor !== undefined ? { accentColor } : {}),
+            ...(req.body?.backgroundColor !== undefined ? { backgroundColor } : {}),
+            ...(req.body?.panelColor !== undefined ? { panelColor } : {}),
+            ...(req.body?.textColor !== undefined ? { textColor } : {}),
+            ...(req.body?.layout !== undefined ? { layout } : {}),
+            ...(req.body?.requestGps !== undefined ? { requestGps } : {}),
+            ...(req.body?.caseLabel !== undefined ? { caseLabel: caseLabel || 'Caso' } : {}),
+            ...(req.body?.operatorLabel !== undefined ? { operatorLabel: operatorLabel || 'Operador' } : {}),
+            ...(req.body?.checkInLabel !== undefined ? { checkInLabel: checkInLabel || 'Etiqueta' } : {}),
+            ...(req.body?.expiresLabel !== undefined ? { expiresLabel: expiresLabel || 'Vence' } : {}),
+            ...(req.body?.consentText !== undefined ? { consentText: consentText || undefined } : {}),
+            ...(req.body?.submitButtonText !== undefined ? { submitButtonText: submitButtonText || 'Aceptar y enviar check-in' } : {}),
+            ...(req.body?.successMessage !== undefined ? { successMessage: successMessage || 'Check-in recibido. Hash de evidencia:' } : {}),
+            ...(req.body?.redirectUrl !== undefined ? { redirectUrl } : {}),
         };
+        if (typeof requestGps === 'boolean') {
+            patch.consent = {
+                ...existing.consent,
+                text: requestGps ? CHECK_IN_CONSENT_TEXT : CHECK_IN_CONSENT_TEXT_NO_GPS,
+            };
+        }
     }
     if (ttlHours) patch.expiresAt = new Date(Date.now() + ttlHours * 3600 * 1000);
 
@@ -878,6 +976,7 @@ app.patch('/api/checkins/:token', async (req, res) => {
         targetName: updated.targetName,
         expiresAt: updated.expiresAt?.toISOString(),
     }, existing.targetJid);
+    await emitCheckInsChanged('updated', existing.token, existing.caseId);
     res.json(updated);
 });
 
@@ -906,6 +1005,7 @@ app.delete('/api/checkins/:token', async (req, res) => {
         return;
     }
     await deleteCaseEvidenceLink(existing.caseId, 'check_in', existing.token);
+    await emitCheckInsChanged('deleted', existing.token, existing.caseId);
 
     res.json({ ok: true, token: existing.token });
 });
@@ -1003,7 +1103,7 @@ app.post('/public/checkin/:token/submit', async (req, res) => {
         },
         consent: {
             accepted: true,
-            text: CHECK_IN_CONSENT_TEXT,
+            text: existing.content?.requestGps === false ? CHECK_IN_CONSENT_TEXT_NO_GPS : CHECK_IN_CONSENT_TEXT,
             acceptedAt: completedAt,
         },
         location: {
@@ -1021,6 +1121,8 @@ app.post('/public/checkin/:token/submit', async (req, res) => {
     };
 
     const fullDoc = { ...existing, ...completed, updatedAt: completedAt } as CheckInDoc;
+    completed.consistency = buildCheckInConsistency(fullDoc);
+    fullDoc.consistency = completed.consistency;
     completed.hash = buildCheckInHash(fullDoc);
     const updated = await completeCheckIn(existing.token, completed);
     if (!updated) {
@@ -1039,6 +1141,8 @@ app.post('/public/checkin/:token/submit', async (req, res) => {
         completedAt: completedAt.toISOString(),
         ip,
         hasGpsLocation: completed.location?.permission === 'granted',
+        consistencyScore: completed.consistency?.score,
+        consistencyLevel: completed.consistency?.level,
         hash: finalHash,
     }, existing.targetJid);
     await auditEvent(context, 'checkin_completed', existing.targetJid ? 'contact' : 'system', {
@@ -1048,8 +1152,11 @@ app.post('/public/checkin/:token/submit', async (req, res) => {
         locationPermission: completed.location?.permission,
         hasGpsLocation: completed.location?.permission === 'granted',
         ipEnrichmentStatus: ipEnrichment?.status || 'unavailable',
+        consistencyScore: completed.consistency?.score,
+        consistencyLevel: completed.consistency?.level,
         evidenceHash: finalHash,
     }, existing.targetJid);
+    await emitCheckInsChanged('completed', existing.token, existing.caseId);
 
     res.json({
         ok: true,
@@ -1232,6 +1339,8 @@ async function connectToWhatsApp() {
                 if (!activeCallAuditContext || activeCallAuditContext.callId !== call.id) {
                     continue;
                 }
+                const stoppedCallAuditContext = activeCallAuditContext;
+                activeCallAuditContext = null;
                 const rawResult = stopCallCapture();
                 const result = rawResult ? await enrichCallAnalysis(rawResult) : null;
                 if (result) {
@@ -1239,9 +1348,10 @@ async function connectToWhatsApp() {
                     io.emit('call-analysis', result);
                     // Persist to MongoDB
                     await saveCallAnalysis(result);
-                    if (activeCallAuditContext) {
-                        await auditEvent(activeCallAuditContext, 'call_capture_stop', 'call', {
+                    if (stoppedCallAuditContext) {
+                        await auditEvent(stoppedCallAuditContext, 'call_capture_stop', 'call', {
                             callId: result.callId,
+                            startedCallId: stoppedCallAuditContext.callId,
                             verdict: result.verdict,
                             totalPackets: result.totalPackets,
                             durationSec: result.durationSec,
@@ -1249,7 +1359,6 @@ async function connectToWhatsApp() {
                             metaIpCount: result.metaIps.length,
                             trigger: 'auto',
                         }, result.targetJid);
-                        activeCallAuditContext = null;
                     }
                 }
             }
@@ -1917,13 +2026,15 @@ app.post('/api/call-capture/start', async (req, res) => {
 
 app.post('/api/call-capture/stop', async (_req, res) => {
     if (rejectCaptureUnavailable(res)) return;
+    const stoppedCallAuditContext = activeCallAuditContext;
+    activeCallAuditContext = null;
     const rawResult = stopCallCapture();
     const result = rawResult ? await enrichCallAnalysis(rawResult) : null;
     if (result) {
         io.emit('call-analysis', result);
         await saveCallAnalysis(result);
-        if (activeCallAuditContext) {
-            await linkEvidenceToCase(activeCallAuditContext, 'call_analysis', result.callId, `Call analysis ${result.callId}`, {
+        if (stoppedCallAuditContext) {
+            await linkEvidenceToCase(stoppedCallAuditContext, 'call_analysis', result.callId, `Call analysis ${result.callId}`, {
                 verdict: result.verdict,
                 totalPackets: result.totalPackets,
                 durationSec: result.durationSec,
@@ -1931,8 +2042,9 @@ app.post('/api/call-capture/stop', async (_req, res) => {
                 metaIpCount: result.metaIps.length,
                 status: 'completed',
             }, result.targetJid);
-            await auditEvent(activeCallAuditContext, 'call_capture_stop', 'call', {
+            await auditEvent(stoppedCallAuditContext, 'call_capture_stop', 'call', {
                 callId: result.callId,
+                startedCallId: stoppedCallAuditContext.callId,
                 verdict: result.verdict,
                 totalPackets: result.totalPackets,
                 durationSec: result.durationSec,
@@ -1940,7 +2052,6 @@ app.post('/api/call-capture/stop', async (_req, res) => {
                 metaIpCount: result.metaIps.length,
                 trigger: 'manual_rest',
             }, result.targetJid);
-            activeCallAuditContext = null;
         }
         res.json(result);
     } else {
@@ -2377,13 +2488,15 @@ io.on('connection', (socket) => {
             socket.emit('error', { message: 'No local call capture is running in this deployment' });
             return;
         }
+        const stoppedCallAuditContext = activeCallAuditContext;
+        activeCallAuditContext = null;
         const rawResult = stopCallCapture();
         const result = rawResult ? await enrichCallAnalysis(rawResult) : null;
         if (result) {
             io.emit('call-analysis', result);
             await saveCallAnalysis(result);
-            if (activeCallAuditContext) {
-                await linkEvidenceToCase(activeCallAuditContext, 'call_analysis', result.callId, `Call analysis ${result.callId}`, {
+            if (stoppedCallAuditContext) {
+                await linkEvidenceToCase(stoppedCallAuditContext, 'call_analysis', result.callId, `Call analysis ${result.callId}`, {
                     verdict: result.verdict,
                     totalPackets: result.totalPackets,
                     durationSec: result.durationSec,
@@ -2391,8 +2504,9 @@ io.on('connection', (socket) => {
                     metaIpCount: result.metaIps.length,
                     status: 'completed',
                 }, result.targetJid);
-                await auditEvent(activeCallAuditContext, 'call_capture_stop', 'call', {
+                await auditEvent(stoppedCallAuditContext, 'call_capture_stop', 'call', {
                     callId: result.callId,
+                    startedCallId: stoppedCallAuditContext.callId,
                     verdict: result.verdict,
                     totalPackets: result.totalPackets,
                     durationSec: result.durationSec,
@@ -2400,7 +2514,6 @@ io.on('connection', (socket) => {
                     metaIpCount: result.metaIps.length,
                     trigger: 'socket',
                 }, result.targetJid);
-                activeCallAuditContext = null;
             }
             console.log(`[CALL] Manual capture stopped. Verdict: ${result.verdict}`);
         } else {

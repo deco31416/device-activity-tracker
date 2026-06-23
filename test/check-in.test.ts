@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCheckInHash, createCheckInToken, normalizeCheckInSubmission, renderCheckInPage } from '../src/check-in.js';
+import { buildCheckInConsistency, buildCheckInHash, createCheckInToken, normalizeCheckInSubmission, renderCheckInPage } from '../src/check-in.js';
 import type { CheckInDoc } from '../src/db.js';
 
 function fixture(): CheckInDoc {
@@ -72,4 +72,71 @@ test('renders explicit consent page without raw script injection', () => {
     assert.match(html, /Check-in autorizado/);
     assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
     assert.doesNotMatch(html, /<div class="value"><script>alert/);
+});
+
+test('renders custom landing labels, button, and minimum disclosure', () => {
+    const html = renderCheckInPage({
+        ...fixture(),
+        content: {
+            pageTitle: 'Portal autorizado',
+            brandName: 'Cliente Legal',
+            caseLabel: 'Expediente',
+            operatorLabel: 'Analista',
+            checkInLabel: 'Proceso',
+            expiresLabel: 'Caduca',
+            consentText: 'Acepto la politica personalizada del cliente.',
+            submitButtonText: 'Confirmar verificacion',
+            successMessage: 'Recibido:',
+            redirectUrl: 'https://example.test/gracias',
+            requestGps: false,
+        },
+    });
+
+    assert.match(html, /Cliente Legal/);
+    assert.match(html, /Referencia <strong>Prueba autorizada<\/strong>/);
+    assert.doesNotMatch(html, /Expediente/);
+    assert.doesNotMatch(html, /Analista/);
+    assert.doesNotMatch(html, /Detalles de la solicitud/);
+    assert.match(html, /Confirmar verificacion/);
+    assert.match(html, /Acepto la politica personalizada del cliente/);
+    assert.match(html, /Aviso tecnico minimo/);
+    assert.match(html, /const REQUEST_GPS = false/);
+    assert.match(html, /https:\/\/example.test\/gracias/);
+});
+
+test('builds check-in consistency signals from IP, browser, and GPS evidence', () => {
+    const consistency = buildCheckInConsistency({
+        request: {
+            ip: '203.0.113.10',
+            userAgent: 'Chrome',
+            acceptLanguage: 'es-CO',
+            referer: 'https://example.test/',
+        },
+        browser: {
+            timezone: 'America/Bogota',
+            language: 'es-CO',
+            device: { type: 'desktop', os: 'Windows', browser: 'Chrome' },
+        },
+        location: {
+            permission: 'granted',
+            lat: 4.711,
+            lon: -74.0721,
+        },
+        ipEnrichment: {
+            status: 'success',
+            countryCode: 'NL',
+            city: 'Amsterdam',
+            timezone: 'Europe/Amsterdam',
+            proxy: true,
+            hosting: true,
+            lat: 52.3676,
+            lon: 4.9041,
+        },
+    });
+
+    assert.equal(consistency.level, 'low');
+    assert.ok(consistency.score < 45);
+    assert.ok(consistency.signals.some(signal => signal.label === 'Proxy/VPN posible'));
+    assert.ok(consistency.signals.some(signal => signal.label === 'Zona horaria divergente'));
+    assert.ok(consistency.signals.some(signal => signal.label === 'GPS/IP distantes'));
 });

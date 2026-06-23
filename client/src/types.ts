@@ -38,8 +38,15 @@ export interface CandidateIP {
     isP2P: boolean;
     ipEnrichment?: {
         ip: string;
-        provider: 'ip-api';
+        provider: 'db-ip' | 'db-ip+ip-api' | 'ip-api';
         sourceUrl: string;
+        sources?: Array<{
+            provider: 'db-ip' | 'ip-api';
+            sourceUrl: string;
+            status: 'success' | 'fail' | 'skipped';
+            message?: string;
+            fetchedAt: string;
+        }>;
         status: 'success' | 'fail' | 'skipped';
         message?: string;
         continent?: string;

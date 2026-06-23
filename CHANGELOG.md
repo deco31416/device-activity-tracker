@@ -4,28 +4,59 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [2.8.0] — 2026-06-23 · Current
+## [2.9.0] — 2026-06-23 · Current
+
+### ✨ New Features
+- **Audit Trail investigative console**: added active case selector, operational summary, scope/action/search filters, paginated custody timeline, readable event cards, technical table, and grouped evidence exports.
+- **Responsive navigation**: added collapsible desktop sidebar, mobile drawer menu, persistent sidebar state, and cleaner WP MONITOR branding with drone icon.
+
+### 🔧 Changes
+- Audit timeline/table now render only the current page with selectable page sizes, preventing long cases from expanding infinitely.
+- Call capture audit stop handling snapshots and clears the active audit context before async enrichment, reducing risk of mismatched `callId` chain-of-custody entries during rapid capture transitions.
+- Frontend API fallback now points to `http://localhost:4000`, and local docs recommend backend `4000` plus frontend `4001` to avoid collisions with other projects.
+- Public Check-In page scrollbar and responsive layout were polished for a more restrained commercial look.
+
+### ✅ QA
+- `pnpm run test:unit`: 35 tests passing.
+- `pnpm run build`: backend TypeScript build passing.
+- `pnpm --dir client run build`: frontend production build passing.
+
+---
+
+## [2.8.0] — 2026-06-23
 
 ### ✨ New Features
 - **Check-In Open Graph preview**: added editable public page title/description and optional uploaded preview image for authorized shared links.
+- **Authorized landing builder**: added per-link brand name, layout, color theme, preview image reuse, and GPS request toggle for the public consent page.
+- **Client policy customization**: added editable public field labels, policy/consent text, submit button text, success message, and optional post-check-in redirect URL with minimum technical disclosure preserved.
+- **Realtime Check-In dashboard**: added Socket.IO `checkins-changed` events plus polling fallback so completed check-ins appear without pressing Refresh.
 - **Preview asset upload**: added `/api/checkins/assets`, static `/uploads/checkins/*` serving, 3 MB JSON body support, and `.gitignore` protection for generated uploads.
 - **Case-bound Check-In UX**: dashboard now selects from active cases, supports new Case ID mode, and keeps operator/authorization context attached to the link.
 - **Extended device/browser evidence**: check-in submissions now capture device type, OS/browser, CPU/RAM hints, screen/viewport, touch capability, language/timezone, browser network hints, optional GPS, and SHA-256 evidence hash.
+- **Check-In consistency analysis**: added explainable score/signals using IP reputation flags, timezone/language alignment, GPS-vs-IP distance, referer, mobile/hosting/proxy flags, and browser metadata.
 - **Check-In administration**: added edit, revoke, and administrative delete flows; delete removes MongoDB check-in records and related case evidence links.
 - **Dashboard state persistence**: active frontend tab survives page refresh so operators return to the same module.
 
 ### 🔧 Changes
 - Frontend check-in fetches now validate JSON responses before parsing so HTML/backend errors surface as clear UI messages instead of `Unexpected token '<'`.
+- Check-In summary now separates public template, brand, and GPS request state instead of a compact ambiguous landing label.
+- Network Monitor now has an active case selector, investigative metrics, known-infrastructure filtering, UDP-only view, and clearer case-evidence guidance.
+- Call Traffic Analysis now reapplies scoring after IP enrichment, demoting CDN/cloud/hosting/proxy networks such as CloudFront, Akamai, Fastly, Google Cloud, and Cloudflare from user-candidate lists.
+- IP enrichment now uses DB-IP as the primary GeoIP source by default, with ip-api as a technical complement/fallback for ASN, ISP, coordinates, and proxy/hosting flags.
+- Authorized Check-In public pages now use a more commercial landing layout with stronger typography, cleaner consent card, separated technical disclosure, and polished CTA states.
+- Public Check-In now removes internal case/operator/detail cards from the public landing, keeping only the compact reference and expiration summary visible.
+- Authorized Check-In builder now groups preview, visual identity, public labels, and consent settings into clearer sections instead of compressed control rows.
 - Public check-in consent copy now states the exact categories of technical data collected.
 - Open Graph image URLs are generated from `PUBLIC_BASE_URL` so public HTTPS deployments can render link previews outside the local machine.
 
 ### 🛡️ Safety & Compliance
 - Check-In remains explicit-consent only; preview content is for authorized verification pages, not deceptive capture.
+- Consistency analysis is presented as corroborative technical context, not exact physical location or identity proof.
 - Documentation clarifies that `localhost`/`127.0.0.1` links and preview images only work on the local machine.
 - Completed check-ins can be deleted administratively, with audit logging and evidence-link cleanup.
 
 ### ✅ QA
-- `yarn test:unit`: 30 tests passing.
+- `pnpm run test:unit`: 35 tests passing.
 - `yarn build`: backend TypeScript build passing.
 - `pnpm --dir client run build`: frontend production build passing.
 

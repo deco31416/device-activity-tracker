@@ -154,12 +154,12 @@ Pendiente:
 - [x] Confianza inicial `high/medium/low`.
 - [x] Convertir confianza a score numerico 0-100.
 - [x] Agregar `reasonCodes` explicables.
-- [ ] Agregar ASN/ORG lookup.
+- [x] Agregar ASN/ORG lookup mediante enriquecimiento IP opcional.
 - [x] Agregar categoria de red inicial: Meta/relay, STUN/TURN probable, CDN, publica desconocida.
-- [ ] Ampliar categoria de red: cloud, hosting, ISP, VPN/proxy.
+- [x] Ampliar categoria de red: cloud, hosting, ISP, VPN/proxy.
 - [ ] Correlacionar candidato con ventana exacta de llamada.
 - [x] Detectar STUN/TURN inicial cuando sea visible por puertos conocidos.
-- [ ] Penalizar proveedores cloud/VPN/hosting.
+- [x] Penalizar proveedores cloud/CDN/VPN/hosting despues del enriquecimiento ASN/ISP/ORG.
 - [x] Mostrar disclaimer tecnico junto a cada candidato.
 - [x] Documentar metodologia de scoring.
 
@@ -500,8 +500,24 @@ Antes de cerrar cada bloque de trabajo:
 - [x] Agregados metadatos extendidos de Check-In: dispositivo, OS, navegador, pantalla, viewport, CPU/RAM aproximada, red del navegador, idioma y zona horaria.
 - [x] Agregados controles administrativos de Check-In: editar, revocar y eliminar desde MongoDB incluso si ya fue completado.
 - [x] Agregado upload de imagen preview y metatags Open Graph/Twitter para enlaces autorizados.
+- [x] Agregado constructor basico de landing autorizada: marca, layout, colores, imagen preview y toggle de solicitud GPS.
+- [x] Agregada personalizacion de politica cliente: labels publicos, texto de consentimiento, boton, mensaje final y redirect post-check-in con aviso tecnico minimo obligatorio.
+- [x] Agregado tiempo real para Check-In con evento Socket.IO `checkins-changed` y polling fallback cada 5s.
+- [x] Ajustada UI de resumen Check-In: Plantilla, Marca publica y GPS landing separados para evitar ambiguedad.
+- [x] Mejorado Network Monitor investigativo: selector de caso activo, autofill operador/autorizacion, metricas candidatas/infraestructura/UDP y filtros para ocultar Meta/Google/Cloudflare/local.
+- [x] Agregado analisis de consistencia Check-In: GeoIP, flags proxy/hosting/mobile, timezone, idioma, GPS vs IP, referer y senales de privacidad.
+- [x] Ajustado scoring de llamadas post-enriquecimiento: CDN/cloud/hosting/proxy se recategorizan como infraestructura y se capea su score aunque tengan trafico bidireccional.
+- [x] Cambiado enriquecimiento GeoIP a DB-IP como proveedor principal, con ip-api como complemento/fallback tecnico para ASN/ISP/coordenadas/flags.
+- [x] Mejorada landing publica Check-In con estilo mas comercial: tipografia fuerte, consentimiento en tarjeta, aviso tecnico separado y CTA pulido.
+- [x] Eliminados los cards internos de caso/operador/etiqueta/vencimiento de la landing publica; solo queda el resumen compacto de referencia y vencimiento.
+- [x] Reorganizado constructor Check-In en secciones de preview, identidad visual, campos publicos y consentimiento.
+- [x] Blindado cierre de captura de llamada: snapshot del contexto de auditoria antes de enriquecimiento asincrono para reducir cruces de `callId`.
+- [x] Redisenada vista `Audit Trail` como consola investigativa: selector de casos, resumen operativo, filtros, timeline, tabla tecnica y exportaciones agrupadas.
+- [x] Agregada paginacion real al `Audit Trail`: timeline/tabla muestran pagina actual, selector de cantidad y reset al filtrar.
+- [x] Agregado sidebar colapsable desktop y drawer movil con estado persistente.
+- [x] Corregido fallback frontend API de `localhost:3001` a `localhost:4000` y documentados puertos locales `4000/4001`.
 - [x] Documentada limitacion operativa: previews publicos requieren `PUBLIC_BASE_URL` con HTTPS publico; `127.0.0.1` solo funciona localmente.
-- [x] Preparada release `2.8.0` en `package.json`, `client/package.json`, `client/package-lock.json`, README, CHANGELOG, Swagger metadata y User-Agent de enriquecimiento.
+- [x] Preparada release `2.9.0` en `package.json`, `client/package.json`, `client/package-lock.json`, README, CHANGELOG y planner.
 
 ## Proximo Bloque Sugerido
 
