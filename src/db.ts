@@ -8,6 +8,7 @@
 import { MongoClient, Db, Collection } from 'mongodb';
 import 'dotenv/config';
 import type { CallAnalysisResult } from './call-analyzer.js';
+import { buildStatsInsights, StatsInsights } from './stats-insights.js';
 
 // Types
 export interface MeasurementDoc {
@@ -87,7 +88,7 @@ export interface CaseDoc {
     lastAuditAction: string | null;
 }
 
-export type CaseEvidenceType = 'contact' | 'network_capture' | 'call_analysis' | 'report' | 'evidence_package';
+export type CaseEvidenceType = 'contact' | 'network_capture' | 'call_analysis' | 'report' | 'evidence_package' | 'check_in';
 
 export interface CaseEvidenceLinkDoc {
     caseId: string;
@@ -98,6 +99,95 @@ export interface CaseEvidenceLinkDoc {
     metadata: Record<string, unknown>;
     createdAt: Date;
     updatedAt: Date;
+}
+
+export type CheckInStatus = 'pending' | 'completed' | 'expired' | 'revoked';
+
+export interface CheckInDoc {
+    token: string;
+    caseId: string;
+    operatorName: string;
+    authorizationNote: string;
+    label: string;
+    targetName: string | null;
+    targetJid: string | null;
+    content?: {
+        pageTitle?: string;
+        pageDescription?: string;
+        ogImageUrl?: string | null;
+    };
+    status: CheckInStatus;
+    createdAt: Date;
+    updatedAt: Date;
+    expiresAt: Date | null;
+    completedAt: Date | null;
+    request: {
+        ip: string;
+        userAgent: string;
+        acceptLanguage: string;
+        referer: string | null;
+    } | null;
+    browser: {
+        timezone?: string;
+        language?: string;
+        languages?: string[];
+        platform?: string;
+        userAgentData?: {
+            platform?: string;
+            mobile?: boolean;
+            brands?: Array<{ brand?: string; version?: string }>;
+        };
+        device?: {
+            type?: 'mobile' | 'tablet' | 'desktop' | 'unknown';
+            os?: string;
+            browser?: string;
+            engine?: string;
+            isTouch?: boolean;
+            maxTouchPoints?: number;
+            hardwareConcurrency?: number;
+            deviceMemoryGb?: number;
+        };
+        viewport?: {
+            width: number;
+            height: number;
+        };
+        screen?: {
+            width: number;
+            height: number;
+            pixelRatio: number;
+            colorDepth?: number;
+            orientation?: string;
+        };
+        network?: {
+            online?: boolean;
+            effectiveType?: string;
+            downlink?: number;
+            rtt?: number;
+            saveData?: boolean;
+        };
+        privacy?: {
+            cookiesEnabled?: boolean;
+            doNotTrack?: string | null;
+        };
+    } | null;
+    consent: {
+        accepted: boolean;
+        text: string;
+        acceptedAt: Date | null;
+    };
+    location: {
+        permission: 'granted' | 'denied' | 'unavailable' | 'unsupported';
+        lat?: number;
+        lon?: number;
+        accuracy?: number;
+        altitude?: number | null;
+        altitudeAccuracy?: number | null;
+        heading?: number | null;
+        speed?: number | null;
+        capturedAt?: Date | null;
+    } | null;
+    ipEnrichment?: Record<string, unknown> | null;
+    hash: string;
 }
 
 // Singleton
@@ -111,6 +201,7 @@ let callAnalyses: Collection<CallAnalysisResult & { savedAt?: Date; updatedAt?: 
 let auditEvents: Collection<AuditEventDoc>;
 let caseRecords: Collection<CaseDoc>;
 let caseEvidenceLinks: Collection<CaseEvidenceLinkDoc>;
+let checkIns: Collection<CheckInDoc>;
 
 const MONGO_URI = process.env.MONGODB_URI || '';
 const DB_NAME = process.env.MONGODB_DB || 'activity-tracker';
@@ -137,6 +228,7 @@ export async function connectDB(): Promise<boolean> {
         auditEvents = db.collection<AuditEventDoc>('audit_events');
         caseRecords = db.collection<CaseDoc>('cases');
         caseEvidenceLinks = db.collection<CaseEvidenceLinkDoc>('case_evidence_links');
+        checkIns = db.collection<CheckInDoc>('check_ins');
 
         // Create indexes for efficient queries
         await measurements.createIndex({ jid: 1, timestamp: -1 });
@@ -151,6 +243,9 @@ export async function connectDB(): Promise<boolean> {
         await caseRecords.createIndex({ status: 1, updatedAt: -1 });
         await caseEvidenceLinks.createIndex({ caseId: 1, type: 1, updatedAt: -1 });
         await caseEvidenceLinks.createIndex({ caseId: 1, type: 1, refId: 1 }, { unique: true });
+        await checkIns.createIndex({ token: 1 }, { unique: true });
+        await checkIns.createIndex({ caseId: 1, createdAt: -1 });
+        await checkIns.createIndex({ status: 1, expiresAt: 1 });
 
         console.log('[DB] Connected to MongoDB');
         return true;
@@ -543,8 +638,20 @@ export async function getStateDistribution(jid: string): Promise<{
     lastSeen: Date | null;
     lastOnline: Date | null;
     avgRtt: number;
+    insights: StatsInsights;
 }> {
-    if (!db) return { online: 0, standby: 0, offline: 0, totalMeasurements: 0, firstSeen: null, lastSeen: null, lastOnline: null, avgRtt: 0 };
+    const empty = {
+        online: 0,
+        standby: 0,
+        offline: 0,
+        totalMeasurements: 0,
+        firstSeen: null,
+        lastSeen: null,
+        lastOnline: null,
+        avgRtt: 0,
+        insights: buildStatsInsights([]),
+    };
+    if (!db) return empty;
     try {
         const pipeline = [
             { $match: { jid } },
@@ -561,7 +668,7 @@ export async function getStateDistribution(jid: string): Promise<{
         ];
 
         const result = await measurements.aggregate(pipeline).toArray();
-        if (result.length === 0) return { online: 0, standby: 0, offline: 0, totalMeasurements: 0, firstSeen: null, lastSeen: null, lastOnline: null, avgRtt: 0 };
+        if (result.length === 0) return empty;
 
         const r = result[0];
         const states = r.states as string[];
@@ -577,6 +684,11 @@ export async function getStateDistribution(jid: string): Promise<{
             .sort({ timestamp: -1 })
             .limit(1)
             .toArray();
+        const since = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+        const insightDocs = await measurements
+            .find({ jid, timestamp: { $gte: since } }, { projection: { state: 1, rtt: 1, timestamp: 1 } })
+            .sort({ timestamp: 1 })
+            .toArray();
 
         return {
             online: total > 0 ? Math.round((onlineCount / total) * 100) : 0,
@@ -586,11 +698,16 @@ export async function getStateDistribution(jid: string): Promise<{
             firstSeen: r.firstSeen,
             lastSeen: r.lastSeen,
             lastOnline: lastOnlineDoc.length > 0 ? lastOnlineDoc[0].timestamp : null,
-            avgRtt: Math.round(r.avgRtt || 0)
+            avgRtt: Math.round(r.avgRtt || 0),
+            insights: buildStatsInsights(insightDocs.map(doc => ({
+                state: doc.state,
+                rtt: doc.rtt,
+                timestamp: doc.timestamp,
+            }))),
         };
     } catch (err) {
         console.error('[DB] Error fetching state distribution:', err);
-        return { online: 0, standby: 0, offline: 0, totalMeasurements: 0, firstSeen: null, lastSeen: null, lastOnline: null, avgRtt: 0 };
+        return empty;
     }
 }
 
@@ -873,6 +990,17 @@ export async function getCaseEvidenceLinks(caseId: string): Promise<CaseEvidence
     }
 }
 
+export async function deleteCaseEvidenceLink(caseId: string, type: CaseEvidenceType, refId: string): Promise<boolean> {
+    if (!db) return false;
+    try {
+        const result = await caseEvidenceLinks.deleteOne({ caseId, type, refId });
+        return result.deletedCount === 1;
+    } catch (err) {
+        console.error('[DB] Error deleting case evidence link:', err);
+        return false;
+    }
+}
+
 export async function saveAuditEvent(event: Omit<AuditEventDoc, 'timestamp' | 'timestampUtc'>): Promise<void> {
     if (!db) return;
     try {
@@ -921,6 +1049,95 @@ export async function getAuditEvents(caseId: string, limit: number = 100): Promi
             .toArray();
     } catch (err) {
         console.error('[DB] Error fetching audit events:', err);
+        return [];
+    }
+}
+
+// -- Authorized Check-In Persistence ---------------------------------------
+
+export async function saveCheckInRequest(doc: CheckInDoc): Promise<boolean> {
+    if (!db) return false;
+    try {
+        await checkIns.insertOne(doc);
+        return true;
+    } catch (err) {
+        console.error('[DB] Error saving check-in request:', err);
+        return false;
+    }
+}
+
+export async function getCheckInByToken(token: string): Promise<CheckInDoc | null> {
+    if (!db) return null;
+    try {
+        return await checkIns.findOne({ token });
+    } catch (err) {
+        console.error('[DB] Error fetching check-in:', err);
+        return null;
+    }
+}
+
+export async function updateCheckIn(token: string, patch: Partial<CheckInDoc>): Promise<CheckInDoc | null> {
+    if (!db) return null;
+    try {
+        await checkIns.updateOne(
+            { token },
+            {
+                $set: {
+                    ...patch,
+                    updatedAt: patch.updatedAt || new Date(),
+                },
+            }
+        );
+        return await getCheckInByToken(token);
+    } catch (err) {
+        console.error('[DB] Error updating check-in:', err);
+        return null;
+    }
+}
+
+export async function completeCheckIn(token: string, patch: Partial<CheckInDoc>): Promise<CheckInDoc | null> {
+    if (!db) return null;
+    try {
+        const result = await checkIns.updateOne(
+            { token, status: 'pending' },
+            {
+                $set: {
+                    ...patch,
+                    status: 'completed',
+                    updatedAt: patch.updatedAt || new Date(),
+                },
+            }
+        );
+        if (result.modifiedCount !== 1) return null;
+        return await getCheckInByToken(token);
+    } catch (err) {
+        console.error('[DB] Error completing check-in:', err);
+        return null;
+    }
+}
+
+export async function deleteCheckIn(token: string): Promise<boolean> {
+    if (!db) return false;
+    try {
+        const result = await checkIns.deleteOne({ token });
+        return result.deletedCount === 1;
+    } catch (err) {
+        console.error('[DB] Error deleting check-in:', err);
+        return false;
+    }
+}
+
+export async function listCheckIns(caseId?: string, limit: number = 50): Promise<CheckInDoc[]> {
+    if (!db) return [];
+    try {
+        const query = caseId ? { caseId } : {};
+        return await checkIns
+            .find(query)
+            .sort({ createdAt: -1 })
+            .limit(limit)
+            .toArray();
+    } catch (err) {
+        console.error('[DB] Error listing check-ins:', err);
         return [];
     }
 }

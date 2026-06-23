@@ -36,6 +36,34 @@ export interface CandidateIP {
     }>;
     technicalNote?: string;
     isP2P: boolean;
+    ipEnrichment?: {
+        ip: string;
+        provider: 'ip-api';
+        sourceUrl: string;
+        status: 'success' | 'fail' | 'skipped';
+        message?: string;
+        continent?: string;
+        country?: string;
+        countryCode?: string;
+        region?: string;
+        regionName?: string;
+        city?: string;
+        postalCode?: string;
+        lat?: number;
+        lon?: number;
+        timezone?: string;
+        isp?: string;
+        org?: string;
+        asn?: number | null;
+        asName?: string;
+        mobile?: boolean;
+        proxy?: boolean;
+        hosting?: boolean;
+        mapsUrl?: string;
+        fetchedAt: string;
+        cacheTtlSec: number;
+        accuracyNote: string;
+    };
 }
 
 export interface CallAnalysisResult {

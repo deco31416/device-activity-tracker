@@ -1,7 +1,11 @@
 import { createHash } from 'crypto';
-import { getAuditEvents, getCallAnalysesByCallIds, getCase, getCaseEvidenceLinks } from './db.js';
+import { getAuditEvents, getCallAnalysesByCallIds, getCase, getCaseEvidenceLinks, getStateDistribution } from './db.js';
 export function hashJson(value: unknown): string {
     return createHash('sha256').update(JSON.stringify(value, null, 2)).digest('hex');
+}
+
+function hashText(value: string): string {
+    return createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
 function extractCallIdsFromAudit(events: Awaited<ReturnType<typeof getAuditEvents>>): string[] {
@@ -32,6 +36,16 @@ function buildNetworkSummary(events: Awaited<ReturnType<typeof getAuditEvents>>)
     };
 }
 
+function extractTargetJids(
+    events: Awaited<ReturnType<typeof getAuditEvents>>,
+    links: Awaited<ReturnType<typeof getCaseEvidenceLinks>>,
+): string[] {
+    return Array.from(new Set([
+        ...events.map(event => event.targetJid).filter((jid): jid is string => typeof jid === 'string' && jid.trim().length > 0),
+        ...links.map(link => link.targetJid).filter((jid): jid is string => typeof jid === 'string' && jid.trim().length > 0),
+    ]));
+}
+
 export async function buildEvidencePackage(caseId: string) {
     const [caseRecord, auditEvents, evidenceLinks] = await Promise.all([
         getCase(caseId),
@@ -46,6 +60,11 @@ export async function buildEvidencePackage(caseId: string) {
         .map(link => link.refId);
     const callIds = Array.from(new Set([...extractCallIdsFromAudit(auditEvents), ...directCallIds]));
     const callAnalyses = await getCallAnalysesByCallIds(callIds);
+    const targetJids = extractTargetJids(auditEvents, evidenceLinks);
+    const activityStats = await Promise.all(targetJids.map(async targetJid => ({
+        targetJid,
+        stats: await getStateDistribution(targetJid),
+    })));
     const networkSummary = buildNetworkSummary(auditEvents);
     const generatedAt = new Date().toISOString();
 
@@ -54,6 +73,7 @@ export async function buildEvidencePackage(caseId: string) {
         audit: auditEvents,
         evidenceLinks,
         callAnalysis: callAnalyses,
+        activityStats,
         networkSummary,
     };
 
@@ -62,6 +82,7 @@ export async function buildEvidencePackage(caseId: string) {
         audit: hashJson(sections.audit),
         evidenceLinks: hashJson(sections.evidenceLinks),
         callAnalysis: hashJson(sections.callAnalysis),
+        activityStats: hashJson(sections.activityStats),
         networkSummary: hashJson(sections.networkSummary),
     };
 
@@ -70,7 +91,7 @@ export async function buildEvidencePackage(caseId: string) {
         version: '1.0',
         software: {
             name: 'Device Activity Tracker',
-            version: '2.5.0',
+            version: '2.6.0',
             developedBy: 'Deco31416',
         },
         caseId,
@@ -80,6 +101,7 @@ export async function buildEvidencePackage(caseId: string) {
             { name: 'audit', format: 'json', sha256: sectionHashes.audit, count: auditEvents.length },
             { name: 'evidenceLinks', format: 'json', sha256: sectionHashes.evidenceLinks, count: evidenceLinks.length },
             { name: 'callAnalysis', format: 'json', sha256: sectionHashes.callAnalysis, count: callAnalyses.length },
+            { name: 'activityStats', format: 'json', sha256: sectionHashes.activityStats, count: activityStats.length },
             { name: 'networkSummary', format: 'json', sha256: sectionHashes.networkSummary },
         ],
         limitations: [
@@ -130,12 +152,50 @@ function getCandidateScore(candidate: any): number {
     return 25;
 }
 
+function formatStatsChange(value: unknown): string {
+    if (typeof value !== 'number') return '-';
+    if (value === 0) return '0';
+    return `${value > 0 ? '+' : ''}${value}`;
+}
+
+function getPeriodMetric(stats: any, key: string) {
+    return stats?.insights?.periods?.find((period: any) => period.key === key) || null;
+}
+
+function summarizeActivityStats(activityStats: any[]) {
+    return (activityStats || []).map(entry => {
+        const stats = entry.stats || {};
+        const last24h = getPeriodMetric(stats, 'last24h');
+        const last7d = getPeriodMetric(stats, 'last7d');
+        const last30d = getPeriodMetric(stats, 'last30d');
+        const coverage = stats.insights?.dailyCoverage || [];
+        const activeDays = coverage.filter((day: any) => day.totalMeasurements > 0).length;
+        return {
+            targetJid: entry.targetJid,
+            totalMeasurements: stats.totalMeasurements || 0,
+            onlinePct: stats.online || 0,
+            standbyPct: stats.standby || 0,
+            offlinePct: stats.offline || 0,
+            avgRtt: stats.avgRtt || 0,
+            firstSeen: stats.firstSeen || null,
+            lastSeen: stats.lastSeen || null,
+            lastOnline: stats.lastOnline || null,
+            reliability: stats.insights?.reliability || null,
+            coverageActiveDays14: activeDays,
+            last24h,
+            last7d,
+            last30d,
+        };
+    });
+}
+
 export function buildFinalCaseReport(evidencePackage: NonNullable<Awaited<ReturnType<typeof buildEvidencePackage>>>) {
     const generatedAt = new Date().toISOString();
     const caseRecord = evidencePackage.sections.case;
     const auditEvents = evidencePackage.sections.audit || [];
     const evidenceLinks = evidencePackage.sections.evidenceLinks || [];
     const callAnalysis = evidencePackage.sections.callAnalysis || [];
+    const activityStats = summarizeActivityStats(evidencePackage.sections.activityStats || []);
 
     const operators = Array.from(new Set(auditEvents.map(event => event.operatorName).filter(Boolean)));
     const targets = Array.from(new Set([
@@ -158,6 +218,7 @@ export function buildFinalCaseReport(evidencePackage: NonNullable<Awaited<Return
                 networkIntelligence: candidate.networkIntelligence || null,
                 ports: candidate.ports || [],
                 geo: candidate.geo || null,
+                ipEnrichment: candidate.ipEnrichment || null,
                 reasonCodes: candidate.reasonCodes || [],
                 technicalNote: candidate.technicalNote || 'IP publica observada como candidata tecnica. No confirma identidad, ubicacion exacta ni titularidad.',
             })))
@@ -186,6 +247,7 @@ export function buildFinalCaseReport(evidencePackage: NonNullable<Awaited<Return
         auditEventCount: auditEvents.length,
         evidenceLinkCount: evidenceLinks.length,
         callAnalysisCount: callAnalysis.length,
+        activityStatsCount: activityStats.length,
         networkCaptureCount: evidencePackage.sections.networkSummary?.captureStopCount || 0,
         candidateIpCount: candidateIps.length,
         highestCandidateScore: candidateIps[0]?.score || 0,
@@ -198,6 +260,7 @@ export function buildFinalCaseReport(evidencePackage: NonNullable<Awaited<Return
             actions: Array.from(new Set(timeline.map(item => item.action))),
         },
         network: evidencePackage.sections.networkSummary,
+        activityStats,
         candidateIps,
         limitations: evidencePackage.manifest.limitations,
     };
@@ -256,6 +319,21 @@ export function renderFinalCaseReportHtml(report: ReturnType<typeof buildFinalCa
             </tr>
         `).join('')
         : '<tr><td colspan="8" class="muted">No se registraron IPs candidatas en los analisis vinculados.</td></tr>';
+
+    const activityRows = report.findings.activityStats.length
+        ? report.findings.activityStats.map((item: any) => `
+            <tr>
+                <td><code>${escapeHtml(item.targetJid)}</code></td>
+                <td>${escapeHtml(item.totalMeasurements)}</td>
+                <td>${escapeHtml(item.onlinePct)}%</td>
+                <td>${escapeHtml(item.last24h?.onlinePct ?? '-')}% <span class="muted">(${escapeHtml(formatStatsChange(item.last24h?.changeOnlinePct))})</span></td>
+                <td>${escapeHtml(item.last7d?.onlinePct ?? '-')}% <span class="muted">(${escapeHtml(formatStatsChange(item.last7d?.changeOnlinePct))})</span></td>
+                <td>${escapeHtml(item.last30d?.onlinePct ?? '-')}%</td>
+                <td>${escapeHtml(item.coverageActiveDays14)}/14</td>
+                <td><span class="score ${item.reliability?.label === 'strong' ? 'strong' : item.reliability?.label === 'usable' ? 'medium' : 'low'}">${escapeHtml(item.reliability?.score ?? 0)}/100</span><br><span class="muted">${escapeHtml(item.reliability?.label || 'initial')}</span></td>
+            </tr>
+        `).join('')
+        : '<tr><td colspan="8" class="muted">No se registraron estadisticas de actividad para contactos vinculados.</td></tr>';
 
     const timelineHtml = timelineRows.length
         ? timelineRows.map(item => `
@@ -346,6 +424,17 @@ export function renderFinalCaseReportHtml(report: ReturnType<typeof buildFinalCa
     <h2>Alcance Autorizado</h2>
     <p>${escapeHtml(report.authorization.authorizationNote)}</p>
     ${report.authorization.description ? `<p class="muted">${escapeHtml(report.authorization.description)}</p>` : ''}
+  </section>
+
+  <section>
+    <h2>Estadisticas de Actividad Observada</h2>
+    <div class="notice">
+      Estas metricas resumen presencia observada, cobertura y confiabilidad de muestra. No deben interpretarse como contenido de mensajes ni como ubicacion.
+    </div>
+    <table>
+      <thead><tr><th>Target</th><th>Mediciones</th><th>Online total</th><th>24h</th><th>7d</th><th>30d</th><th>Cobertura</th><th>Confiabilidad</th></tr></thead>
+      <tbody>${activityRows}</tbody>
+    </table>
   </section>
 
   <section>
@@ -572,6 +661,38 @@ export function renderFinalCaseReportPdf(report: ReturnType<typeof buildFinalCas
     pdf.paragraph(report.authorization.authorizationNote);
     if (report.authorization.description) pdf.paragraph(report.authorization.description, 92, 8, '64748B');
 
+    pdf.heading('Estadisticas de actividad observada');
+    pdf.paragraph('Estas metricas resumen presencia observada, cobertura y confiabilidad de muestra. No representan contenido de mensajes ni ubicacion.', 92, 8, '9A3412');
+    const activityStats = report.findings.activityStats.slice(0, 12);
+    if (activityStats.length === 0) {
+        pdf.paragraph('No se registraron estadisticas de actividad para contactos vinculados.');
+    } else {
+        pdf.ensure(28);
+        pdf.text(pdf.margin, pdf.y, 'Target', 8, 'F2', '64748B');
+        pdf.text(pdf.margin + 150, pdf.y, 'Total', 8, 'F2', '64748B');
+        pdf.text(pdf.margin + 205, pdf.y, 'Online', 8, 'F2', '64748B');
+        pdf.text(pdf.margin + 260, pdf.y, '24h', 8, 'F2', '64748B');
+        pdf.text(pdf.margin + 315, pdf.y, '7d', 8, 'F2', '64748B');
+        pdf.text(pdf.margin + 370, pdf.y, '30d', 8, 'F2', '64748B');
+        pdf.text(pdf.margin + 425, pdf.y, 'Cobertura', 8, 'F2', '64748B');
+        pdf.text(pdf.margin + 485, pdf.y, 'Conf.', 8, 'F2', '64748B');
+        pdf.y -= 10;
+        pdf.line(pdf.margin, pdf.y, pdf.width - pdf.margin, pdf.y, 'CBD5E1');
+        pdf.y -= 14;
+        for (const item of activityStats) {
+            pdf.ensure(22);
+            pdf.text(pdf.margin, pdf.y, item.targetJid, 7, 'F3', '334155');
+            pdf.text(pdf.margin + 150, pdf.y, String(item.totalMeasurements), 7, 'F1', '334155');
+            pdf.text(pdf.margin + 205, pdf.y, `${item.onlinePct}%`, 7, 'F1', '334155');
+            pdf.text(pdf.margin + 260, pdf.y, `${item.last24h?.onlinePct ?? '-'}%`, 7, 'F1', '334155');
+            pdf.text(pdf.margin + 315, pdf.y, `${item.last7d?.onlinePct ?? '-'}%`, 7, 'F1', '334155');
+            pdf.text(pdf.margin + 370, pdf.y, `${item.last30d?.onlinePct ?? '-'}%`, 7, 'F1', '334155');
+            pdf.text(pdf.margin + 425, pdf.y, `${item.coverageActiveDays14}/14`, 7, 'F1', '334155');
+            pdf.text(pdf.margin + 485, pdf.y, `${item.reliability?.score ?? 0}/100`, 7, 'F2', item.reliability?.label === 'strong' ? '166534' : item.reliability?.label === 'usable' ? '92400E' : '475569');
+            pdf.y -= 16;
+        }
+    }
+
     pdf.heading('Hallazgos de IP candidata');
     pdf.rect(pdf.margin, pdf.y - 38, usable, 36, 'FFF7ED', 'FDBA74');
     pdf.text(pdf.margin + 10, pdf.y - 15, 'Nota tecnica', 8, 'F2', '9A3412');
@@ -754,19 +875,224 @@ function createZip(entries: Array<{ name: string; data: string | Buffer }>): Buf
     return Buffer.concat([...localParts, centralDirectory, end]);
 }
 
+function csvCell(value: unknown): string {
+    if (value === null || value === undefined) return '';
+    const raw = value instanceof Date
+        ? value.toISOString()
+        : typeof value === 'object'
+            ? JSON.stringify(value)
+            : String(value);
+    const safe = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
+    return `"${safe.replace(/"/g, '""')}"`;
+}
+
+function toCsv(headers: string[], rows: unknown[][]): string {
+    const lines = [
+        headers.map(csvCell).join(','),
+        ...rows.map(row => row.map(csvCell).join(',')),
+    ];
+    return `${lines.join('\r\n')}\r\n`;
+}
+
+function buildCsvAnnexes(
+    evidencePackage: NonNullable<Awaited<ReturnType<typeof buildEvidencePackage>>>,
+    finalReport: ReturnType<typeof buildFinalCaseReport>
+) {
+    const auditRows = (evidencePackage.sections.audit || []).map(event => [
+        event.timestampUtc,
+        event.timestamp,
+        event.caseId,
+        event.scope,
+        event.action,
+        event.operatorName,
+        event.targetJid || '',
+        event.authorizationNote,
+        event.details || {},
+    ]);
+
+    const evidenceRows = (evidencePackage.sections.evidenceLinks || []).map(link => [
+        link.createdAt,
+        link.updatedAt,
+        link.caseId,
+        link.type,
+        link.refId,
+        link.label,
+        link.targetJid || '',
+        link.metadata || {},
+    ]);
+
+    const callRows = (evidencePackage.sections.callAnalysis || []).map((analysis: any) => {
+        const candidates = Array.isArray(analysis.candidateIps) ? analysis.candidateIps : [];
+        const highestScore = candidates
+            .map((candidate: any) => getCandidateScore(candidate))
+            .sort((a: number, b: number) => b - a)[0] || 0;
+        return [
+            analysis.callId,
+            analysis.targetJid,
+            analysis.startTime,
+            analysis.endTime || '',
+            analysis.durationSec || 0,
+            analysis.isVideo ? 'true' : 'false',
+            analysis.totalPackets || 0,
+            analysis.verdict || '',
+            analysis.captureInterface || '',
+            candidates.length,
+            highestScore,
+            Array.isArray(analysis.metaIps) ? analysis.metaIps.length : 0,
+        ];
+    });
+
+    const candidateRows = finalReport.findings.candidateIps.map((candidate: any) => [
+        candidate.callId,
+        candidate.targetJid,
+        candidate.ip,
+        candidate.score,
+        candidate.confidence,
+        candidate.provider,
+        candidate.networkCategory,
+        candidate.networkIntelligence?.asn || '',
+        candidate.networkIntelligence?.org || '',
+        candidate.networkIntelligence?.category || '',
+        candidate.networkIntelligence?.isDatacenterLikely ? 'true' : 'false',
+        candidate.direction,
+        candidate.packets,
+        candidate.ports?.join('|') || '',
+        candidate.geo?.country || '',
+        candidate.geo?.region || '',
+        candidate.geo?.city || '',
+        candidate.geo?.lat ?? '',
+        candidate.geo?.lon ?? '',
+        candidate.geo?.timezone || '',
+        candidate.ipEnrichment?.provider || '',
+        candidate.ipEnrichment?.status || '',
+        candidate.ipEnrichment?.city || '',
+        candidate.ipEnrichment?.regionName || candidate.ipEnrichment?.region || '',
+        candidate.ipEnrichment?.postalCode || '',
+        candidate.ipEnrichment?.isp || '',
+        candidate.ipEnrichment?.org || '',
+        candidate.ipEnrichment?.asn || '',
+        candidate.ipEnrichment?.mobile === undefined ? '' : candidate.ipEnrichment.mobile ? 'true' : 'false',
+        candidate.ipEnrichment?.proxy === undefined ? '' : candidate.ipEnrichment.proxy ? 'true' : 'false',
+        candidate.ipEnrichment?.hosting === undefined ? '' : candidate.ipEnrichment.hosting ? 'true' : 'false',
+        candidate.ipEnrichment?.mapsUrl || '',
+        candidate.ipEnrichment?.accuracyNote || '',
+        candidate.reasonCodes?.map((reason: any) => `${reason.code}:${reason.delta}`).join('|') || '',
+        candidate.technicalNote,
+    ]);
+
+    const networkRows = (evidencePackage.sections.networkSummary?.captures || []).map((capture: any) => [
+        capture.timestampUtc,
+        capture.operatorName,
+        capture.stats?.interface || capture.stats?.device || '',
+        capture.stats?.totalPackets ?? capture.stats?.packets ?? '',
+        capture.stats?.dropped ?? '',
+        capture.stats || {},
+    ]);
+
+    const activityRows = finalReport.findings.activityStats.map((item: any) => [
+        item.targetJid,
+        item.totalMeasurements,
+        item.onlinePct,
+        item.standbyPct,
+        item.offlinePct,
+        item.avgRtt,
+        item.firstSeen || '',
+        item.lastSeen || '',
+        item.lastOnline || '',
+        item.last24h?.onlinePct ?? '',
+        item.last24h?.changeOnlinePct ?? '',
+        item.last7d?.onlinePct ?? '',
+        item.last7d?.changeOnlinePct ?? '',
+        item.last30d?.onlinePct ?? '',
+        item.coverageActiveDays14,
+        item.reliability?.score ?? '',
+        item.reliability?.label ?? '',
+        item.reliability?.reasonCodes?.join('|') || '',
+    ]);
+
+    const annexes = [
+        {
+            name: 'annexes/audit-events.csv',
+            data: toCsv(
+                ['timestampUtc', 'timestampLocal', 'caseId', 'scope', 'action', 'operatorName', 'targetJid', 'authorizationNote', 'detailsJson'],
+                auditRows
+            ),
+        },
+        {
+            name: 'annexes/evidence-links.csv',
+            data: toCsv(
+                ['createdAt', 'updatedAt', 'caseId', 'type', 'refId', 'label', 'targetJid', 'metadataJson'],
+                evidenceRows
+            ),
+        },
+        {
+            name: 'annexes/call-analysis.csv',
+            data: toCsv(
+                ['callId', 'targetJid', 'startTime', 'endTime', 'durationSec', 'isVideo', 'totalPackets', 'verdict', 'captureInterface', 'candidateCount', 'highestCandidateScore', 'metaIpCount'],
+                callRows
+            ),
+        },
+        {
+            name: 'annexes/candidate-ips.csv',
+            data: toCsv(
+                ['callId', 'targetJid', 'ip', 'score', 'confidence', 'provider', 'networkCategory', 'asn', 'org', 'asnCategory', 'isDatacenterLikely', 'direction', 'packets', 'ports', 'geoCountry', 'geoRegion', 'geoCity', 'geoLat', 'geoLon', 'geoTimezone', 'enrichmentProvider', 'enrichmentStatus', 'enrichmentCity', 'enrichmentRegion', 'enrichmentPostalCode', 'enrichmentIsp', 'enrichmentOrg', 'enrichmentAsn', 'enrichmentMobile', 'enrichmentProxy', 'enrichmentHosting', 'enrichmentMapsUrl', 'enrichmentAccuracyNote', 'reasonCodes', 'technicalNote'],
+                candidateRows
+            ),
+        },
+        {
+            name: 'annexes/network-captures.csv',
+            data: toCsv(
+                ['timestampUtc', 'operatorName', 'interface', 'totalPackets', 'droppedPackets', 'statsJson'],
+                networkRows
+            ),
+        },
+        {
+            name: 'annexes/activity-stats.csv',
+            data: toCsv(
+                ['targetJid', 'totalMeasurements', 'onlinePct', 'standbyPct', 'offlinePct', 'avgRtt', 'firstSeen', 'lastSeen', 'lastOnline', 'last24hOnlinePct', 'last24hChangeOnlinePct', 'last7dOnlinePct', 'last7dChangeOnlinePct', 'last30dOnlinePct', 'coverageActiveDays14', 'reliabilityScore', 'reliabilityLabel', 'reliabilityReasonCodes'],
+                activityRows
+            ),
+        },
+    ];
+
+    const integrity = {
+        generatedAt: new Date().toISOString(),
+        algorithm: 'SHA-256',
+        files: annexes.map(annex => ({
+            name: annex.name,
+            sha256: hashText(annex.data),
+            rows: Math.max(0, annex.data.split('\r\n').length - 2),
+        })),
+        notes: [
+            'CSV annexes are derived from the canonical Evidence Package sections.',
+            'CSV cells are quoted and formula-prefixed values are escaped to reduce spreadsheet injection risk.',
+        ],
+    };
+
+    return { annexes, integrity };
+}
+
 export function buildEvidenceZip(evidencePackage: NonNullable<Awaited<ReturnType<typeof buildEvidencePackage>>>): Buffer {
     const json = (value: unknown) => JSON.stringify(value, null, 2);
     const finalReport = buildFinalCaseReport(evidencePackage);
+    const csv = buildCsvAnnexes(evidencePackage, finalReport);
+    const zipManifest = {
+        ...evidencePackage.manifest,
+        zipAnnexes: csv.integrity.files,
+    };
     return createZip([
-        { name: 'manifest.json', data: json(evidencePackage.manifest) },
+        { name: 'manifest.json', data: json(zipManifest) },
         { name: 'case.json', data: json(evidencePackage.sections.case) },
         { name: 'audit.json', data: json(evidencePackage.sections.audit) },
         { name: 'evidence-links.json', data: json(evidencePackage.sections.evidenceLinks) },
         { name: 'call-analysis.json', data: json(evidencePackage.sections.callAnalysis) },
+        { name: 'activity-stats.json', data: json(evidencePackage.sections.activityStats || []) },
         { name: 'network-summary.json', data: json(evidencePackage.sections.networkSummary) },
         { name: 'final-report.json', data: json(finalReport) },
         { name: 'final-report.html', data: renderFinalCaseReportHtml(finalReport) },
         { name: 'final-report.pdf', data: renderFinalCaseReportPdf(finalReport) },
+        ...csv.annexes,
+        { name: 'annexes/csv-integrity.json', data: json(csv.integrity) },
         { name: 'integrity.json', data: json(evidencePackage.integrity) },
         { name: 'full-package.json', data: json(evidencePackage) },
     ]);

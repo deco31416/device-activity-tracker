@@ -19,6 +19,10 @@ const META_CIDRS: string[] = [
     '31.13.24.0/21',
     '31.13.64.0/18',
     '45.64.40.0/22',
+    '57.141.0.0/16',
+    '57.142.0.0/15',
+    '57.144.0.0/14',
+    '57.148.0.0/15',
     '66.220.144.0/20',
     '66.220.152.0/21',
     '69.63.176.0/20',
@@ -90,6 +94,7 @@ const GOOGLE_STUN_CIDRS: string[] = [
     '142.250.0.0/15',
     '172.217.0.0/16',
     '216.58.192.0/19',
+    '216.239.32.0/19',
     '74.125.0.0/16',
     '64.233.160.0/19',
     '108.177.0.0/17',
@@ -197,15 +202,26 @@ export function classifyIP(ip: string): 'meta' | 'google' | 'cloudflare' | 'unkn
  */
 export function isPrivateIP(ip: string): boolean {
     const parts = ip.split('.').map(Number);
+    if (parts.length !== 4 || parts.some(part => Number.isNaN(part) || part < 0 || part > 255)) return true;
     const isPrivate172 = parts.length === 4 && parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31;
+    const isCarrierNat = parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127;
+    const isBenchmark = parts[0] === 198 && (parts[1] === 18 || parts[1] === 19);
+    const isDocumentation =
+        (parts[0] === 192 && parts[1] === 0 && parts[2] === 2) ||
+        (parts[0] === 198 && parts[1] === 51 && parts[2] === 100) ||
+        (parts[0] === 203 && parts[1] === 0 && parts[2] === 113);
+    const isMulticastOrReserved = parts[0] >= 224;
     return (
         ip.startsWith('10.') ||
+        isCarrierNat ||
         isPrivate172 ||
         ip.startsWith('192.168.') ||
         ip.startsWith('127.') ||
         ip === '0.0.0.0' ||
         ip === '255.255.255.255' ||
-        ip.startsWith('224.') ||
+        isMulticastOrReserved ||
+        isBenchmark ||
+        isDocumentation ||
         ip.startsWith('169.254.')
     );
 }

@@ -5,7 +5,8 @@ import { Dashboard } from './components/Dashboard';
 import { NetworkMonitor } from './components/NetworkMonitor';
 import { AuditTrail } from './components/AuditTrail';
 import { Cases } from './components/Cases';
-import { Smartphone, Globe, Activity, ClipboardList, Briefcase } from 'lucide-react';
+import { CheckIns } from './components/CheckIns';
+import { Smartphone, Globe, Activity, ClipboardList, Briefcase, MapPin } from 'lucide-react';
 import { API_URL, clearDashboardToken, getDashboardToken, setDashboardToken } from './auth';
 
 // Create socket with autoConnect disabled so we can add listeners before connecting
@@ -24,11 +25,28 @@ interface RuntimeCapabilities {
     authRequired?: boolean;
 }
 
-type AppTab = 'cases' | 'tracker' | 'network' | 'audit';
+interface RuntimeHealth {
+    status: string;
+    dependencies?: {
+        whatsapp?: {
+            connected?: boolean;
+        };
+    };
+}
+
+type AppTab = 'cases' | 'tracker' | 'network' | 'checkins' | 'audit';
+const ACTIVE_TAB_KEY = 'dat_active_tab';
+
+function getInitialTab(): AppTab {
+    const saved = localStorage.getItem(ACTIVE_TAB_KEY);
+    return saved === 'cases' || saved === 'tracker' || saved === 'network' || saved === 'checkins' || saved === 'audit'
+        ? saved
+        : 'cases';
+}
 
 function App() {
     const [isConnected, setIsConnected] = useState(socket.connected);
-    const [activeTab, setActiveTab] = useState<AppTab>('cases');
+    const [activeTab, setActiveTab] = useState<AppTab>(getInitialTab);
     const [capabilities, setCapabilities] = useState<RuntimeCapabilities | null>(null);
     const [authToken, setAuthToken] = useState(getDashboardToken());
     const [authInput, setAuthInput] = useState(getDashboardToken());
@@ -93,6 +111,30 @@ function App() {
     }, []);
 
     useEffect(() => {
+        let cancelled = false;
+
+        async function refreshWhatsAppHealth() {
+            try {
+                const response = await fetch(`${API_URL}/api/health`);
+                const health = await response.json() as RuntimeHealth;
+                if (!cancelled && health.dependencies?.whatsapp?.connected) {
+                    setConnectionState(prev => ({ ...prev, whatsapp: true, whatsappQr: null }));
+                }
+            } catch {
+                // Socket events remain the primary source; health is a resilience fallback.
+            }
+        }
+
+        refreshWhatsAppHealth();
+        const interval = window.setInterval(refreshWhatsAppHealth, 10000);
+
+        return () => {
+            cancelled = true;
+            window.clearInterval(interval);
+        };
+    }, []);
+
+    useEffect(() => {
         if (capabilities?.authRequired && !authToken && socket.connected) {
             socket.disconnect();
         }
@@ -104,10 +146,15 @@ function App() {
         }
     }, [activeTab, capabilities]);
 
+    useEffect(() => {
+        localStorage.setItem(ACTIVE_TAB_KEY, activeTab);
+    }, [activeTab]);
+
     const tabs = [
         { id: 'cases' as AppTab, label: 'Cases', icon: Briefcase },
         { id: 'tracker' as AppTab, label: 'WhatsApp Tracker', icon: Smartphone },
         ...(capabilities?.networkMonitor ? [{ id: 'network' as AppTab, label: 'Network Monitor', icon: Globe }] : []),
+        { id: 'checkins' as AppTab, label: 'Check-In', icon: MapPin },
         { id: 'audit' as AppTab, label: 'Audit Trail', icon: ClipboardList },
     ];
 
@@ -115,6 +162,7 @@ function App() {
         cases: 'Cases',
         tracker: 'WhatsApp Tracker',
         network: 'Network Monitor',
+        checkins: 'Authorized Check-In',
         audit: 'Audit Trail',
     }[activeTab];
 
@@ -251,6 +299,9 @@ function App() {
                     )}
                     {activeTab === 'network' && (
                         <NetworkMonitor />
+                    )}
+                    {activeTab === 'checkins' && (
+                        <CheckIns />
                     )}
                     {activeTab === 'audit' && (
                         <AuditTrail />

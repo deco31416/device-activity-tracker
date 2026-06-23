@@ -4,15 +4,68 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [Unreleased] — 2026-06-18
+## [2.8.0] — 2026-06-23 · Current
+
+### ✨ New Features
+- **Check-In Open Graph preview**: added editable public page title/description and optional uploaded preview image for authorized shared links.
+- **Preview asset upload**: added `/api/checkins/assets`, static `/uploads/checkins/*` serving, 3 MB JSON body support, and `.gitignore` protection for generated uploads.
+- **Case-bound Check-In UX**: dashboard now selects from active cases, supports new Case ID mode, and keeps operator/authorization context attached to the link.
+- **Extended device/browser evidence**: check-in submissions now capture device type, OS/browser, CPU/RAM hints, screen/viewport, touch capability, language/timezone, browser network hints, optional GPS, and SHA-256 evidence hash.
+- **Check-In administration**: added edit, revoke, and administrative delete flows; delete removes MongoDB check-in records and related case evidence links.
+- **Dashboard state persistence**: active frontend tab survives page refresh so operators return to the same module.
+
+### 🔧 Changes
+- Frontend check-in fetches now validate JSON responses before parsing so HTML/backend errors surface as clear UI messages instead of `Unexpected token '<'`.
+- Public check-in consent copy now states the exact categories of technical data collected.
+- Open Graph image URLs are generated from `PUBLIC_BASE_URL` so public HTTPS deployments can render link previews outside the local machine.
+
+### 🛡️ Safety & Compliance
+- Check-In remains explicit-consent only; preview content is for authorized verification pages, not deceptive capture.
+- Documentation clarifies that `localhost`/`127.0.0.1` links and preview images only work on the local machine.
+- Completed check-ins can be deleted administratively, with audit logging and evidence-link cleanup.
+
+### ✅ QA
+- `yarn test:unit`: 30 tests passing.
+- `yarn build`: backend TypeScript build passing.
+- `pnpm --dir client run build`: frontend production build passing.
+
+---
+
+## [2.7.0] — 2026-06-23
+
+### ✨ New Features
+- **Authorized Check-In**: added protected dashboard tab to create consent-based public check-in links per case.
+- **Public consent page**: added `/checkin/:token` with explicit user acceptance before submission and optional browser GPS permission.
+- **Check-In evidence**: stores server-observed IP, user agent, language, timezone/platform/screen metadata, optional GPS coordinates, optional IP enrichment, and SHA-256 evidence hash.
+- **Check-In audit trail**: records `checkin_link_created` and `checkin_completed` audit events and links check-ins into case evidence.
+- **Maps links**: dashboard shows GPS Maps and IP Maps links when coordinates are available.
+
+### 🛡️ Safety & Compliance
+- Check-In location collection requires visible user action and browser/user permission.
+- GeoIP remains documented as estimated network/ISP location, not verified person identity or exact physical location.
+
+### ✅ QA
+- `yarn test:unit`: 30 tests passing.
+- `yarn build`: backend TypeScript build passing.
+- `pnpm --dir client run build`: frontend production build passing.
+
+---
+
+## [2.6.0] — 2026-06-23
 
 ### ✨ New Features
 - **Runtime split**: added `DEPLOYMENT_MODE` and `LOCAL_CAPTURE_ENABLED` to separate Railway dashboard mode from Local full mode.
 - **Runtime capabilities API**: added `/api/runtime-capabilities` so the frontend can enable or hide capture features based on backend mode.
+- **Operational health API**: added `/api/health` with operational/degraded status for MongoDB, WhatsApp, local capture, runtime mode, and dependency reasons without leaking secrets.
+- **Swagger/OpenAPI**: added `/docs` for development/staging only when `ENABLE_SWAGGER=true` and `NODE_ENV !== "production"`.
 - **Call Traffic Analysis**: added local authorized call-capture flow, observed route map, relay/provider classification, candidate IP scoring, packet counters, and call history.
 - **Audit Trail**: added case-based audit events, required capture metadata (`caseId`, `operatorName`, `authorizationNote`), and frontend lookup by Case ID.
 - **Audit export**: added `/api/audit/:caseId/export` with SHA-256 hash for the exported JSON evidence payload.
 - **Dashboard token**: added optional `DASHBOARD_TOKEN` protection for REST API, Socket.IO, dashboard access, and authenticated download links.
+- **Case Management & Evidence Package**: added formal cases, evidence links, JSON/ZIP evidence package exports, CSV annexes, integrity hashes, and final case report exports in JSON/HTML/PDF.
+- **Activity insights**: added 24h/7d/30d trends, daily coverage, sample reliability, and report/evidence integration for observed activity statistics.
+- **QA fixture**: added `yarn qa:report-fixture` to generate stable report/evidence fixtures and verify required HTML/PDF/ZIP content.
+- **IP enrichment**: added optional `ip-api.com` enrichment for call-analysis IPs with estimated network city/region/postal/coordinates, ISP, organization, ASN, mobile/proxy/hosting flags, cached results, and Google Maps links.
 
 ### 🔧 Changes
 - Railway mode now blocks local packet-capture endpoints and socket events instead of attempting capture inside the container.
@@ -22,15 +75,35 @@ All notable changes to this project will be documented in this file.
 - Packet-capture cleanup is safer when capture start/stop fails.
 - Private IP detection for `172.16.0.0/12` was corrected.
 - Documentation added for Railway deployment, local operation, and the project planner/audit workflow.
+- Startup logs now use `MONITORIZACION-DECO` status lines, severity emojis, dependency configuration checks, and final operational audit logging.
+- Default local CORS origins now include `localhost` and `127.0.0.1` for ports `3000`, `3001`, `4000`, and `4001`.
+- Frontend `ContactCard` was reduced by extracting call analysis, profile, intelligence, activity log, stats, and activity journal panels.
+- Runtime and call-scoring logic were extracted into focused modules with unit tests.
+- Frontend now falls back to `/api/health` to detect an already-connected WhatsApp session after refresh or missed Socket.IO events.
+- Dashboard now hydrates active contacts from `/api/contacts` on load so saved profile photos, aliases, and names appear even if Socket.IO profile events were missed.
+- Added backend profile-picture proxy at `/api/contact/:jid/profile-picture` so the frontend does not depend on direct `pps.whatsapp.net` image loading.
+- Internal WhatsApp `@lid` identifiers are no longer counted as visible physical device alerts; the UI now labels observable device counts more carefully.
+- Call-analysis candidate cards now show enriched ISP/ORG/ASN details and clickable estimated network coordinates when enrichment is available.
 
 ### 🛡️ Safety & Compliance
 - Updated user-facing terminology to describe traffic as observed infrastructure, relays, and IP candidates.
 - Documented that candidate IPs do not prove identity, exact location, or ownership by a person.
+- Documented that enriched coordinates are estimated network/ISP location, not GPS or verified physical location.
 - Added ignore rules for packet captures and evidence/report exports.
+- Swagger is never exposed in production by default.
+- Authenticated downloads avoid token-in-query exposure.
+- Report/evidence QA checks reject visible placeholders such as `undefined`, `null`, `NaN`, and `[object Object]`.
+
+### ✅ QA
+- `yarn test:unit`: 26 tests passing.
+- `yarn build`: backend TypeScript build passing.
+- `npm run build` in `client/`: frontend production build passing.
+- `yarn qa:report-fixture`: stable HTML/PDF/ZIP report fixture generated and validated.
+- Local runtime validated at `http://127.0.0.1:4000` with `/api/health` returning `operational`.
 
 ---
 
-## [2.5.0] — 2026-03-14 · Current
+## [2.5.0] — 2026-03-14
 
 ### 🐛 Bug Fixes
 - **Network Monitor**: Fixed `TypeError: buffer must be a Buffer` — `cap.open()` recibía los argumentos en orden incorrecto; el buffer debe crearse antes de `open()` y pasarse como 4.º argumento

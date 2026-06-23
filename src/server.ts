@@ -10,32 +10,46 @@
 import 'dotenv/config';
 import express from 'express';
 import { createServer } from 'http';
+import { mkdir, writeFile } from 'fs/promises';
+import path from 'path';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import makeWASocket, { DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys';
 import { pino } from 'pino';
 import { Boom } from '@hapi/boom';
 import { WhatsAppTracker, ProbeMethod } from './tracker.js';
-import { connectDB, saveMeasurement, saveContact, removeContact, reactivateContact, getRecentMeasurements, getSavedContacts, getActiveContacts, getActivityHistory, getStateDistribution, updateContactProfile, updateCustomName, getContactProfile, getOnlinePatterns, generateReport, disconnectDB, saveCallAnalysis, getCallAnalyses, saveAuditEvent, getAuditEvents, createCase, getCase, updateCase, saveCaseEvidenceLink, getCaseEvidenceLinks } from './db.js';
+import { connectDB, isDBConnected, saveMeasurement, saveContact, removeContact, reactivateContact, getRecentMeasurements, getSavedContacts, getActiveContacts, getActivityHistory, getStateDistribution, updateContactProfile, updateCustomName, getContactProfile, getOnlinePatterns, generateReport, disconnectDB, saveCallAnalysis, getCallAnalyses, saveAuditEvent, getAuditEvents, createCase, getCase, updateCase, saveCaseEvidenceLink, deleteCaseEvidenceLink, getCaseEvidenceLinks, saveCheckInRequest, getCheckInByToken, updateCheckIn, completeCheckIn, deleteCheckIn, listCheckIns, CheckInDoc } from './db.js';
 import { listInterfaces, startCapture, stopCapture, getCaptureStatus, getRecentPackets, updateFilter, exportJSON, exportCSV, CaptureFilter, PacketMeta } from './packet-capture.js';
 import { initAnalytics, getFullIntelligence, getDailyRoutine, getAvailabilityProfile, getSessionStats, getWeeklyHeatmap, getHabitProfile, getCorrelation } from './analytics.js';
 import { startCallCapture, stopCallCapture, getCallCaptureStatus, getCallAnalysisHistory, getLatestCallAnalysis, autoDetectInterface } from './call-analyzer.js';
+import { enrichCallAnalysis, lookupIpEnrichment } from './ip-enrichment.js';
+import { CHECK_IN_CONSENT_TEXT, buildCheckInHash, createCheckInToken, normalizeCheckInSubmission, renderCheckInPage } from './check-in.js';
 import { registerAuditRoutes } from './routes/audit.js';
 import { registerCaseRoutes } from './routes/cases.js';
 import { registerReportRoutes } from './routes/reports.js';
+import { registerRuntimeRoutes, sendCaptureUnavailableIfNeeded } from './routes/runtime.js';
+import { buildRuntimeConfig } from './runtime.js';
 import { CASE_STATUSES, cleanText, normalizeOptionalJid, parseLimit, socketValidationError, validateCaseId, validateJid, validateRequiredText, validationError } from './validation.js';
 
 // Configuration
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',')
-    : ['http://localhost:3000', 'http://localhost:3001', 'http://127.0.0.1:3000', 'http://127.0.0.1:3001'];
+    : [
+        'http://localhost:3000',
+        'http://localhost:3001',
+        'http://localhost:4000',
+        'http://localhost:4001',
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:3001',
+        'http://127.0.0.1:4000',
+        'http://127.0.0.1:4001',
+    ];
 
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const PORT = parseInt(process.env.PORT || process.env.BACKEND_PORT || '3001', 10);
-const DEPLOYMENT_MODE = process.env.DEPLOYMENT_MODE || (process.env.RAILWAY_ENVIRONMENT_NAME ? 'railway-dashboard' : 'local-full');
-const LOCAL_CAPTURE_ENABLED = process.env.LOCAL_CAPTURE_ENABLED
-    ? process.env.LOCAL_CAPTURE_ENABLED === 'true'
-    : DEPLOYMENT_MODE === 'local-full';
+const RUNTIME_CONFIG = buildRuntimeConfig(process.env);
+const DEPLOYMENT_MODE = RUNTIME_CONFIG.deploymentMode;
+const LOCAL_CAPTURE_ENABLED = RUNTIME_CONFIG.localCaptureEnabled;
 const DASHBOARD_TOKEN = process.env.DASHBOARD_TOKEN || '';
 const ENABLE_SWAGGER = process.env.ENABLE_SWAGGER === 'true' && NODE_ENV !== 'production';
 
@@ -131,8 +145,10 @@ async function tryRecordStartupAudit() {
 logStartupBanner();
 
 const app = express();
+app.set('trust proxy', true);
 app.use(cors({ origin: ALLOWED_ORIGINS }));
-app.use(express.json());
+app.use(express.json({ limit: '3mb' }));
+app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));
 
 function extractAuthToken(req: express.Request): string {
     const auth = req.headers.authorization || '';
@@ -149,7 +165,7 @@ function buildOpenApiDocument() {
         openapi: '3.0.3',
         info: {
             title: 'Device Activity Tracker API',
-            version: '2.5.0',
+            version: '2.8.0',
             description: 'Authorized activity monitoring, case management, audit trail, reports, and local capture API. Developed by Deco31416.',
         },
         servers: [{ url: `http://localhost:${PORT}` }],
@@ -160,6 +176,7 @@ function buildOpenApiDocument() {
             { name: 'Contacts' },
             { name: 'Network' },
             { name: 'Call Capture' },
+            { name: 'Check-In' },
             { name: 'Reports' },
             { name: 'Evidence' },
         ],
@@ -179,6 +196,14 @@ function buildOpenApiDocument() {
                     summary: 'Get runtime capabilities',
                     security: [],
                     responses: { '200': { description: 'Runtime capability document' } },
+                },
+            },
+            '/api/health': {
+                get: {
+                    tags: ['Runtime'],
+                    summary: 'Get operational health without secrets',
+                    security: [],
+                    responses: { '200': { description: 'Service operational' }, '503': { description: 'Service degraded' } },
                 },
             },
             '/api/cases': {
@@ -315,6 +340,60 @@ function buildOpenApiDocument() {
                     responses: { '200': { description: 'Call analysis result' } },
                 },
             },
+            '/api/checkins': {
+                get: {
+                    tags: ['Check-In'],
+                    summary: 'List authorized check-ins',
+                    parameters: [
+                        { name: 'caseId', in: 'query', schema: { type: 'string' } },
+                        { name: 'limit', in: 'query', schema: { type: 'integer', default: 50 } },
+                    ],
+                    responses: { '200': { description: 'Check-in list' } },
+                },
+                post: {
+                    tags: ['Check-In'],
+                    summary: 'Create consent-based check-in link',
+                    requestBody: {
+                        required: true,
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    required: ['caseId', 'operatorName', 'authorizationNote'],
+                                    properties: {
+                                        caseId: { type: 'string' },
+                                        operatorName: { type: 'string' },
+                                        authorizationNote: { type: 'string' },
+                                        label: { type: 'string' },
+                                        targetName: { type: 'string', nullable: true },
+                                        targetJid: { type: 'string', nullable: true },
+                                        ttlHours: { type: 'integer', default: 24, minimum: 1, maximum: 168 },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    responses: { '201': { description: 'Check-in link created' }, '400': { description: 'Missing required fields' } },
+                },
+            },
+            '/checkin/{token}': {
+                get: {
+                    tags: ['Check-In'],
+                    summary: 'Public consent page for an authorized check-in',
+                    security: [],
+                    parameters: [{ name: 'token', in: 'path', required: true, schema: { type: 'string' } }],
+                    responses: { '200': { description: 'Consent HTML page' }, '404': { description: 'Check-in not found' }, '410': { description: 'Expired or revoked' } },
+                },
+            },
+            '/public/checkin/{token}/submit': {
+                post: {
+                    tags: ['Check-In'],
+                    summary: 'Submit explicit-consent check-in evidence',
+                    security: [],
+                    parameters: [{ name: 'token', in: 'path', required: true, schema: { type: 'string' } }],
+                    responses: { '200': { description: 'Check-in receipt' }, '400': { description: 'Consent required' }, '410': { description: 'Expired or revoked' } },
+                },
+            },
             '/api/report/{jid}/download': {
                 get: {
                     tags: ['Reports'],
@@ -398,7 +477,7 @@ if (ENABLE_SWAGGER) {
 }
 
 app.use('/api', (req, res, next) => {
-    if (req.path === '/runtime-capabilities') {
+    if (req.path === '/runtime-capabilities' || req.path === '/health') {
         next();
         return;
     }
@@ -453,12 +532,7 @@ let activeNetworkAuditContext: (CaptureAuditContext & { captureSessionId: string
 let activeCallAuditContext: (CaptureAuditContext & { targetJid: string; callId: string }) | null = null;
 
 function rejectCaptureUnavailable(res: express.Response): boolean {
-    if (LOCAL_CAPTURE_ENABLED) return false;
-    res.status(403).json({
-        error: 'Local packet capture is disabled in this deployment',
-        mode: DEPLOYMENT_MODE,
-    });
-    return true;
+    return sendCaptureUnavailableIfNeeded(RUNTIME_CONFIG, res);
 }
 
 function parseCaptureAuditContext(data: any): CaptureAuditContext | null {
@@ -553,7 +627,7 @@ async function getCaseExportContext(caseId: string, authorizationNote: string): 
 
 async function linkEvidenceToCase(
     context: CaptureAuditContext,
-    type: 'contact' | 'network_capture' | 'call_analysis' | 'report' | 'evidence_package',
+    type: 'contact' | 'network_capture' | 'call_analysis' | 'report' | 'evidence_package' | 'check_in',
     refId: string,
     label: string,
     metadata: Record<string, unknown> = {},
@@ -571,6 +645,424 @@ async function linkEvidenceToCase(
         },
     });
 }
+
+function getClientIp(req: express.Request): string {
+    const forwarded = req.headers['x-forwarded-for'];
+    const raw = Array.isArray(forwarded)
+        ? forwarded[0]
+        : forwarded?.split(',')[0]
+            || req.headers['x-real-ip']
+            || req.socket.remoteAddress
+            || '';
+    return String(raw).trim().replace(/^::ffff:/, '') || 'unknown';
+}
+
+function getPublicBaseUrl(req: express.Request): string {
+    const configured = process.env.PUBLIC_BASE_URL?.trim();
+    if (configured) return configured.replace(/\/+$/, '');
+    return `${req.protocol}://${req.get('host')}`;
+}
+
+function parseTtlHours(value: unknown): number {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return 24;
+    return Math.max(1, Math.min(168, Math.floor(parsed)));
+}
+
+function parseImageDataUrl(value: unknown): { ext: string; buffer: Buffer } | null {
+    if (typeof value !== 'string') return null;
+    const match = value.match(/^data:image\/(png|jpeg|jpg|webp|gif);base64,([A-Za-z0-9+/=]+)$/);
+    if (!match) return null;
+    const ext = match[1] === 'jpeg' ? 'jpg' : match[1];
+    const buffer = Buffer.from(match[2], 'base64');
+    if (buffer.length === 0 || buffer.length > 2 * 1024 * 1024) return null;
+    return { ext, buffer };
+}
+
+app.post('/api/checkins/assets', async (req, res) => {
+    const parsed = parseImageDataUrl(req.body?.dataUrl);
+    if (!parsed) {
+        validationError(res, ['Image must be PNG, JPEG, WebP, or GIF data URL up to 2MB']);
+        return;
+    }
+
+    const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'checkins');
+    await mkdir(uploadDir, { recursive: true });
+    const filename = `${createCheckInToken()}.${parsed.ext}`;
+    await writeFile(path.join(uploadDir, filename), parsed.buffer);
+    res.status(201).json({
+        url: `${getPublicBaseUrl(req)}/uploads/checkins/${filename}`,
+    });
+});
+
+app.post('/api/checkins', async (req, res) => {
+    const context = parseCaptureAuditContext(req.body);
+    if (!context) {
+        validationError(res, ['caseId, operatorName, and authorizationNote are required']);
+        return;
+    }
+    if (!await ensureCaseCanCapture(context, res)) return;
+
+    const label = cleanText(req.body?.label, 160) || `Check-in ${new Date().toISOString()}`;
+    const targetName = cleanText(req.body?.targetName, 160) || null;
+    const pageTitle = cleanText(req.body?.pageTitle, 120) || 'Check-in autorizado';
+    const pageDescription = cleanText(req.body?.pageDescription, 260) || undefined;
+    const ogImageUrl = cleanText(req.body?.ogImageUrl, 1000) || null;
+    const targetJidResult = normalizeOptionalJid(req.body?.targetJid, '');
+    if (!targetJidResult.ok) {
+        validationError(res, targetJidResult.errors || ['Invalid targetJid']);
+        return;
+    }
+    const targetJid = targetJidResult.value || null;
+    const ttlHours = parseTtlHours(req.body?.ttlHours);
+    const now = new Date();
+    const token = createCheckInToken();
+    const expiresAt = new Date(now.getTime() + ttlHours * 3600 * 1000);
+
+    const doc: CheckInDoc = {
+        token,
+        caseId: context.caseId,
+        operatorName: context.operatorName,
+        authorizationNote: context.authorizationNote,
+        label,
+        targetName,
+        targetJid,
+        content: {
+            pageTitle,
+            pageDescription,
+            ogImageUrl,
+        },
+        status: 'pending',
+        createdAt: now,
+        updatedAt: now,
+        expiresAt,
+        completedAt: null,
+        request: null,
+        browser: null,
+        consent: {
+            accepted: false,
+            text: CHECK_IN_CONSENT_TEXT,
+            acceptedAt: null,
+        },
+        location: null,
+        ipEnrichment: null,
+        hash: '',
+    };
+    doc.hash = buildCheckInHash(doc);
+
+    const saved = await saveCheckInRequest(doc);
+    if (!saved) {
+        res.status(503).json({ error: 'Check-in persistence unavailable' });
+        return;
+    }
+    await linkEvidenceToCase(context, 'check_in', token, label, {
+        status: 'pending',
+        expiresAt: expiresAt.toISOString(),
+        targetName,
+        pageTitle,
+        hasOgImage: !!ogImageUrl,
+    }, targetJid);
+    await auditEvent(context, 'checkin_link_created', targetJid ? 'contact' : 'system', {
+        token,
+        label,
+        targetName,
+        expiresAt: expiresAt.toISOString(),
+    }, targetJid);
+
+    res.status(201).json({
+        token,
+        url: `${getPublicBaseUrl(req)}/checkin/${encodeURIComponent(token)}`,
+        status: doc.status,
+        expiresAt: expiresAt.toISOString(),
+    });
+});
+
+app.get('/api/checkins', async (req, res) => {
+    const caseIdResult: { ok: boolean; value?: string; errors?: string[] } = typeof req.query.caseId === 'string' && req.query.caseId.trim()
+        ? validateCaseId(req.query.caseId)
+        : { ok: true, value: undefined };
+    if (!caseIdResult.ok) {
+        validationError(res, caseIdResult.errors || ['Invalid caseId']);
+        return;
+    }
+
+    const items = await listCheckIns(caseIdResult.value, parseLimit(req.query.limit, 50, 200));
+    res.json(items.map(item => ({
+        ...item,
+        url: `${getPublicBaseUrl(req)}/checkin/${encodeURIComponent(item.token)}`,
+    })));
+});
+
+app.patch('/api/checkins/:token', async (req, res) => {
+    const token = cleanText(req.params.token, 200);
+    const existing = token ? await getCheckInByToken(token) : null;
+    if (!existing) {
+        res.status(404).json({ error: 'Check-in not found' });
+        return;
+    }
+
+    const context: CaptureAuditContext = {
+        caseId: existing.caseId,
+        operatorName: existing.operatorName,
+        authorizationNote: existing.authorizationNote,
+    };
+
+    if (req.body?.action === 'revoke') {
+        if (existing.status === 'completed') {
+            res.status(409).json({ error: 'Completed check-ins cannot be revoked' });
+            return;
+        }
+        const revoked = await updateCheckIn(existing.token, { status: 'revoked' });
+        if (!revoked) {
+            res.status(503).json({ error: 'Check-in could not be revoked' });
+            return;
+        }
+        await linkEvidenceToCase(context, 'check_in', existing.token, existing.label, {
+            status: 'revoked',
+            revokedAt: new Date().toISOString(),
+        }, existing.targetJid);
+        await auditEvent(context, 'checkin_revoked', existing.targetJid ? 'contact' : 'system', {
+            token: existing.token,
+            label: existing.label,
+        }, existing.targetJid);
+        res.json(revoked);
+        return;
+    }
+
+    if (existing.status !== 'pending') {
+        res.status(409).json({ error: 'Only pending check-ins can be updated' });
+        return;
+    }
+
+    const patch: Partial<CheckInDoc> = {};
+    const label = cleanText(req.body?.label, 160);
+    const targetName = cleanText(req.body?.targetName, 160);
+    const pageTitle = cleanText(req.body?.pageTitle, 120);
+    const pageDescription = cleanText(req.body?.pageDescription, 260);
+    const ogImageUrl = cleanText(req.body?.ogImageUrl, 1000);
+    const ttlHours = req.body?.ttlHours === undefined ? null : parseTtlHours(req.body.ttlHours);
+
+    if (label) patch.label = label;
+    if (req.body?.targetName !== undefined) patch.targetName = targetName || null;
+    if (req.body?.pageTitle !== undefined || req.body?.pageDescription !== undefined || req.body?.ogImageUrl !== undefined) {
+        patch.content = {
+            ...existing.content,
+            ...(req.body?.pageTitle !== undefined ? { pageTitle: pageTitle || 'Check-in autorizado' } : {}),
+            ...(req.body?.pageDescription !== undefined ? { pageDescription: pageDescription || undefined } : {}),
+            ...(req.body?.ogImageUrl !== undefined ? { ogImageUrl: ogImageUrl || null } : {}),
+        };
+    }
+    if (ttlHours) patch.expiresAt = new Date(Date.now() + ttlHours * 3600 * 1000);
+
+    if (Object.keys(patch).length === 0) {
+        validationError(res, ['No valid check-in fields provided']);
+        return;
+    }
+
+    const updated = await updateCheckIn(existing.token, patch);
+    if (!updated) {
+        res.status(503).json({ error: 'Check-in could not be updated' });
+        return;
+    }
+
+    await linkEvidenceToCase(context, 'check_in', existing.token, updated.label, {
+        status: updated.status,
+        expiresAt: updated.expiresAt?.toISOString(),
+        targetName: updated.targetName,
+        pageTitle: updated.content?.pageTitle,
+        hasOgImage: !!updated.content?.ogImageUrl,
+    }, updated.targetJid);
+    await auditEvent(context, 'checkin_updated', existing.targetJid ? 'contact' : 'system', {
+        token: existing.token,
+        label: updated.label,
+        targetName: updated.targetName,
+        expiresAt: updated.expiresAt?.toISOString(),
+    }, existing.targetJid);
+    res.json(updated);
+});
+
+app.delete('/api/checkins/:token', async (req, res) => {
+    const token = cleanText(req.params.token, 200);
+    const existing = token ? await getCheckInByToken(token) : null;
+    if (!existing) {
+        res.status(404).json({ error: 'Check-in not found' });
+        return;
+    }
+    await auditEvent({
+        caseId: existing.caseId,
+        operatorName: existing.operatorName,
+        authorizationNote: existing.authorizationNote,
+    }, 'checkin_deleted', existing.targetJid ? 'contact' : 'system', {
+        token: existing.token,
+        label: existing.label,
+        previousStatus: existing.status,
+        completedAt: existing.completedAt?.toISOString(),
+        administrativeDelete: true,
+    }, existing.targetJid);
+
+    const deleted = await deleteCheckIn(existing.token);
+    if (!deleted) {
+        res.status(503).json({ error: 'Check-in could not be deleted' });
+        return;
+    }
+    await deleteCaseEvidenceLink(existing.caseId, 'check_in', existing.token);
+
+    res.json({ ok: true, token: existing.token });
+});
+
+app.get('/checkin/:token', async (req, res) => {
+    const token = cleanText(req.params.token, 200);
+    const doc = token ? await getCheckInByToken(token) : null;
+    if (!doc) {
+        res.status(404).type('html').send('<!doctype html><title>Check-in no encontrado</title><h1>Check-in no encontrado</h1>');
+        return;
+    }
+
+    const now = new Date();
+    if (doc.status === 'completed') {
+        res.type('html').send(renderCheckInPage(doc, { status: 'completed' }));
+        return;
+    }
+    if (doc.status === 'revoked') {
+        res.status(410).type('html').send(renderCheckInPage(doc, { status: 'revoked' }));
+        return;
+    }
+    if (doc.expiresAt && doc.expiresAt < now) {
+        await updateCheckIn(doc.token, { status: 'expired' });
+        res.status(410).type('html').send(renderCheckInPage({ ...doc, status: 'expired' }, { status: 'expired' }));
+        return;
+    }
+
+    res.type('html').send(renderCheckInPage(doc));
+});
+
+app.post('/public/checkin/:token/submit', async (req, res) => {
+    const token = cleanText(req.params.token, 200);
+    const existing = token ? await getCheckInByToken(token) : null;
+    if (!existing) {
+        res.status(404).json({ error: 'Check-in not found' });
+        return;
+    }
+    if (existing.status === 'completed') {
+        res.status(409).json({ error: 'Check-in already completed' });
+        return;
+    }
+    if (existing.status === 'revoked') {
+        res.status(410).json({ error: 'Check-in revoked' });
+        return;
+    }
+    if (existing.expiresAt && existing.expiresAt < new Date()) {
+        await updateCheckIn(existing.token, { status: 'expired' });
+        res.status(410).json({ error: 'Check-in expired' });
+        return;
+    }
+
+    const submission = normalizeCheckInSubmission(req.body);
+    if (!submission.consentAccepted) {
+        res.status(400).json({ error: 'Explicit consent is required' });
+        return;
+    }
+
+    const completedAt = new Date();
+    const ip = getClientIp(req);
+    const ipEnrichment = ip === 'unknown' ? null : await lookupIpEnrichment(ip);
+    const completed: Partial<CheckInDoc> = {
+        status: 'completed',
+        completedAt,
+        updatedAt: completedAt,
+        request: {
+            ip,
+            userAgent: cleanText(req.headers['user-agent'], 500) || '',
+            acceptLanguage: cleanText(req.headers['accept-language'], 240) || '',
+            referer: cleanText(req.headers.referer, 500) || null,
+        },
+        browser: {
+            timezone: submission.browser?.timezone,
+            language: submission.browser?.language,
+            languages: submission.browser?.languages,
+            platform: submission.browser?.platform,
+            userAgentData: submission.browser?.userAgentData,
+            device: submission.browser?.device,
+            viewport: submission.browser?.viewport?.width && submission.browser.viewport.height
+                ? {
+                    width: submission.browser.viewport.width,
+                    height: submission.browser.viewport.height,
+                }
+                : undefined,
+            screen: submission.browser?.screen?.width && submission.browser.screen.height
+                ? {
+                    width: submission.browser.screen.width,
+                    height: submission.browser.screen.height,
+                    pixelRatio: submission.browser.screen.pixelRatio || 1,
+                    colorDepth: submission.browser.screen.colorDepth,
+                    orientation: submission.browser.screen.orientation,
+                }
+                : undefined,
+            network: submission.browser?.network,
+            privacy: submission.browser?.privacy,
+        },
+        consent: {
+            accepted: true,
+            text: CHECK_IN_CONSENT_TEXT,
+            acceptedAt: completedAt,
+        },
+        location: {
+            permission: submission.location?.permission || 'unavailable',
+            lat: submission.location?.lat,
+            lon: submission.location?.lon,
+            accuracy: submission.location?.accuracy,
+            altitude: submission.location?.altitude,
+            altitudeAccuracy: submission.location?.altitudeAccuracy,
+            heading: submission.location?.heading,
+            speed: submission.location?.speed,
+            capturedAt: submission.location?.capturedAt ? new Date(submission.location.capturedAt) : null,
+        },
+        ipEnrichment: ipEnrichment as unknown as Record<string, unknown> | null,
+    };
+
+    const fullDoc = { ...existing, ...completed, updatedAt: completedAt } as CheckInDoc;
+    completed.hash = buildCheckInHash(fullDoc);
+    const updated = await completeCheckIn(existing.token, completed);
+    if (!updated) {
+        res.status(409).json({ error: 'Check-in could not be completed because it is no longer pending' });
+        return;
+    }
+    const finalHash = updated?.hash || completed.hash;
+    const context: CaptureAuditContext = {
+        caseId: existing.caseId,
+        operatorName: existing.operatorName,
+        authorizationNote: existing.authorizationNote,
+    };
+
+    await linkEvidenceToCase(context, 'check_in', existing.token, existing.label, {
+        status: 'completed',
+        completedAt: completedAt.toISOString(),
+        ip,
+        hasGpsLocation: completed.location?.permission === 'granted',
+        hash: finalHash,
+    }, existing.targetJid);
+    await auditEvent(context, 'checkin_completed', existing.targetJid ? 'contact' : 'system', {
+        token: existing.token,
+        label: existing.label,
+        ip,
+        locationPermission: completed.location?.permission,
+        hasGpsLocation: completed.location?.permission === 'granted',
+        ipEnrichmentStatus: ipEnrichment?.status || 'unavailable',
+        evidenceHash: finalHash,
+    }, existing.targetJid);
+
+    res.json({
+        ok: true,
+        receipt: {
+            token: existing.token,
+            caseId: existing.caseId,
+            receivedAt: completedAt.toISOString(),
+            ip,
+            hasLocation: completed.location?.permission === 'granted',
+            hash: finalHash,
+        },
+    });
+});
 
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
@@ -740,7 +1232,8 @@ async function connectToWhatsApp() {
                 if (!activeCallAuditContext || activeCallAuditContext.callId !== call.id) {
                     continue;
                 }
-                const result = stopCallCapture();
+                const rawResult = stopCallCapture();
+                const result = rawResult ? await enrichCallAnalysis(rawResult) : null;
                 if (result) {
                     console.log(`[CALL] Analysis complete: ${result.verdict} | ${result.candidateIps.filter(c => c.isP2P).length} direct-path candidates`);
                     io.emit('call-analysis', result);
@@ -963,6 +1456,51 @@ app.get('/api/profile/:jid', async (req, res) => {
     } catch (err) {
         console.error('[PROFILE] Error:', err);
         res.status(500).json({ error: 'Failed to fetch profile' });
+    }
+});
+
+app.get('/api/contact/:jid/profile-picture', async (req, res) => {
+    const jidResult = validateJid(req.params.jid);
+    if (!jidResult.ok) {
+        res.status(400).json({ error: jidResult.errors?.join(', ') || 'Invalid JID' });
+        return;
+    }
+
+    const jid = jidResult.value!;
+    const stored = await getContactProfile(jid);
+    let profilePicUrl = stored?.profilePic || null;
+
+    if (isWhatsAppConnected && sock) {
+        try {
+            const freshPic = await sock.profilePictureUrl(jid, 'image') || null;
+            if (freshPic && freshPic !== profilePicUrl) {
+                profilePicUrl = freshPic;
+                await updateContactProfile(jid, { profilePic: freshPic });
+            }
+        } catch {
+            // Keep stored URL as fallback. Some accounts do not expose a public profile picture.
+        }
+    }
+
+    if (!profilePicUrl) {
+        res.status(404).json({ error: 'Profile picture unavailable' });
+        return;
+    }
+
+    try {
+        const upstream = await fetch(profilePicUrl);
+        if (!upstream.ok || !upstream.body) {
+            res.status(502).json({ error: 'Failed to fetch profile picture' });
+            return;
+        }
+
+        const contentType = upstream.headers.get('content-type') || 'image/jpeg';
+        const body = Buffer.from(await upstream.arrayBuffer());
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Cache-Control', 'private, max-age=300');
+        res.send(body);
+    } catch {
+        res.status(502).json({ error: 'Failed to fetch profile picture' });
     }
 });
 
@@ -1232,16 +1770,10 @@ app.put('/api/contact/:jid/custom-name', async (req, res) => {
     }
 });
 
-app.get('/api/runtime-capabilities', (_req, res) => {
-    res.json({
-        mode: DEPLOYMENT_MODE,
-        localCapture: LOCAL_CAPTURE_ENABLED,
-        whatsappTracker: true,
-        reports: true,
-        networkMonitor: LOCAL_CAPTURE_ENABLED,
-        callTrafficAnalysis: LOCAL_CAPTURE_ENABLED,
-        authRequired: !!DASHBOARD_TOKEN,
-    });
+registerRuntimeRoutes(app, RUNTIME_CONFIG, {
+    mongoConfigured: () => isConfigured(process.env.MONGODB_URI),
+    mongoConnected: () => isDBConnected(),
+    whatsappConnected: () => isWhatsAppConnected,
 });
 
 registerCaseRoutes(app);
@@ -1286,10 +1818,10 @@ app.get('/api/call-analysis/:jid', async (req, res) => {
         // Try in-memory first, fallback to MongoDB
         const latest = getLatestCallAnalysis(jid);
         if (latest) {
-            res.json(latest);
+            res.json(await enrichCallAnalysis(latest));
         } else {
             const fromDB = await getCallAnalyses(jid, 1);
-            res.json(fromDB[0] || null);
+            res.json(fromDB[0] ? await enrichCallAnalysis(fromDB[0]) : null);
         }
     } catch (err) {
         console.error('[CALL-API] Error:', err);
@@ -1311,7 +1843,7 @@ app.get('/api/call-history/:jid', async (req, res) => {
         for (const r of [...inMemory, ...fromDB]) {
             if (!seen.has(r.callId)) {
                 seen.add(r.callId);
-                merged.push(r);
+                merged.push(await enrichCallAnalysis(r));
             }
         }
         // Sort by startTime descending
@@ -1385,7 +1917,8 @@ app.post('/api/call-capture/start', async (req, res) => {
 
 app.post('/api/call-capture/stop', async (_req, res) => {
     if (rejectCaptureUnavailable(res)) return;
-    const result = stopCallCapture();
+    const rawResult = stopCallCapture();
+    const result = rawResult ? await enrichCallAnalysis(rawResult) : null;
     if (result) {
         io.emit('call-analysis', result);
         await saveCallAnalysis(result);
@@ -1844,7 +2377,8 @@ io.on('connection', (socket) => {
             socket.emit('error', { message: 'No local call capture is running in this deployment' });
             return;
         }
-        const result = stopCallCapture();
+        const rawResult = stopCallCapture();
+        const result = rawResult ? await enrichCallAnalysis(rawResult) : null;
         if (result) {
             io.emit('call-analysis', result);
             await saveCallAnalysis(result);

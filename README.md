@@ -1,8 +1,8 @@
-<h1 align="center">Device Activity Tracker v2.5.0</h1>
+<h1 align="center">Device Activity Tracker v2.8.0</h1>
 <p align="center">WhatsApp Activity Tracker — RTT Analysis · Real-Time Bitácora · Behavior Intelligence · Audit Trail · Railway Dashboard · Local Network Monitor</p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.5.0-blue?style=flat" alt="Version 2.5.0"/>
+  <img src="https://img.shields.io/badge/version-2.8.0-blue?style=flat" alt="Version 2.8.0"/>
   <img src="https://img.shields.io/badge/Node.js-22+-339933?style=flat&logo=node.js&logoColor=white" alt="Node.js"/>
   <img src="https://img.shields.io/badge/TypeScript-5.7+-3178C6?style=flat&logo=typescript&logoColor=white" alt="TypeScript"/>
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat&logo=react&logoColor=black" alt="React"/>
@@ -34,11 +34,13 @@ Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to M
 | **📊 Reports & Stats** | Comprehensive report generation with profile, stats, patterns, and export to JSON/HTML/PDF |
 | **💾 Contact History** | Persistent contacts across restarts with auto-restore and one-click re-tracking |
 | **🌐 Network Monitor** | Real-time packet capture with protocol analysis, IP geolocation, and data export |
-| **📞 Call Traffic Analysis** | Local authorized packet capture during WhatsApp Web calls with route visualization and candidate IP classification |
+| **📞 Call Traffic Analysis** | Local authorized packet capture during WhatsApp Web calls with route visualization, candidate IP classification, and optional IP enrichment |
+| **📍 Authorized Check-In** | Consent-based case link with editable Open Graph preview, uploaded preview image, observed IP, device/browser/network metadata, optional GPS, Maps links, audit event, and evidence hash |
 | **🗂️ Case Management** | Formal case records with status, operator, authorization note, audit linkage, and closure controls |
 | **🧾 Audit Trail** | Case-based capture metadata, event log, SHA-256 hashed audit export, and evidence package export |
-| **📑 Final Case Report** | Case-level JSON/HTML report with executive summary, candidate IP scoring, timeline, hashes, and limitations |
+| **📑 Final Case Report** | Case-level JSON/HTML/PDF report with executive summary, activity stats, candidate IP scoring, timeline, hashes, and limitations |
 | **🚆 Railway Dashboard Mode** | Remote dashboard/statistics mode with local capture disabled for safe cloud deployment |
+| **🟢 Operational Health** | `/api/health` exposes operational/degraded status for MongoDB, WhatsApp, capture mode, and runtime dependencies without secrets |
 
 ---
 
@@ -136,8 +138,22 @@ Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to M
 - 🗺️ Visual route map: local host → local network/ISP → WhatsApp/Meta infrastructure → relays/cloud → candidate IPs
 - 🧭 Provider classification for Meta/WhatsApp, Google, Cloudflare, private ranges, and unknown public IPs
 - 🧮 Candidate IP scoring 0-100 with explainable reason codes and technical limitations
-- 📊 Packet counters, ports, directions, geolocation hints, and historical call analysis
+- 📊 Packet counters, ports, directions, geolocation hints, external IP enrichment, and historical call analysis
+- 🗺️ Optional `ip-api.com` enrichment adds estimated city/region/postal/coords, ISP, organization, ASN, mobile/proxy/hosting flags, and Google Maps links
 - ⚠️ Candidate IP language by design: observed IPs are not treated as verified person identity
+
+### Authorized Check-In
+- 📍 Protected dashboard tab to generate consent-based check-in links tied to an active case
+- 🧩 Case selector supports existing monitored cases or a new Case ID for authorized intake
+- 🖼️ Editable public page title/description plus optional uploaded Open Graph preview image
+- ✅ Public page requires explicit user acceptance before submission
+- 🌐 Records server-observed IP, user agent, language, timezone, device type, OS/browser, CPU/RAM hints, screen/viewport, browser network hints, and optional browser GPS if the user grants permission
+- 🗺️ Adds optional IP enrichment with ISP/organization/ASN, estimated network coordinates, and Google Maps links
+- 🔐 Stores SHA-256 evidence hash and links the result to the case evidence timeline
+- 🧾 Emits audit events for creation, completion, edit, revocation, and administrative deletion
+- 🗑️ Administrative delete removes the check-in record and related case evidence link from MongoDB
+- 🔗 `PUBLIC_BASE_URL` must be a public HTTPS URL for third-party previews and external recipients; `127.0.0.1` only works on the local machine
+- ⚠️ GeoIP is estimated network/ISP location. GPS is only available when the browser/user explicitly permits it.
 
 ### Audit Trail & Evidence Metadata
 - 🧾 Required capture metadata: `caseId`, `operatorName`, `authorizationNote`
@@ -145,6 +161,7 @@ Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to M
 - 🔎 Audit Trail tab to search events by Case ID
 - 📤 JSON audit export via `/api/audit/:caseId/export`
 - 🔐 SHA-256 hash included with audit export payload
+- 📦 Evidence Package ZIP with JSON artifacts, CSV annexes, and SHA-256 integrity manifest
 - 📑 Final case report export via `/api/reports/:caseId/final` and `/api/reports/:caseId/final.html`
 - 🖨️ Native PDF export via `/api/reports/:caseId/final.pdf`
 
@@ -152,6 +169,7 @@ Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to M
 - 🚆 `railway-dashboard`: dashboard, contacts, reports, activity, audit lookup, and WhatsApp session persistence without local packet capture
 - 💻 `local-full`: complete local/VM/VPS mode with packet capture, Network Monitor, and call traffic analysis
 - 🧠 `/api/runtime-capabilities` lets the frontend show or hide capture features automatically
+- 🟢 `/api/health` reports `operational` or `degraded` without printing secrets
 - 🔐 Optional `DASHBOARD_TOKEN` protects REST API, Socket.IO, dashboard access, and download links
 
 ### MongoDB Persistence
@@ -215,6 +233,8 @@ cp .env.example .env
 BACKEND_PORT=3001
 CLIENT_PORT=3000
 BACKEND_URL=http://localhost:3001
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001
+PUBLIC_BASE_URL=http://localhost:3001
 
 # MongoDB
 MONGODB_URI=mongodb://localhost:27017       # or mongodb+srv://... for Atlas
@@ -231,11 +251,19 @@ DASHBOARD_TOKEN=change-this-long-random-token
 # API docs. Served only when true and NODE_ENV is not production.
 ENABLE_SWAGGER=false
 
+# Optional IP enrichment for call-analysis candidates.
+# Uses ip-api.com free endpoint by default (HTTP, non-commercial/free-tier terms).
+ENABLE_IP_ENRICHMENT=true
+IP_ENRICHMENT_CACHE_TTL_SEC=604800
+IP_ENRICHMENT_TIMEOUT_MS=3500
+
 # Optional automatic call-capture defaults
 DEFAULT_CASE_ID=CASO-2026-001
 DEFAULT_OPERATOR_NAME=Operator name
 DEFAULT_AUTHORIZATION_NOTE=Authorization reference
 ```
+
+For Authorized Check-In previews outside the local machine, set `PUBLIC_BASE_URL` to the public HTTPS backend URL. Open Graph images and shared links cannot resolve from `localhost` or `127.0.0.1` on another device.
 
 For Railway, use `DEPLOYMENT_MODE=railway-dashboard` and `LOCAL_CAPTURE_ENABLED=false`.
 
@@ -277,7 +305,19 @@ yarn start:server
 cd client && pnpm start
 ```
 
-Open [http://localhost:3000](http://localhost:3000):
+Open [http://localhost:3000](http://localhost:3000).
+
+If ports `3000/3001` are already occupied locally, you can run the backend/frontend on alternate ports such as:
+
+```powershell
+# Backend
+$env:PORT='4000'; $env:BACKEND_PORT='4000'; $env:DEPLOYMENT_MODE='local-full'; $env:LOCAL_CAPTURE_ENABLED='true'; yarn start:server
+
+# Frontend
+$env:PORT='4001'; $env:REACT_APP_API_URL='http://127.0.0.1:4000'; cd client; npm start
+```
+
+Then open [http://127.0.0.1:4001](http://127.0.0.1:4001) and verify backend status at [http://127.0.0.1:4000/api/health](http://127.0.0.1:4000/api/health).
 
 1. **📱 WhatsApp Tracker tab** — Scan QR, add contacts, monitor RTT + bitácora
 2. **🌐 Network Monitor tab** — Select interface, add audit metadata, apply filters, capture packets
@@ -348,6 +388,7 @@ See [docs/railway-checklist.md](docs/railway-checklist.md) for the full deployme
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/runtime-capabilities` | Public runtime capability check for dashboard/local mode |
+| `GET` | `/api/health` | Public operational/degraded health check for MongoDB, WhatsApp, local capture, and runtime mode |
 | `GET` | `/api/audit/:caseId` | Audit events for a Case ID |
 | `GET` | `/api/audit/:caseId/export` | Export audit JSON with SHA-256 hash |
 | `GET` | `/api/evidence/:caseId/package` | Export JSON evidence package with manifest and SHA-256 hashes |
@@ -539,7 +580,7 @@ The UI presents a route map and packet summary using cautious language:
 4. **Relays / cloud providers** → infrastructure that may proxy traffic
 5. **Candidate IPs** → non-verified observed IPs for further authorized analysis
 
-The result is an investigative aid, not proof that an IP belongs to a person.
+The result is an investigative aid, not proof that an IP belongs to a person. When enabled, IP enrichment uses `ip-api.com` to attach estimated network location, ISP, organization, ASN, mobile/proxy/hosting flags, and a Google Maps URL. These values describe provider/network registration or routing hints, not GPS or verified user location.
 
 ### Audit Flow
 
@@ -560,6 +601,7 @@ The first evidence package format is JSON and includes:
 - direct evidence links
 - audit events
 - call analyses linked by audited `callId`
+- observed activity statistics with 24h/7d/30d trends, coverage, and reliability
 - network summary from capture audit events
 - SHA-256 hash per section
 - SHA-256 package hash
@@ -570,7 +612,17 @@ Endpoint:
 GET /api/evidence/:caseId/package
 ```
 
-ZIP export is also available with separated JSON artifacts: `manifest.json`, `case.json`, `audit.json`, `evidence-links.json`, `call-analysis.json`, `network-summary.json`, `integrity.json`, and `full-package.json`. Contacts, network captures, call analyses, and generated evidence packages are linked directly to the case through `case_evidence_links`.
+ZIP export is also available with separated JSON artifacts: `manifest.json`, `case.json`, `audit.json`, `evidence-links.json`, `call-analysis.json`, `network-summary.json`, `final-report.json`, `final-report.html`, `final-report.pdf`, `integrity.json`, and `full-package.json`.
+
+The ZIP includes spreadsheet-ready CSV annexes under `annexes/`: `audit-events.csv`, `evidence-links.csv`, `call-analysis.csv`, `candidate-ips.csv`, `activity-stats.csv`, `network-captures.csv`, plus `csv-integrity.json` with SHA-256 hashes for each CSV. Contacts, network captures, call analyses, and generated evidence packages are linked directly to the case through `case_evidence_links`.
+
+Report/evidence QA fixtures can be generated with:
+
+```bash
+yarn qa:report-fixture
+```
+
+The fixture validates required HTML/PDF/ZIP sections, PDF page count, developer branding, technical limitations, activity statistics, and absence of visible placeholder tokens.
 
 ### Deployment Split
 
@@ -640,14 +692,30 @@ For **network monitoring**: Use a VPN to encrypt and tunnel all traffic.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
-### Unreleased (June 2026)
+### v2.8.0 (June 2026) — Current
+- 🖼️ **Check-In Open Graph preview** — uploaded preview image, editable title/description, and public meta tags for authorized shared links
+- 🧭 **Case-bound check-ins** — existing case dropdown, new-case mode, operator/authorization relation, and active tab persistence after refresh
+- 💻 **Extended device evidence** — OS/browser/device type, CPU/RAM hints, screen/viewport, network hints, language/timezone, optional GPS, Maps links, and SHA-256 hash
+- 🛠️ **Check-In administration** — edit pending links, revoke links, delete completed records from MongoDB, and clean related evidence links with audit logging
+- ✅ **Frontend robustness** — safer JSON parsing for backend/HTML errors and 3MB upload limit for preview assets
+
+### v2.7.0 (June 2026)
+- 📍 **Authorized Check-In** — consent-based public link with observed IP, browser metadata, optional browser GPS, GeoIP enrichment, Maps links, audit events, case evidence link, and SHA-256 receipt hash
+- 🧾 **Check-In dashboard** — protected tab to create, copy, open, and review check-ins by case
+- ✅ **Check-In QA** — token/hash/render normalization covered by unit tests
+
+### v2.6.0 (June 2026)
 - 🚆 **Railway/local split** — `railway-dashboard` mode disables local capture; `local-full` keeps the complete capture stack
+- 🟢 **Operational health** — `/api/health` reports MongoDB, WhatsApp, local capture, runtime mode, and degraded reasons without secrets
+- 📚 **Swagger/OpenAPI** — `/docs` available only outside production when `ENABLE_SWAGGER=true`
 - 🔐 **Dashboard token auth** — optional `DASHBOARD_TOKEN` for REST, Socket.IO, dashboard, and downloads
 - 📞 **Call Traffic Analysis** — local authorized capture window, observed route map, relays/providers, and candidate IP classification
-- 🧾 **Audit Trail** — required capture metadata, Case ID event lookup, and SHA-256 hashed audit export
-- 📚 **Operational docs** — Railway checklist, local operation guide, deployment split, and planner/audit board
+- 🌍 **IP enrichment** — optional `ip-api.com` lookup for candidate/infrastructure IPs with estimated network location, ISP/ORG/ASN, flags, caching, and Maps links
+- 🧾 **Case audit/evidence** — required capture metadata, Case ID event lookup, SHA-256 audit export, Evidence ZIP, CSV annexes, and final report JSON/HTML/PDF
+- 📊 **Activity insights** — 24h/7d/30d trends, coverage, reliability, report integration, and Evidence ZIP annexes
+- ✅ **QA automation** — `test:unit`, `qa:report-fixture`, HTTP runtime contracts, and local CORS coverage for ports `4000/4001`
 
-### v2.5.0 (March 2026) — Current
+### v2.5.0 (March 2026)
 - 🐛 **Network Monitor fixes** — `cap.open()` buffer arg order, `geoip-lite` CJS interop, `linkType: undefined` en Wi-Fi (Windows)
 - 📄 **Network Monitor pagination** — 8 paquetes/página con controles «‹ N/Total ›» y auto-scroll a última página
 - 🐛 **Recharts height fix** — `ResponsiveContainer` en `ContactCard` usa píxeles fijos en vez de % para evitar warnings

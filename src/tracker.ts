@@ -68,6 +68,10 @@ class TrackerLogger {
 
 const trackerLogger = new TrackerLogger();
 
+function isTechnicalLidJid(jid: string): boolean {
+    return jid.endsWith('@lid');
+}
+
 /**
  * Metrics tracked per device for activity monitoring
  */
@@ -159,8 +163,11 @@ export class WhatsAppTracker {
             if (update.presences) {
                 for (const [jid, presenceData] of Object.entries(update.presences)) {
                     if (presenceData && presenceData.lastKnownPresence) {
-                        // Detect new device JIDs
-                        if (!this.knownDeviceJids.has(jid)) {
+                        // Baileys may emit @lid identifiers for the same account/session.
+                        // They are useful internally but should not be shown as physical devices.
+                        const isDisplayableDevice = !isTechnicalLidJid(jid);
+
+                        if (isDisplayableDevice && !this.knownDeviceJids.has(jid)) {
                             this.knownDeviceJids.add(jid);
                             trackerLogger.info(`[NEW DEVICE] Detected new device JID: ${jid} for ${this.targetJid}`);
                             if (this.onNewDevice) {
@@ -173,7 +180,7 @@ export class WhatsAppTracker {
                             }
                         }
 
-                        // Track multi-device JIDs (including LID)
+                        // Track technical JIDs internally so presence/receipts remain correlated.
                         this.trackedJids.add(jid);
                         trackerLogger.debug(`[MULTI-DEVICE] Added JID to tracking: ${jid}`);
 

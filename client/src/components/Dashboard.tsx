@@ -72,6 +72,42 @@ export function Dashboard({ connectionState }: DashboardProps) {
     const [savedContacts, setSavedContacts] = useState<SavedContact[]>([]);
     const [historyLoading, setHistoryLoading] = useState(false);
 
+    const mergeSavedContacts = useCallback((data: SavedContact[]) => {
+        setContacts(prev => {
+            const next = new Map(prev);
+            data
+                .filter(contact => contact.isActive)
+                .forEach(contact => {
+                    const existing = next.get(contact.jid);
+                    next.set(contact.jid, {
+                        jid: contact.jid,
+                        displayNumber: contact.number,
+                        contactName: contact.contactName || contact.number,
+                        customName: contact.customName || null,
+                        pushName: contact.pushName || null,
+                        data: existing?.data || [],
+                        devices: existing?.devices || [],
+                        deviceCount: existing?.deviceCount || 0,
+                        presence: existing?.presence || null,
+                        profilePic: contact.profilePic || existing?.profilePic || null,
+                        connectionType: existing?.connectionType,
+                        typingState: existing?.typingState,
+                        deviceAlerts: existing?.deviceAlerts,
+                    });
+                });
+            return next;
+        });
+    }, []);
+
+    const fetchActiveContacts = useCallback(() => {
+        authFetch(`${API_URL}/api/contacts`)
+            .then(r => r.json())
+            .then((data: SavedContact[]) => mergeSavedContacts(data))
+            .catch((err) => {
+                console.error('Failed to fetch active contacts:', err);
+            });
+    }, [mergeSavedContacts]);
+
     const fetchHistory = useCallback(() => {
         setHistoryLoading(true);
         authFetch(`${API_URL}/api/contacts/history`)
@@ -85,6 +121,10 @@ export function Dashboard({ connectionState }: DashboardProps) {
                 setHistoryLoading(false);
             });
     }, []);
+
+    useEffect(() => {
+        fetchActiveContacts();
+    }, [fetchActiveContacts]);
 
     useEffect(() => {
         function onTrackerUpdate(update: any) {
@@ -521,6 +561,9 @@ export function Dashboard({ connectionState }: DashboardProps) {
                                     if (hrs < 24) return `${hrs}h ago`;
                                     return `${Math.floor(hrs / 24)}d ago`;
                                 })();
+                                const profilePicSrc = sc.profilePic
+                                    ? `${API_URL}/api/contact/${encodeURIComponent(sc.jid)}/profile-picture?cache=${encodeURIComponent(sc.profilePic)}`
+                                    : null;
 
                                 return (
                                     <div
@@ -533,8 +576,8 @@ export function Dashboard({ connectionState }: DashboardProps) {
                                     >
                                         <div className="flex items-center gap-3">
                                             <div className="w-8 h-8 rounded-lg overflow-hidden bg-surface-hover border border-surface-border flex-shrink-0">
-                                                {sc.profilePic ? (
-                                                    <img src={sc.profilePic} alt="" className="w-full h-full object-cover" />
+                                                {profilePicSrc ? (
+                                                    <img src={profilePicSrc} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                                                 ) : (
                                                     <div className="w-full h-full flex items-center justify-center text-txt-dim">
                                                         <User size={14} />

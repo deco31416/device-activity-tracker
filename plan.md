@@ -1,6 +1,6 @@
 # Device Activity Tracker - Planner y Auditoria
 
-Ultima actualizacion: 2026-06-18
+Ultima actualizacion: 2026-06-23
 
 ## Objetivo
 
@@ -21,6 +21,7 @@ Nota tecnica: el sistema debe hablar de "trafico observado", "infraestructura", 
 - [x] Existe persistencia MongoDB para contactos, mediciones, actividad y analisis.
 - [x] Existe modulo `Network Monitor` para captura local.
 - [x] Existe modulo `Call Traffic Analysis` para captura durante llamadas.
+- [x] Existe modulo `Authorized Check-In` con consentimiento explicito, IP observada, GPS opcional, enriquecimiento GeoIP, auditoria y hash.
 - [x] Existe separacion por modo:
   - `DEPLOYMENT_MODE=railway-dashboard`
   - `LOCAL_CAPTURE_ENABLED=false`
@@ -140,6 +141,8 @@ Pendiente:
 - [x] Incluir reporte `PDF` nativo.
 - [x] Incluir export tecnico `JSON`.
 - [x] Crear ZIP final con hashes por archivo.
+- [x] Incluir anexos CSV en el Evidence ZIP.
+- [x] Incluir hash SHA-256 por anexo CSV.
 - [x] Registrar evento `evidence_package_export`.
 - [x] Registrar evento `evidence_package_zip_export`.
 - [x] Registrar eventos `*_export_requested` antes de construir archivos exportados.
@@ -175,6 +178,7 @@ Pendiente:
 - [ ] Mapa visual de ruta observada.
 - [x] Limitaciones tecnicas.
 - [x] Anexo JSON dentro del Evidence ZIP.
+- [x] Anexos CSV dentro del Evidence ZIP.
 - [x] Export HTML.
 - [x] Export PDF.
 - [x] Export JSON.
@@ -193,9 +197,47 @@ Pendiente:
   - generar informe
 - [ ] Crear estado visible de modo runtime: Railway dashboard vs Local full.
 - [ ] Mostrar recurso ocupado si ya hay captura activa.
+- [x] Mejorar panel `Stats` con calidad de muestra, ventana observada, densidad, hora pico, sesion promedio y online estimado.
+- [x] Agregar tendencias 24h/7d/30d al panel `Stats`.
+- [x] Agregar cobertura diaria de 14 dias al panel `Stats`.
+- [x] Agregar confiabilidad de medicion al endpoint `/api/stats/:jid`.
+- [x] Incluir tendencias/cobertura/confiabilidad en reporte final JSON/HTML/PDF.
+- [x] Incluir `activity-stats.json` y `annexes/activity-stats.csv` en Evidence ZIP.
+- [x] Crear fixture QA reproducible para reporte final HTML/PDF/ZIP.
+- [x] Validar estructura PDF con `pypdf`: paginas y secciones clave.
+- [ ] Renderizar PDF a PNG con Poppler para QA visual final.
 - [ ] Mejorar mapa visual con timeline.
 - [ ] Agregar vista de replay/resumen de sesion.
 - [ ] Crear panel de conclusiones tecnicas editables por operador.
+
+### Epica 15 - Authorized Check-In y Ubicacion Consentida
+
+- [x] Definir enfoque profesional: ubicacion/IP solo mediante consentimiento explicito.
+- [x] Crear entidad MongoDB `check_ins`.
+- [x] Crear indices por `token`, `caseId` y estado/vencimiento.
+- [x] Crear token publico URL-safe.
+- [x] Crear hash SHA-256 de evidencia del check-in.
+- [x] Crear ruta protegida `POST /api/checkins` para generar enlaces.
+- [x] Crear ruta protegida `GET /api/checkins` para auditoria operativa.
+- [x] Crear pagina publica `GET /checkin/:token`.
+- [x] Crear submit publico `POST /public/checkin/:token/submit`.
+- [x] Requerir aceptacion explicita antes de enviar evidencia.
+- [x] Solicitar GPS solo tras accion visible del usuario.
+- [x] Capturar IP observada por servidor, user-agent, idioma, referer y metadatos de navegador.
+- [x] Enriquecer IP con GeoIP/ASN/ISP cuando este disponible.
+- [x] Registrar `checkin_link_created` en auditoria.
+- [x] Registrar `checkin_completed` en auditoria.
+- [x] Asociar check-ins al caso como evidencia `check_in`.
+- [x] Crear tab frontend `Check-In`.
+- [x] Mostrar URL generada, copiar y abrir enlace.
+- [x] Mostrar estado, IP, ISP/ORG, GeoIP, permiso GPS y links a Google Maps.
+- [x] Agregar pruebas unitarias de token, hash, normalizacion y render seguro.
+- [x] Documentar variables y alcance en README/CHANGELOG/.env.example.
+- [ ] Probar manualmente desde telefono real en la misma red y desde datos moviles.
+- [ ] Incluir check-ins completados en el Final Case Report.
+- [ ] Incluir check-ins completados en Evidence ZIP como anexo dedicado.
+- [ ] Agregar revocacion manual de enlaces pendientes.
+- [ ] Agregar expiracion visual/automatica en dashboard.
 
 ### Epica 14 - Auditoria de Codigo Activa
 
@@ -207,11 +249,25 @@ Pendiente:
 - [x] Extraer endpoints de Evidence Package y Final Report a `src/routes/reports.ts`.
 - [x] Extraer endpoints de auditoria a `src/routes/audit.ts`.
 - [x] Extraer endpoints de casos a `src/routes/cases.ts`.
-- [ ] Separar `ContactCard` en componentes por panel.
+- [x] Extraer panel de analisis de llamada a `CallAnalysisPanel`.
+- [x] Extraer panel de perfil a `ProfilePanel`.
+- [x] Extraer panel de inteligencia a `IntelPanel`.
+- [x] Extraer timeline de actividad a `ActivityLogPanel`.
+- [x] Extraer panel de estadisticas a `StatsPanel`.
+- [x] Extraer bitacora/export a `ActivityJournalPanel`.
+- [ ] Separar paneles restantes de `ContactCard` si se requiere una segunda reduccion.
 - [ ] Documentar contrato de API para runtime, audit, call capture y reports.
-- [ ] Agregar pruebas unitarias para `meta-ip-ranges`.
-- [ ] Agregar pruebas unitarias para scoring de llamada.
-- [ ] Agregar pruebas de endpoints de modo Railway/local.
+- [x] Agregar pruebas unitarias para scoring de llamada.
+- [x] Agregar runner unitario backend con `tsx --test`.
+- [x] Agregar pruebas unitarias para `meta-ip-ranges`.
+- [x] Agregar pruebas unitarias para validadores compartidos.
+- [x] Agregar pruebas unitarias para Evidence Package ZIP y Final Report Builder.
+- [x] Agregar pruebas de contrato runtime Railway/local.
+- [x] Agregar pruebas unitarias para tendencias, cobertura y confiabilidad de estadisticas.
+- [x] Agregar script `qa:report-fixture` para QA de informe final.
+- [x] Agregar pruebas HTTP de endpoints de modo Railway/local.
+- [x] Agregar endpoint publico `/api/health` sin secretos.
+- [x] Agregar pruebas HTTP para `/api/health` operational/degraded.
 - [ ] Agregar prueba manual QA para `/api/runtime-capabilities`.
 
 ### Epica 1 - Separacion Railway vs Local
@@ -261,9 +317,9 @@ Pendiente:
 - [ ] Separar captura general de captura de llamada.
 - [ ] Agregar whitelist/blacklist de proveedores.
 - [ ] Actualizar rangos Meta/WhatsApp.
-- [ ] Agregar clasificacion ASN si es viable.
-- [ ] Agregar scoring de confianza documentado.
-- [ ] Mostrar advertencia tecnica: candidato no equivale a identidad.
+- [x] Agregar clasificacion ASN si es viable.
+- [x] Agregar scoring de confianza documentado.
+- [x] Mostrar advertencia tecnica: candidato no equivale a identidad.
 
 ### Epica 5 - Reportes
 
@@ -388,10 +444,69 @@ Antes de cerrar cada bloque de trabajo:
 - [x] Asociado contacto observado al caso desde el flujo `add-contact`.
 - [x] Extraidos validadores compartidos a `src/validation.ts` y rutas conectadas directamente al modulo comun.
 - [x] Validado bloque con `yarn build`, `pnpm run build` y `git diff --check`.
+- [x] Agregada inteligencia local ASN/ORG heuristica, penalizacion de cloud/datacenter y visualizacion en UI/reporte final.
+- [x] Validado bloque con `yarn build`, `pnpm run build` y `pnpm run build` en `client`.
+- [x] Agregados anexos CSV al Evidence ZIP: auditoria, evidencias, llamadas, IPs candidatas y capturas de red.
+- [x] Agregado `annexes/csv-integrity.json` con SHA-256 por CSV.
+- [x] Extraido `CallAnalysisPanel` desde `ContactCard` para reducir deuda tecnica frontend.
+- [x] Extraido `ProfilePanel` desde `ContactCard`; `ContactCard.tsx` queda en ~1750 lineas.
+- [x] Extraido `IntelPanel` desde `ContactCard`; `ContactCard.tsx` queda en ~1377 lineas.
+- [x] Extraido `ActivityLogPanel` desde `ContactCard`; `ContactCard.tsx` queda en ~1326 lineas.
+- [x] Extraido `StatsPanel` desde `ContactCard` y enriquecido con patrones agregados desde `/api/patterns/:jid`.
+- [x] Extraido `ActivityJournalPanel` desde `ContactCard`; `ContactCard.tsx` queda en ~905 lineas.
+- [x] Agregado `src/stats-insights.ts` para tendencias 24h/7d/30d, cobertura diaria y confiabilidad de muestra.
+- [x] Endpoint `/api/stats/:jid` devuelve `insights` sin romper el contrato anterior.
+- [x] Final Report incluye seccion de estadisticas de actividad observada.
+- [x] Evidence ZIP incluye estadisticas de actividad como JSON y CSV hasheado.
+- [x] Agregado `scripts/generate-report-fixture.ts` para generar artefactos QA estables.
+- [x] Extraidas rutas/guard runtime a `src/routes/runtime.ts`.
+- [x] Agregadas pruebas HTTP para `/api/runtime-capabilities` y bloqueo/permiso de captura local.
+- [x] Agregado health check operativo con MongoDB, WhatsApp y captura local sin exponer secretos.
+- [x] Extraido scoring de llamada a `src/call-scoring.ts`.
+- [x] Agregado script `test:unit` y pruebas Node/tsx para rangos IP, validacion, scoring y report/evidence ZIP.
+- [x] Extraida logica runtime a `src/runtime.ts`.
+- [x] Agregadas pruebas de contrato Railway/local y payload de captura deshabilitada.
+- [x] Validado `yarn test:unit`: 15 pruebas OK.
+- [x] Validado `yarn build` backend y `pnpm run build` frontend despues del bloque runtime/auditoria.
+- [x] Validado `pnpm run build` frontend despues de mejorar `StatsPanel`.
+- [x] Validado `yarn test:unit`: 17 pruebas OK despues de agregar `stats-insights`.
+- [x] Validado `yarn build` backend y `pnpm run build` frontend despues de tendencias/cobertura.
+- [x] Validado `yarn test:unit`, `yarn build` y `pnpm run build` despues de integrar estadisticas al reporte final.
+- [x] Validado `yarn qa:report-fixture`: HTML/PDF/ZIP generados, PDF 2 paginas y secciones clave presentes.
+- [x] Validado `yarn test:unit`: 20 pruebas OK con contratos HTTP runtime/Railway/local.
+- [x] Validado `pnpm run build` frontend despues de extraer `ActivityJournalPanel`.
+- [x] Validado `yarn test:unit`: 23 pruebas OK con `/api/health`.
+- [x] Validado `yarn build` backend despues de `/api/health`.
+- [x] Backend local levantado en `http://127.0.0.1:4000` por conflicto en `3001`.
+- [x] Frontend local levantado en `http://127.0.0.1:4001` apuntando al backend `4000`.
+- [x] Validado `/api/health`: responde 503 `degraded` por `mongodb_disconnected` sin exponer secretos; WhatsApp conectado y captura local habilitada.
+- [x] Validado `npm run build` frontend con ruta explicita `C:\nvm4w\nodejs\npm.cmd`.
+- [x] Reforzado `yarn qa:report-fixture` con checks de contenido HTML/PDF, marca, limitaciones, secciones clave y tokens prohibidos.
+- [x] Regenerado fixture QA: PDF 2 paginas, HTML/PDF/ZIP OK, sin `undefined`, `null`, `NaN` ni `[object Object]`.
+- [x] Documentado bloqueo de render PNG: `pdftoppm/pdfinfo` no disponible en PATH local.
+- [x] Actualizada `MONGODB_URI` local en `.env` y validado `/api/health` en `operational`.
+- [x] MongoDB conectado, WhatsApp conectado y captura local habilitada en `http://127.0.0.1:4000`.
+- [x] Preparada release `2.6.0` en `package.json`, `client/package.json`, `client/package-lock.json`, README, CHANGELOG, Swagger metadata y evidencia.
+- [x] Actualizado README con `/api/health`, CORS local `4000/4001`, Evidence ZIP, QA fixture y changelog `v2.6.0`.
+- [x] Actualizado `.env.example` con nota de `ALLOWED_ORIGINS`.
+- [x] Validado release prep: `yarn test:unit` 23/23 OK, `yarn build` OK, `yarn qa:report-fixture` OK, frontend `npm run build` OK.
+- [x] Corregido bug de UI post-pruebas: frontend puede detectar WhatsApp conectado via `/api/health` si se pierde el evento `connection-open`.
+- [x] Validado frontend dev server `http://127.0.0.1:4001` con bundle apuntando a `http://127.0.0.1:4000` y fallback `/api/health`.
+- [x] Corregido bug de fotos: Dashboard hidrata contactos activos desde `/api/contacts` para recuperar `profilePic`, alias y nombres guardados aunque no llegue el evento socket.
+- [x] Agregado proxy backend `/api/contact/:jid/profile-picture` y UI usando ese endpoint para evitar fallos con URLs externas de WhatsApp.
+- [x] Corregido conteo de dispositivos: los JIDs internos `@lid` ya no disparan alerta visible como dispositivos fisicos; UI muestra conteo observable.
+- [x] Agregado modulo `Authorized Check-In` con enlace publico de consentimiento explicito, IP observada por servidor, GPS opcional y hash SHA-256 de evidencia.
+- [x] Agregado selector de caso activo en Check-In, modo Case ID nuevo y persistencia de pestana activa tras refrescar la pagina.
+- [x] Agregados metadatos extendidos de Check-In: dispositivo, OS, navegador, pantalla, viewport, CPU/RAM aproximada, red del navegador, idioma y zona horaria.
+- [x] Agregados controles administrativos de Check-In: editar, revocar y eliminar desde MongoDB incluso si ya fue completado.
+- [x] Agregado upload de imagen preview y metatags Open Graph/Twitter para enlaces autorizados.
+- [x] Documentada limitacion operativa: previews publicos requieren `PUBLIC_BASE_URL` con HTTPS publico; `127.0.0.1` solo funciona localmente.
+- [x] Preparada release `2.8.0` en `package.json`, `client/package.json`, `client/package-lock.json`, README, CHANGELOG, Swagger metadata y User-Agent de enriquecimiento.
 
 ## Proximo Bloque Sugerido
 
-1. Mejorar scoring tecnico de IP candidata con ASN/ORG.
-2. Agregar anexos CSV al Evidence Package.
-3. Extraer componentes grandes del frontend.
-4. Ejecutar checklist Railway y QA manual local.
+1. Ejecutar QA manual completo de Check-In en URL publica HTTPS o tunel controlado para validar Open Graph real fuera de localhost.
+2. Integrar Check-In al reporte final y Evidence ZIP como anexo formal con preview, hash, IP, GPS y metadatos de dispositivo.
+3. Instalar/usar Poppler para render visual PNG del PDF fixture.
+4. Extraer bitacora/export de `ContactCard` si seguimos reduciendo deuda frontend.
+5. Congelar alcance antes de QA final.
