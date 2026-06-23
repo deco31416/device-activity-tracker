@@ -267,7 +267,7 @@ function App() {
                                     sidebarCollapsed ? 'lg:justify-center lg:px-0 lg:py-3 gap-3 px-3 py-2.5' : 'gap-3 px-3 py-2.5'
                                 } ${
                                     isActive
-                                        ? 'bg-accent text-white shadow-glow-sm'
+                                        ? 'bg-accent/15 text-accent border border-accent/25 shadow-glow-sm'
                                         : 'text-txt-muted hover:text-txt-primary hover:bg-surface-hover'
                                 }`}
                             >

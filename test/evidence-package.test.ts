@@ -8,9 +8,9 @@ function sampleEvidencePackage(): any {
             packageType: 'evidence-package',
             version: '1.0',
             software: {
-                name: 'Device Activity Tracker',
+                name: 'WP MONITOR',
                 version: '2.6.0',
-                developedBy: 'Deco31416',
+                developedBy: 'WP MONITOR',
             },
             caseId: 'CASE-UNIT-001',
             generatedAt: '2026-06-18T00:00:00.000Z',

@@ -841,8 +841,8 @@ export function ContactCard({
                                     <AreaChart data={data}>
                                         <defs>
                                             <linearGradient id={`grad-${jid}`} x1="0" y1="0" x2="0" y2="1">
-                                                <stop offset="0%" stopColor="#7c3aed" stopOpacity={0.3} />
-                                                <stop offset="100%" stopColor="#7c3aed" stopOpacity={0} />
+                                                <stop offset="0%" stopColor="#25d366" stopOpacity={0.3} />
+                                                <stop offset="100%" stopColor="#25d366" stopOpacity={0} />
                                             </linearGradient>
                                         </defs>
                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(30,37,69,0.8)" />
@@ -867,7 +867,7 @@ export function ContactCard({
                                         <Area
                                             type="monotone"
                                             dataKey="avg"
-                                            stroke="#7c3aed"
+                                            stroke="#25d366"
                                             strokeWidth={2}
                                             fill={`url(#grad-${jid})`}
                                             dot={false}

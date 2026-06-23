@@ -18,7 +18,7 @@ export function buildRuntimeHealth(config: RuntimeConfig, providers: RuntimeHeal
 
     return {
         service: 'device-activity-tracker',
-        developedBy: 'Deco31416',
+        developedBy: 'WP MONITOR',
         status: degradedReasons.length > 0 ? 'degraded' : 'operational',
         generatedAt: new Date().toISOString(),
         runtime: buildRuntimeCapabilities(config),

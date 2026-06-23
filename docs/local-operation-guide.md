@@ -32,7 +32,8 @@ Configurar `.env` para modo completo local:
 DEPLOYMENT_MODE=local-full
 LOCAL_CAPTURE_ENABLED=true
 ENABLE_SWAGGER=true
-PORT=3001
+PORT=4000
+PUBLIC_BASE_URL=http://127.0.0.1:4000
 MONGODB_URI=mongodb+srv://...
 MONGODB_DB=activity-tracker
 ```
@@ -71,13 +72,13 @@ pnpm start
 Abrir:
 
 ```text
-http://localhost:3000
+http://127.0.0.1:4001
 ```
 
 Si `ENABLE_SWAGGER=true` y `NODE_ENV` no es `production`, la documentacion API queda disponible en:
 
 ```text
-http://localhost:3001/docs
+http://127.0.0.1:4000/docs
 ```
 
 Si `DASHBOARD_TOKEN` esta activo, ingresar el token en la pantalla inicial.
@@ -176,3 +177,9 @@ El `Evidence Package` incluye manifiesto, caso, enlaces directos de evidencia, e
 
 - Verificar que `auth_info_baileys` persista.
 - En Docker/Railway, confirmar volumen montado en `/app/auth_info_baileys`.
+
+### Imagenes preview de Check-In desaparecen despues de redeploy
+
+- En Railway/Docker, confirmar volumen montado en `/app/public/uploads`.
+- Verificar que `PUBLIC_BASE_URL` apunte al backend publico HTTPS.
+- Los assets generados se sirven como `/uploads/checkins/*`; sin volumen persistente pueden perderse al reiniciar el contenedor.

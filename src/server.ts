@@ -74,7 +74,7 @@ function isConfigured(value: string | undefined): boolean {
 
 function logStartupBanner() {
     bootLog('ok', 'Backend starting...');
-    bootLog('ok', 'Developed by Deco31416');
+    bootLog('ok', 'WP MONITOR');
 }
 
 function logStartupConfiguration() {
@@ -133,7 +133,7 @@ async function tryRecordStartupAudit() {
                 swaggerEnabled: ENABLE_SWAGGER,
                 corsOriginsLoaded: ALLOWED_ORIGINS.length,
                 dashboardGuardEnabled: !!DASHBOARD_TOKEN,
-                developedBy: 'Deco31416',
+                developedBy: 'WP MONITOR',
             },
         });
         bootLog('ok', 'Startup audit event recorded: backend_operational');
@@ -166,7 +166,7 @@ function buildOpenApiDocument() {
         info: {
             title: 'Device Activity Tracker API',
             version: '2.8.0',
-            description: 'Authorized activity monitoring, case management, audit trail, reports, and local capture API. Developed by Deco31416.',
+            description: 'Authorized activity monitoring, case management, audit trail, reports, and local capture API. WP MONITOR.',
         },
         servers: [{ url: `http://localhost:${PORT}` }],
         tags: [
@@ -733,8 +733,8 @@ app.post('/api/checkins', async (req, res) => {
     const pageTitle = cleanText(req.body?.pageTitle, 120) || 'Check-in autorizado';
     const pageDescription = cleanText(req.body?.pageDescription, 260) || undefined;
     const ogImageUrl = cleanText(req.body?.ogImageUrl, 1000) || null;
-    const brandName = cleanText(req.body?.brandName, 80) || 'Developed by Deco31416';
-    const accentColor = cleanHexColor(req.body?.accentColor, '#7c3aed');
+    const brandName = cleanText(req.body?.brandName, 80) || 'WP MONITOR';
+    const accentColor = cleanHexColor(req.body?.accentColor, '#25d366');
     const backgroundColor = cleanHexColor(req.body?.backgroundColor, '#0b1020');
     const panelColor = cleanHexColor(req.body?.panelColor, '#151b31');
     const textColor = cleanHexColor(req.body?.textColor, '#eef4ff');
@@ -927,7 +927,7 @@ app.patch('/api/checkins/:token', async (req, res) => {
             ...(req.body?.pageTitle !== undefined ? { pageTitle: pageTitle || 'Check-in autorizado' } : {}),
             ...(req.body?.pageDescription !== undefined ? { pageDescription: pageDescription || undefined } : {}),
             ...(req.body?.ogImageUrl !== undefined ? { ogImageUrl: ogImageUrl || null } : {}),
-            ...(req.body?.brandName !== undefined ? { brandName: brandName || 'Developed by Deco31416' } : {}),
+            ...(req.body?.brandName !== undefined ? { brandName: brandName || 'WP MONITOR' } : {}),
             ...(req.body?.accentColor !== undefined ? { accentColor } : {}),
             ...(req.body?.backgroundColor !== undefined ? { backgroundColor } : {}),
             ...(req.body?.panelColor !== undefined ? { panelColor } : {}),

@@ -77,7 +77,7 @@ export function ActivityJournalPanel({
 <html lang="es"><head><meta charset="UTF-8"><title>Bitacora - ${privacyMode ? '***' : displayNumber}</title>
 <style>
 body{font-family:system-ui,-apple-system,sans-serif;background:#070b18;color:#f1f5f9;padding:40px}
-h1{font-size:20px;color:#7c3aed;margin-bottom:4px}
+h1{font-size:20px;color:#25d366;margin-bottom:4px}
 .meta{color:#64748b;font-size:13px;margin-bottom:24px}
 table{width:100%;border-collapse:collapse;background:#0f1629;border-radius:12px;overflow:hidden}
 th{background:#1e2545;padding:10px 8px;text-align:left;font-size:11px;text-transform:uppercase;color:#64748b;letter-spacing:1px}
@@ -89,7 +89,7 @@ tr:hover{background:#141b2d}
 <div class="meta">Contacto: ${privacyMode ? '***' : displayNumber} - Generado: ${new Date().toLocaleString('es-MX')} - Total eventos: ${entries.length}</div>
 <table><thead><tr><th>Fecha</th><th>Hora (Local / UTC)</th><th>Estado</th><th>Descripcion</th></tr></thead>
 <tbody>${rows}</tbody></table>
-<div class="footer">Device Activity Tracker v2.6.0 - @deco31416 - www.deco31416.com</div>
+<div class="footer">WP MONITOR - Activity Journal</div>
 </body></html>`;
         downloadBlob(
             new Blob([html], { type: 'text/html' }),
@@ -257,7 +257,7 @@ function Pagination({
                             className={clsx(
                                 'w-6 h-6 rounded-md text-[10px] font-medium transition-colors',
                                 logPage === pageNum
-                                    ? 'bg-accent text-white'
+                                    ? 'bg-accent/15 text-accent border border-accent/25'
                                     : 'text-txt-muted hover:bg-surface-hover',
                             )}
                         >
@@ -326,7 +326,7 @@ function describeStateShort(state: string): string {
 }
 
 function stateColor(state: string, print = false): string {
-    if (state.includes('Online')) return print ? '#16a34a' : '#22c55e';
+    if (state.includes('Online')) return print ? '#1faa59' : '#25d366';
     if (state === 'Standby') return print ? '#ca8a04' : '#eab308';
     if (state === 'OFFLINE') return print ? '#dc2626' : '#ef4444';
     return print ? '#64748b' : '#94a3b8';

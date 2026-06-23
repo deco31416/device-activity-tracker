@@ -59,7 +59,7 @@ interface CaptureFilter {
 // ── Constants ──────────────────────────────────────────────────
 
 const PROTOCOL_COLORS: Record<string, string> = {
-    TCP: '#7c3aed',
+    TCP: '#38bdf8',
     UDP: '#3b82f6',
     ICMP: '#f59e0b',
     OTHER: '#64748b',
@@ -426,7 +426,7 @@ export function NetworkMonitor() {
                         onClick={() => setShowFilters(!showFilters)}
                         className={`px-3 py-2 rounded-xl flex items-center gap-1.5 text-sm font-medium transition-colors ${
                             showFilters
-                                ? 'bg-accent text-white shadow-glow-sm'
+                                ? 'bg-accent/15 text-accent border border-accent/25 shadow-glow-sm'
                                 : 'bg-surface-overlay text-txt-secondary border border-surface-border hover:bg-surface-hover'
                         }`}
                     >
@@ -955,7 +955,7 @@ function StatsPanel({
                                 }}
                                 itemStyle={{ color: '#94a3b8' }}
                             />
-                            <Bar dataKey="count" fill="#7c3aed" radius={[0, 6, 6, 0]} />
+                            <Bar dataKey="count" fill="#25d366" radius={[0, 6, 6, 0]} />
                         </BarChart>
                     </ResponsiveContainer>
                 ) : (

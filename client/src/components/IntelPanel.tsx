@@ -120,7 +120,7 @@ function HabitProfileCard({ habits }: { habits: IntelHabits }) {
                 <div className="col-span-2 flex items-center gap-3 bg-surface-hover rounded-lg p-3 border border-surface-border">
                     <div className={clsx(
                         "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
-                        habits.dominantPattern === 'night_owl' ? 'bg-indigo-500/20 text-indigo-400' :
+                        habits.dominantPattern === 'night_owl' ? 'bg-sky-500/20 text-sky-300' :
                         habits.dominantPattern === 'early_bird' ? 'bg-amber-500/20 text-amber-400' :
                         habits.dominantPattern === 'regular' ? 'bg-success/20 text-success' :
                         'bg-warning/20 text-warning'
@@ -139,9 +139,9 @@ function HabitProfileCard({ habits }: { habits: IntelHabits }) {
                 </div>
 
                 <IntelMetric icon={<Sun size={14} className="mx-auto text-amber-400 mb-1" />} value={habits.estimatedWakeTime || '-'} label="Despertar (UTC)" />
-                <IntelMetric icon={<Moon size={14} className="mx-auto text-indigo-400 mb-1" />} value={habits.estimatedSleepTime || '-'} label="Dormir (UTC)" />
+                <IntelMetric icon={<Moon size={14} className="mx-auto text-sky-300 mb-1" />} value={habits.estimatedSleepTime || '-'} label="Dormir (UTC)" />
                 <IntelMetric icon={<Briefcase size={14} className="mx-auto text-success mb-1" />} value={`${habits.workHoursOnline}%`} label="Horario laboral" />
-                <IntelMetric icon={<Moon size={14} className="mx-auto text-purple-400 mb-1" />} value={`${habits.nightOwlScore}%`} label="Score nocturno" />
+                <IntelMetric icon={<Moon size={14} className="mx-auto text-cyan-300 mb-1" />} value={`${habits.nightOwlScore}%`} label="Score nocturno" />
                 <IntelMetric icon={<Timer size={14} className="mx-auto text-warning mb-1" />} value={fmtSec(habits.avgResponseGapSec)} label="Gap promedio" />
                 <IntelMetric icon={<Coffee size={14} className="mx-auto text-orange-400 mb-1" />} value={`${habits.eveningOnline}%`} label="Noche activo" />
 
@@ -155,7 +155,7 @@ function HabitProfileCard({ habits }: { habits: IntelHabits }) {
                         <div className="text-center px-3">
                             <span className={clsx(
                                 "text-[10px] font-semibold px-2 py-0.5 rounded-full",
-                                habits.weekdayVsWeekend.difference === 'more_weekend' ? 'bg-indigo-500/20 text-indigo-400' :
+                                habits.weekdayVsWeekend.difference === 'more_weekend' ? 'bg-sky-500/20 text-sky-300' :
                                 habits.weekdayVsWeekend.difference === 'more_weekday' ? 'bg-success/20 text-success' :
                                 'bg-surface-border text-txt-muted'
                             )}>
@@ -206,8 +206,8 @@ function WeeklyHeatmapCard({ heatmap }: { heatmap: IntelHeatmap }) {
                                         className={clsx("flex-1 h-5 rounded-[2px] mx-[0.5px] transition-colors", isPeak && "ring-1 ring-accent")}
                                         style={{
                                             backgroundColor: value > 0
-                                                ? `rgba(124,58,237,${Math.min(value * 1.2, 1)})`
-                                                : 'rgba(15,22,41,0.5)'
+                                                ? `rgba(37,211,102,${Math.min(value * 1.2, 1)})`
+                                                : 'rgba(17,27,33,0.55)'
                                         }}
                                         title={`${heatmap.dayLabels[dayIndex]} ${hour}:00 - ${Math.round(value * 100)}% online`}
                                     />
@@ -222,7 +222,7 @@ function WeeklyHeatmapCard({ heatmap }: { heatmap: IntelHeatmap }) {
                                 <div
                                     key={index}
                                     className="w-5 h-2.5 rounded-sm"
-                                    style={{ backgroundColor: value > 0 ? `rgba(124,58,237,${value})` : 'rgba(15,22,41,0.5)' }}
+                                    style={{ backgroundColor: value > 0 ? `rgba(37,211,102,${value})` : 'rgba(17,27,33,0.55)' }}
                                 />
                             ))}
                         </div>
@@ -301,9 +301,9 @@ function AvailabilityCard({ availability }: { availability: IntelAvailability })
                         className="flex-1 rounded-t-sm transition-all"
                         style={{
                             height: `${Math.max(probability * 100, 2)}%`,
-                            backgroundColor: probability > 0.7 ? '#22c55e' :
+                            backgroundColor: probability > 0.7 ? '#25d366' :
                                 probability > 0.4 ? '#eab308' :
-                                probability > 0.1 ? '#6366f1' : 'rgba(15,22,41,0.5)',
+                                probability > 0.1 ? '#38bdf8' : 'rgba(17,27,33,0.55)',
                         }}
                         title={`${hour}:00 - ${Math.round(probability * 100)}% probabilidad`}
                     />
@@ -319,7 +319,7 @@ function AvailabilityCard({ availability }: { availability: IntelAvailability })
             <div className="flex items-center justify-center gap-4 mt-2 text-[9px] text-txt-dim">
                 <Legend color="bg-success" label="Alta (>70%)" />
                 <Legend color="bg-warning" label="Media (40-70%)" />
-                <Legend color="bg-indigo-500" label="Baja (10-40%)" />
+                <Legend color="bg-sky-500" label="Baja (10-40%)" />
             </div>
             <div className="grid grid-cols-2 gap-3 mt-3 pt-3 border-t border-surface-border">
                 <div>
@@ -362,7 +362,7 @@ function DailyRoutineCard({ routine }: { routine: IntelRoutineDay[] }) {
                             <tr key={day.date} className="border-b border-surface-border/50 hover:bg-surface-hover/50">
                                 <td className="py-1.5 pr-3 font-mono text-txt-secondary">{day.date.slice(5)}</td>
                                 <td className="text-center py-1.5 px-2"><span className="text-amber-400 font-mono">{day.wakeTime || '-'}</span></td>
-                                <td className="text-center py-1.5 px-2"><span className="text-indigo-400 font-mono">{day.sleepTime || '-'}</span></td>
+                                <td className="text-center py-1.5 px-2"><span className="text-sky-300 font-mono">{day.sleepTime || '-'}</span></td>
                                 <td className="text-center py-1.5 px-2 text-txt-primary font-semibold">{day.sessions}</td>
                                 <td className="text-center py-1.5 px-2 text-success font-semibold">{day.totalOnlineMin}m</td>
                                 <td className="text-center py-1.5 pl-2 text-txt-muted">{day.peakHour}h</td>

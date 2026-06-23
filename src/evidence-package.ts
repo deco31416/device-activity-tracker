@@ -90,9 +90,9 @@ export async function buildEvidencePackage(caseId: string) {
         packageType: 'evidence-package',
         version: '1.0',
         software: {
-            name: 'Device Activity Tracker',
+            name: 'WP MONITOR',
             version: '2.6.0',
-            developedBy: 'Deco31416',
+            developedBy: 'WP MONITOR',
         },
         caseId,
         generatedAt,
@@ -356,49 +356,171 @@ export function renderFinalCaseReportHtml(report: ReturnType<typeof buildFinalCa
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Final Case Report ${escapeHtml(report.summary.caseId)}</title>
+  <title>WP MONITOR - Informe Final ${escapeHtml(report.summary.caseId)}</title>
   <style>
-    :root { color-scheme: light; --ink:#172033; --muted:#637083; --line:#d9e0ea; --soft:#f4f7fb; --brand:#0f766e; --warn:#b45309; --bad:#b91c1c; }
+    :root {
+      color-scheme: light;
+      --ink:#172033;
+      --body:#344256;
+      --muted:#6b7789;
+      --line:#d7e0e8;
+      --line-strong:#afbecb;
+      --soft:#f5f8fb;
+      --paper:#ffffff;
+      --brand:#0b5f50;
+      --brand-2:#25d366;
+      --navy:#0b141a;
+      --warn:#b45309;
+      --bad:#b91c1c;
+    }
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); background: #fff; }
-    main { max-width: 1120px; margin: 0 auto; padding: 32px; }
-    header { border-bottom: 2px solid var(--ink); padding-bottom: 22px; margin-bottom: 24px; display: grid; grid-template-columns: 1fr auto; gap: 24px; }
-    h1 { margin: 0; font-size: 28px; line-height: 1.1; letter-spacing: 0; }
-    h2 { margin: 0 0 12px; font-size: 16px; text-transform: uppercase; letter-spacing: .06em; }
-    h3 { margin: 0 0 8px; font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
-    p { margin: 0; line-height: 1.5; }
-    code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 11px; }
-    .meta { text-align: right; color: var(--muted); font-size: 12px; }
-    .brand { color: var(--brand); font-weight: 800; }
-    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 18px 0 28px; }
-    .metric { border: 1px solid var(--line); background: var(--soft); padding: 14px; min-height: 88px; }
-    .metric strong { display: block; font-size: 24px; margin-bottom: 4px; }
-    .metric span { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
-    section { margin: 28px 0; break-inside: avoid; }
-    .panel { border: 1px solid var(--line); padding: 16px; background: #fff; }
-    .notice { border-left: 4px solid var(--warn); background: #fff7ed; padding: 14px 16px; color: #7c2d12; }
-    table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    th { text-align: left; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; border-bottom: 1px solid var(--line); padding: 9px 8px; }
-    td { border-bottom: 1px solid var(--line); padding: 10px 8px; vertical-align: top; }
-    .score { display: inline-block; min-width: 58px; text-align: center; padding: 3px 7px; border-radius: 999px; font-weight: 800; }
+    body {
+      margin: 0;
+      font-family: Aptos, "Segoe UI", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      color: var(--body);
+      background:
+        linear-gradient(180deg, #eaf0f4 0, #f6f8fb 260px, #eef3f7 100%);
+      font-size: 13px;
+    }
+    main {
+      max-width: 1180px;
+      margin: 28px auto;
+      padding: 0;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      box-shadow: 0 22px 60px rgba(21, 32, 43, .14);
+    }
+    header {
+      background: linear-gradient(135deg, var(--navy), #10212a);
+      color: #f8fafc;
+      padding: 30px 34px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 28px;
+      border-bottom: 4px solid var(--brand-2);
+    }
+    h1 { margin: 8px 0 6px; font-size: 30px; line-height: 1.05; letter-spacing: -.02em; color: #fff; }
+    h2 { margin: 0 0 14px; font-size: 14px; text-transform: uppercase; letter-spacing: .12em; color: var(--ink); }
+    h3 { margin: 16px 0 7px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; }
+    p { margin: 0; line-height: 1.58; }
+    code { font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace; font-size: 11px; color: #0f172a; }
+    .content { padding: 28px 34px 34px; }
+    .meta { text-align: right; color: #c8d6df; font-size: 12px; line-height: 1.7; }
+    .brand { color: var(--brand-2); font-weight: 900; letter-spacing: .16em; font-size: 12px; text-transform: uppercase; }
+    .subtitle { color: #c8d6df; font-size: 13px; }
+    .classification {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 14px;
+      padding: 7px 11px;
+      border: 1px solid rgba(37,211,102,.32);
+      background: rgba(37,211,102,.1);
+      color: #d8fff0;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+    .grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin: 0 0 26px; }
+    .metric {
+      border: 1px solid var(--line);
+      background: linear-gradient(180deg, #fff, var(--soft));
+      padding: 16px;
+      min-height: 94px;
+      border-radius: 14px;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, .05);
+    }
+    .metric strong { display: block; font-size: 27px; line-height: 1; margin-bottom: 8px; color: var(--ink); }
+    .metric span { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .1em; font-weight: 800; }
+    section { margin: 26px 0; break-inside: avoid; }
+    .panel {
+      border: 1px solid var(--line);
+      padding: 18px;
+      background: #fff;
+      border-radius: 14px;
+      box-shadow: 0 8px 22px rgba(15, 23, 42, .045);
+    }
+    .notice {
+      border: 1px solid #fed7aa;
+      border-left: 4px solid var(--warn);
+      background: #fff8ef;
+      padding: 13px 15px;
+      color: #7c2d12;
+      border-radius: 12px;
+      margin-bottom: 12px;
+    }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 780px; }
+    th {
+      text-align: left;
+      color: #536475;
+      background: #f3f7fa;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .09em;
+      border-bottom: 1px solid var(--line);
+      padding: 11px 10px;
+      white-space: nowrap;
+    }
+    td { border-bottom: 1px solid #e7edf3; padding: 11px 10px; vertical-align: top; }
+    tbody tr:nth-child(even) { background: #fbfdff; }
+    tbody tr:last-child td { border-bottom: 0; }
+    .score { display: inline-block; min-width: 62px; text-align: center; padding: 4px 8px; border-radius: 999px; font-weight: 900; font-size: 11px; }
     .score.strong { background: #dcfce7; color: #166534; }
     .score.medium { background: #fef3c7; color: #92400e; }
     .score.low { background: #e5e7eb; color: #374151; }
-    .verdict { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--soft); border: 1px solid var(--line); font-weight: 800; }
+    .verdict { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--soft); border: 1px solid var(--line); font-weight: 800; border-radius: 999px; }
     .muted { color: var(--muted); }
-    .hash { word-break: break-all; color: var(--muted); font-size: 11px; }
-    footer { margin-top: 36px; padding-top: 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; display: flex; justify-content: space-between; gap: 16px; }
-    @media print { main { padding: 18mm; max-width: none; } .no-print { display: none; } section { page-break-inside: avoid; } }
-    @media (max-width: 800px) { main { padding: 18px; } header { grid-template-columns: 1fr; } .meta { text-align: left; } .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    .hash {
+      word-break: break-all;
+      color: #334155;
+      font-size: 11px;
+      font-family: "Cascadia Mono", Consolas, monospace;
+      background: #f8fafc;
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      border-radius: 10px;
+    }
+    ul { margin: 0; padding-left: 20px; }
+    li { margin: 6px 0; line-height: 1.5; }
+    footer {
+      margin-top: 34px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 11px;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    @media print {
+      body { background: #fff; }
+      main { margin: 0; max-width: none; border: 0; box-shadow: none; }
+      header { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      .content { padding: 18mm; }
+      .no-print { display: none; }
+      section { page-break-inside: avoid; }
+      .table-wrap { overflow: visible; }
+    }
+    @media (max-width: 800px) {
+      main { margin: 0; border-left: 0; border-right: 0; }
+      header { grid-template-columns: 1fr; padding: 24px 20px; }
+      .content { padding: 20px; }
+      .meta { text-align: left; }
+      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
   </style>
 </head>
 <body>
 <main>
   <header>
     <div>
-      <p class="brand">Device Activity Tracker · Developed by Deco31416</p>
+      <p class="brand">WP MONITOR</p>
       <h1>Informe Final de Caso</h1>
-      <p class="muted">${escapeHtml(report.summary.title)} · ${escapeHtml(report.summary.caseId)}</p>
+      <p class="subtitle">${escapeHtml(report.summary.title)} · ${escapeHtml(report.summary.caseId)}</p>
+      <span class="classification">Documento de auditoria autorizada</span>
     </div>
     <div class="meta">
       <p>Generado: ${escapeHtml(formatReportDate(report.summary.generatedAt))}</p>
@@ -407,6 +529,7 @@ export function renderFinalCaseReportHtml(report: ReturnType<typeof buildFinalCa
     </div>
   </header>
 
+  <div class="content">
   <div class="grid">
     <div class="metric"><strong>${escapeHtml(report.summary.auditEventCount)}</strong><span>Eventos de auditoria</span></div>
     <div class="metric"><strong>${escapeHtml(report.summary.evidenceLinkCount)}</strong><span>Evidencias vinculadas</span></div>
@@ -431,10 +554,12 @@ export function renderFinalCaseReportHtml(report: ReturnType<typeof buildFinalCa
     <div class="notice">
       Estas metricas resumen presencia observada, cobertura y confiabilidad de muestra. No deben interpretarse como contenido de mensajes ni como ubicacion.
     </div>
-    <table>
-      <thead><tr><th>Target</th><th>Mediciones</th><th>Online total</th><th>24h</th><th>7d</th><th>30d</th><th>Cobertura</th><th>Confiabilidad</th></tr></thead>
-      <tbody>${activityRows}</tbody>
-    </table>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Target</th><th>Mediciones</th><th>Online total</th><th>24h</th><th>7d</th><th>30d</th><th>Cobertura</th><th>Confiabilidad</th></tr></thead>
+        <tbody>${activityRows}</tbody>
+      </table>
+    </div>
   </section>
 
   <section>
@@ -442,18 +567,22 @@ export function renderFinalCaseReportHtml(report: ReturnType<typeof buildFinalCa
     <div class="notice">
       Las IPs listadas son observaciones tecnicas dentro de una ventana autorizada. No prueban identidad, ubicacion exacta ni titularidad de una persona.
     </div>
-    <table>
-      <thead><tr><th>IP</th><th>Score</th><th>Categoria</th><th>ASN/ORG</th><th>Direccion</th><th>Paquetes</th><th>Geo</th><th>Nota tecnica</th></tr></thead>
-      <tbody>${candidateRows}</tbody>
-    </table>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>IP</th><th>Score</th><th>Categoria</th><th>ASN/ORG</th><th>Direccion</th><th>Paquetes</th><th>Geo</th><th>Nota tecnica</th></tr></thead>
+        <tbody>${candidateRows}</tbody>
+      </table>
+    </div>
   </section>
 
   <section>
     <h2>Timeline de Auditoria</h2>
-    <table>
-      <thead><tr><th>UTC</th><th>Scope</th><th>Accion</th><th>Operador</th><th>Target</th></tr></thead>
-      <tbody>${timelineHtml}</tbody>
-    </table>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>UTC</th><th>Scope</th><th>Accion</th><th>Operador</th><th>Target</th></tr></thead>
+        <tbody>${timelineHtml}</tbody>
+      </table>
+    </div>
   </section>
 
   <section class="panel">
@@ -470,9 +599,10 @@ export function renderFinalCaseReportHtml(report: ReturnType<typeof buildFinalCa
   </section>
 
   <footer>
-    <span>Device Activity Tracker</span>
-    <span>Generated by Deco31416 · ${escapeHtml(report.summary.caseId)}</span>
+    <span>WP MONITOR</span>
+    <span>WP MONITOR · ${escapeHtml(report.summary.caseId)}</span>
   </footer>
+  </div>
 </main>
 </body>
 </html>`;
@@ -532,7 +662,7 @@ class PdfReportCanvas {
         this.pageNumber += 1;
         this.content = '';
         this.y = this.height - this.margin;
-        this.text(this.margin, this.height - 28, 'Device Activity Tracker - Final Case Report', 8, 'F2', '475569');
+        this.text(this.margin, this.height - 28, 'WP MONITOR - Final Case Report', 8, 'F2', '475569');
         this.text(this.width - this.margin - 55, this.height - 28, `Page ${this.pageNumber}`, 8, 'F1', '64748B');
         this.line(this.margin, this.height - 36, this.width - this.margin, this.height - 36, 'CBD5E1');
     }
@@ -625,7 +755,7 @@ class PdfReportCanvas {
 
     footer() {
         this.line(this.margin, 30, this.width - this.margin, 30, 'E2E8F0');
-        this.text(this.margin, 18, 'Developed by Deco31416', 7, 'F2', '64748B');
+        this.text(this.margin, 18, 'WP MONITOR', 7, 'F2', '64748B');
     }
 }
 

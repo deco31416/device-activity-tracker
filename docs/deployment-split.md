@@ -20,11 +20,12 @@ DEPLOYMENT_MODE=railway-dashboard
 LOCAL_CAPTURE_ENABLED=false
 NODE_ENV=production
 ENABLE_SWAGGER=false
-PORT=3001
+PORT=4000
 MONGODB_URI=mongodb+srv://...
 MONGODB_DB=activity-tracker
 ALLOWED_ORIGINS=https://your-client.up.railway.app
 DASHBOARD_TOKEN=change-this-long-random-token
+PUBLIC_BASE_URL=https://your-backend.up.railway.app
 ```
 
 Recommended frontend variable:
@@ -38,6 +39,14 @@ If WhatsApp auth should survive redeploys, attach a Railway volume to:
 ```txt
 /app/auth_info_baileys
 ```
+
+If Authorized Check-In preview images/uploads should survive redeploys, attach a second Railway volume to:
+
+```txt
+/app/public/uploads
+```
+
+Generated preview assets are served from `/uploads/checkins/*`. Without this volume, Railway may remove them during restarts or redeploys.
 
 Railway is not the right place for packet capture because the container cannot see the local network adapter where WhatsApp Web traffic is generated.
 
@@ -58,7 +67,7 @@ Recommended local variables:
 DEPLOYMENT_MODE=local-full
 LOCAL_CAPTURE_ENABLED=true
 ENABLE_SWAGGER=true
-PORT=3001
+PORT=4000
 MONGODB_URI=mongodb+srv://...
 MONGODB_DB=activity-tracker
 # Optional in local development:

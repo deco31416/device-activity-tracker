@@ -7,20 +7,20 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // ── UFL-inspired dark palette ──
+        // ── WhatsApp-inspired tactical dark palette ──
         surface: {
-          DEFAULT: '#070b18',     // page background
-          raised: '#0f1629',      // card background
-          overlay: '#151b30',     // elevated overlays / modals
-          hover: '#1a2240',       // hover state on cards
-          border: '#1e2545',      // subtle card borders
-          'border-strong': '#2a3158', // stronger borders
+          DEFAULT: '#071115',     // page background
+          raised: '#111f26',      // card background
+          overlay: '#13212a',     // inputs / elevated overlays
+          hover: '#162832',       // internal panels / hover state
+          border: '#29404a',      // subtle card borders
+          'border-strong': '#3b5a66', // stronger borders
         },
         accent: {
-          DEFAULT: '#7c3aed',     // primary violet
-          hover: '#6d28d9',       // hover
-          muted: 'rgba(124,58,237,0.15)', // soft background tint
-          glow: 'rgba(124,58,237,0.35)',  // glow effect
+          DEFAULT: '#25d366',     // WhatsApp action green
+          hover: '#1faa59',       // pressed/active green
+          muted: 'rgba(37,211,102,0.13)', // soft background tint
+          glow: 'rgba(37,211,102,0.18)',  // glow effect
         },
         success: {
           DEFAULT: '#10b981',
@@ -35,10 +35,10 @@ module.exports = {
           muted: 'rgba(245,158,11,0.12)',
         },
         txt: {
-          primary: '#f1f5f9',     // white-ish
-          secondary: '#94a3b8',   // gray-400
-          muted: '#64748b',       // gray-500
-          dim: '#475569',         // gray-600
+          primary: '#f8fafc',     // white-ish
+          secondary: '#9bb3bf',   // soft blue-gray
+          muted: '#708894',       // muted blue-gray
+          dim: '#4f6570',         // dim blue-gray
         },
       },
       fontFamily: {
@@ -51,13 +51,13 @@ module.exports = {
         '3xl': '1.25rem',
       },
       boxShadow: {
-        glow: '0 0 20px rgba(124,58,237,0.25)',
-        'glow-sm': '0 0 10px rgba(124,58,237,0.2)',
-        card: '0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2)',
-        'card-hover': '0 4px 12px rgba(0,0,0,0.4)',
+        glow: '0 10px 26px rgba(0,0,0,0.30), 0 0 0 1px rgba(37,211,102,0.08)',
+        'glow-sm': '0 8px 18px rgba(0,0,0,0.25), 0 0 0 1px rgba(37,211,102,0.07)',
+        card: '0 14px 34px rgba(0,0,0,0.30), 0 2px 8px rgba(0,0,0,0.22)',
+        'card-hover': '0 18px 42px rgba(0,0,0,0.34), 0 0 0 1px rgba(59,90,102,0.22)',
       },
       backgroundImage: {
-        'grid-pattern': 'linear-gradient(rgba(30,37,69,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(30,37,69,0.5) 1px, transparent 1px)',
+        'grid-pattern': 'linear-gradient(rgba(41,64,74,0.44) 1px, transparent 1px), linear-gradient(90deg, rgba(41,64,74,0.44) 1px, transparent 1px)',
         'gradient-radial': 'radial-gradient(ellipse at center, var(--tw-gradient-stops))',
       },
       backgroundSize: {

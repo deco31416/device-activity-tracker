@@ -157,8 +157,8 @@ export function CheckIns() {
         pageTitle: '',
         pageDescription: '',
         ogImageUrl: '',
-        brandName: 'Developed by Deco31416',
-        accentColor: '#7c3aed',
+        brandName: 'WP MONITOR',
+        accentColor: '#25d366',
         backgroundColor: '#0b1020',
         panelColor: '#151b31',
         textColor: '#eef4ff',
@@ -184,8 +184,8 @@ export function CheckIns() {
         pageTitle: 'Check-in autorizado',
         pageDescription: 'Verificacion autorizada de identidad tecnica y ubicacion opcional.',
         ogImageUrl: '',
-        brandName: 'Developed by Deco31416',
-        accentColor: '#7c3aed',
+        brandName: 'WP MONITOR',
+        accentColor: '#25d366',
         backgroundColor: '#0b1020',
         panelColor: '#151b31',
         textColor: '#eef4ff',
@@ -368,8 +368,8 @@ export function CheckIns() {
             pageTitle: item.content?.pageTitle || 'Check-in autorizado',
             pageDescription: item.content?.pageDescription || '',
             ogImageUrl: item.content?.ogImageUrl || '',
-            brandName: item.content?.brandName || 'Developed by Deco31416',
-            accentColor: item.content?.accentColor || '#7c3aed',
+            brandName: item.content?.brandName || 'WP MONITOR',
+            accentColor: item.content?.accentColor || '#25d366',
             backgroundColor: item.content?.backgroundColor || '#0b1020',
             panelColor: item.content?.panelColor || '#151b31',
             textColor: item.content?.textColor || '#eef4ff',
@@ -718,7 +718,7 @@ export function CheckIns() {
                                 <Field label="Consistencia" value={formatConsistency(item)} />
                                 <Field label="Preview" value={item.content?.pageTitle || '-'} />
                                 <Field label="Plantilla" value={formatLayout(item.content?.layout)} />
-                                <Field label="Marca publica" value={item.content?.brandName || 'Developed by Deco31416'} />
+                                <Field label="Marca publica" value={item.content?.brandName || 'WP MONITOR'} />
                                 <Field label="GPS landing" value={item.content?.requestGps === false ? 'No solicitado' : 'Solicitado'} />
                             </div>
 

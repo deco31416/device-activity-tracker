@@ -309,7 +309,7 @@ function ActivityPatternsCard({ patterns }: { patterns: PatternsData }) {
                             {patterns.hourly.map((entry, index) => (
                                 <Cell
                                     key={`cell-${index}`}
-                                    fill={entry.hour >= 6 && entry.hour < 20 ? '#22c55e' : '#6366f1'}
+                                    fill={entry.hour >= 6 && entry.hour < 20 ? '#25d366' : '#38bdf8'}
                                 />
                             ))}
                         </Bar>
@@ -322,7 +322,7 @@ function ActivityPatternsCard({ patterns }: { patterns: PatternsData }) {
                     <Sun size={10} className="text-success" /> Dia (6am-8pm)
                 </span>
                 <span className="flex items-center gap-1">
-                    <Moon size={10} className="text-indigo-400" /> Noche (8pm-6am)
+                    <Moon size={10} className="text-sky-300" /> Noche (8pm-6am)
                 </span>
                 <span className="flex items-center gap-1">
                     <span className="w-2 h-2 rounded-sm bg-[#1e2545]" /> Total mediciones

@@ -388,6 +388,14 @@ Attach a Railway volume to:
 /app/auth_info_baileys
 ```
 
+For Authorized Check-In preview images and other generated public uploads, attach a second Railway volume to:
+
+```txt
+/app/public/uploads
+```
+
+This keeps uploaded preview assets available after restarts/redeploys. Without this volume, generated files under `/uploads/checkins/*` may disappear because Railway containers use ephemeral filesystem storage.
+
 See [docs/railway-checklist.md](docs/railway-checklist.md) for the full deployment checklist.
 
 ---

@@ -8,7 +8,7 @@ function fixture(): CheckInDoc {
     return {
         token: 'tok_123',
         caseId: 'CASE-TEST',
-        operatorName: 'Deco31416',
+        operatorName: 'WP MONITOR',
         authorizationNote: 'Autorizado',
         label: 'Prueba autorizada',
         targetName: 'Decode1010',

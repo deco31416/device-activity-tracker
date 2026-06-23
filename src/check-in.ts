@@ -287,7 +287,7 @@ export function renderCheckInPage(doc: CheckInDoc, options: { status?: 'ready' |
     const title = doc.content?.pageTitle || fallbackTitle;
     const description = doc.content?.pageDescription || 'Esta verificacion pertenece a un proceso autorizado. El envio registra IP observada por el servidor, navegador, sistema, tipo de dispositivo, pantalla, red y puede incluir ubicacion aproximada solo si aceptas el permiso del navegador.';
     const ogImageUrl = doc.content?.ogImageUrl || '';
-    const brandName = doc.content?.brandName || 'Developed by Deco31416';
+    const brandName = doc.content?.brandName || 'WP MONITOR';
     const accentColor = safeColor(doc.content?.accentColor, '#7c3aed');
     const backgroundColor = safeColor(doc.content?.backgroundColor, '#0b1020');
     const panelColor = safeColor(doc.content?.panelColor, '#151b31');

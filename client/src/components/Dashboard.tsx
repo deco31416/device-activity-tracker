@@ -404,7 +404,7 @@ export function Dashboard({ connectionState }: DashboardProps) {
                         <button
                             onClick={() => setShowConnections(!showConnections)}
                             className={`btn-ghost flex items-center gap-1.5 !py-1.5 !px-3 !text-xs ${
-                                showConnections ? '!bg-accent !text-white !border-accent' : ''
+                                showConnections ? '!bg-accent/15 !text-accent !border-accent/25' : ''
                             }`}
                         >
                             <Settings size={13} />
@@ -413,7 +413,7 @@ export function Dashboard({ connectionState }: DashboardProps) {
                         <button
                             onClick={() => setShowHistory(!showHistory)}
                             className={`btn-ghost flex items-center gap-1.5 !py-1.5 !px-3 !text-xs ${
-                                showHistory ? '!bg-accent !text-white !border-accent' : ''
+                                showHistory ? '!bg-accent/15 !text-accent !border-accent/25' : ''
                             }`}
                         >
                             <History size={13} />
@@ -430,7 +430,7 @@ export function Dashboard({ connectionState }: DashboardProps) {
                                     onClick={() => handleProbeMethodChange('delete')}
                                     className={`px-3 py-1.5 text-xs font-medium transition-all duration-200 flex items-center gap-1.5 ${
                                         probeMethod === 'delete'
-                                            ? 'bg-accent text-white'
+                                            ? 'bg-accent/15 text-accent border border-accent/25'
                                             : 'bg-surface-overlay text-txt-muted hover:text-txt-primary'
                                     }`}
                                 >
