@@ -24,6 +24,7 @@ import os from 'os';
 import { isMetaIP, isKnownRelayIP, isPrivateIP, classifyIP } from './meta-ip-ranges.js';
 import {
     CandidateConfidence,
+    CandidateCorrelation,
     CandidateDirection,
     CandidateProvider,
     CandidateReasonCode,
@@ -66,6 +67,7 @@ export interface CandidateIP {
     reasonCodes: CandidateReasonCode[];
     technicalNote: string;
     isP2P: boolean;
+    correlation?: CandidateCorrelation;
     ipEnrichment?: IpEnrichment;
 }
 
@@ -476,6 +478,8 @@ function analyzePackets(
             direction,
             ports,
             durationSec,
+            targetJid,
+            observedCountryCode: geo?.country,
         });
 
         candidates.push({
@@ -496,6 +500,7 @@ function analyzePackets(
             reasonCodes: score.reasonCodes,
             technicalNote: score.technicalNote,
             isP2P: score.isP2P,
+            correlation: score.correlation,
         });
     }
 

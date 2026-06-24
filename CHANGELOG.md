@@ -4,7 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [2.9.0] — 2026-06-23 · Current
+## [2.9.1] — 2026-06-23 · Current
+
+### ✨ New Features
+- **Call-analysis correlation model**: added phone-country/GeoIP context, hard caps for tiny samples, and non-conclusive observation handling.
+- **OPSEC explanation panel**: privacy score now shows formula, deductions, and a plain-language reason for the assigned score.
+
+### 🔧 Changes
+- Call-analysis scoring now applies hard caps for tiny samples, one-way flows, and phone-country/GeoIP context mismatch so 1-9 packet observations cannot appear as medium candidates.
+- Call-analysis UI now separates true candidate IPs from non-conclusive observations and shows the correlation reason, country context, and applied score caps.
+- IP enrichment now re-scores call candidates after DB-IP/ip-api lookup so enriched country/provider context can demote weak observations before verdict calculation.
+- Privacy OPSEC score now explains the formula and why each deduction affected the final score.
+- README and local operation guide now document that WhatsApp calls should be started from WhatsApp Web/Desktop outside WP MONITOR, while the app observes the local traffic window.
+
+### 📚 Documentation
+- Documented the IP candidate scoring methodology for E.164 phone-country context, tiny packet samples, country mismatch, one-way traffic caps, and interpretation limits.
+- Updated the planner with completed scoring-correlation and non-conclusive observation tasks.
+
+### ✅ QA
+- `pnpm run test:unit`: 36 tests passing.
+- `pnpm run build`: backend TypeScript build passing.
+- `pnpm --dir client run build`: frontend production build passing.
+
+---
+
+## [2.9.0] — 2026-06-23
 
 ### ✨ New Features
 - **Audit Trail investigative console**: added active case selector, operational summary, scope/action/search filters, paginated custody timeline, readable event cards, technical table, and grouped evidence exports.

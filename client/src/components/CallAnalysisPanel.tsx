@@ -172,6 +172,11 @@ export function CallAnalysisPanel({
 function CallAnalysisResultCard({ analysis }: { analysis: CallAnalysisResult }) {
     const observedCandidates = analysis.candidateIps.filter(candidate => candidate.isP2P);
     const infrastructureCandidates = analysis.candidateIps.filter(candidate => !candidate.isP2P);
+    const inconclusiveObservations = analysis.candidateIps.filter(candidate => (
+        !candidate.isP2P
+        && candidate.provider === 'unknown'
+        && candidate.correlation?.classification !== 'infrastructure'
+    ));
 
     return (
         <div className="bg-surface-overlay rounded-xl border border-surface-border p-5">
@@ -200,6 +205,19 @@ function CallAnalysisResultCard({ analysis }: { analysis: CallAnalysisResult }) 
                         ))}
                     </div>
                 </div>
+            )}
+
+            {inconclusiveObservations.length > 0 && (
+                <details className="mb-4" open>
+                    <summary className="text-[11px] font-semibold text-amber-400 uppercase tracking-wider cursor-pointer hover:text-amber-300 transition-colors mb-2">
+                        Observaciones no concluyentes ({inconclusiveObservations.length})
+                    </summary>
+                    <div className="space-y-2">
+                        {inconclusiveObservations.map((candidate, index) => (
+                            <CandidateCard key={`${candidate.ip}-weak-${index}`} candidate={candidate} />
+                        ))}
+                    </div>
+                </details>
             )}
 
             {analysis.metaIps?.length > 0 && (
@@ -295,7 +313,7 @@ function CandidateCard({ candidate }: { candidate: CandidateIP }) {
 
             {candidate.reasonCodes && candidate.reasonCodes.length > 0 && (
                 <div className="mb-2 flex flex-wrap gap-1.5">
-                    {candidate.reasonCodes.slice(0, 4).map(reason => (
+                    {candidate.reasonCodes.slice(-5).map(reason => (
                         <span
                             key={reason.code}
                             className={clsx(
@@ -308,6 +326,42 @@ function CandidateCard({ candidate }: { candidate: CandidateIP }) {
                             {reason.delta >= 0 ? '+' : ''}{reason.delta} · {reason.label}
                         </span>
                     ))}
+                </div>
+            )}
+
+            {candidate.correlation && (
+                <div className={clsx(
+                    "mb-2 rounded-lg border px-3 py-2",
+                    candidate.correlation.classification === 'candidate'
+                        ? "border-emerald-500/20 bg-emerald-500/10"
+                        : "border-amber-500/20 bg-amber-500/10"
+                )}>
+                    <p className={clsx(
+                        "text-[10px] font-bold uppercase tracking-wider",
+                        candidate.correlation.classification === 'candidate' ? "text-emerald-300" : "text-amber-300"
+                    )}>
+                        Correlacion: {candidate.correlation.label}
+                    </p>
+                    <p className="mt-1 text-[10px] text-txt-secondary">{candidate.correlation.summary}</p>
+                    {(candidate.correlation.phoneCountryCode || candidate.correlation.observedCountryCode || candidate.correlation.caps?.length > 0) && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                            {candidate.correlation.phoneCountryCode && (
+                                <span className="text-[10px] rounded px-2 py-0.5 border border-surface-border bg-surface-overlay text-txt-muted">
+                                    Numero: {candidate.correlation.phoneCountryCode}
+                                </span>
+                            )}
+                            {candidate.correlation.observedCountryCode && (
+                                <span className="text-[10px] rounded px-2 py-0.5 border border-surface-border bg-surface-overlay text-txt-muted">
+                                    GeoIP: {candidate.correlation.observedCountryCode}
+                                </span>
+                            )}
+                            {candidate.correlation.caps?.map(cap => (
+                                <span key={cap} className="text-[10px] rounded px-2 py-0.5 border border-amber-500/20 bg-amber-500/10 text-amber-300">
+                                    Tope: {cap}
+                                </span>
+                            ))}
+                        </div>
+                    )}
                 </div>
             )}
 

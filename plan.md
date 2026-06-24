@@ -154,6 +154,9 @@ Pendiente:
 - [x] Confianza inicial `high/medium/low`.
 - [x] Convertir confianza a score numerico 0-100.
 - [x] Agregar `reasonCodes` explicables.
+- [x] Agregar correlacion contextual prefijo telefonico E.164 vs pais GeoIP observado.
+- [x] Aplicar topes duros para muestras pequenas: menos de 10 paquetes no puede salir como candidata.
+- [x] Mostrar observaciones no concluyentes separadas de IPs candidatas en UI.
 - [x] Agregar ASN/ORG lookup mediante enriquecimiento IP opcional.
 - [x] Agregar categoria de red inicial: Meta/relay, STUN/TURN probable, CDN, publica desconocida.
 - [x] Ampliar categoria de red: cloud, hosting, ISP, VPN/proxy.
@@ -162,6 +165,7 @@ Pendiente:
 - [x] Penalizar proveedores cloud/CDN/VPN/hosting despues del enriquecimiento ASN/ISP/ORG.
 - [x] Mostrar disclaimer tecnico junto a cada candidato.
 - [x] Documentar metodologia de scoring.
+- [x] Documentar limites de correlacion telefonica/geografica y muestras insuficientes.
 
 ### Epica 12 - Reporte Final Profesional
 

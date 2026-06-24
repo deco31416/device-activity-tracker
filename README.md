@@ -1,8 +1,8 @@
-<h1 align="center">Device Activity Tracker v2.9.0</h1>
+<h1 align="center">Device Activity Tracker v2.9.1</h1>
 <p align="center">WhatsApp Activity Tracker — RTT Analysis · Real-Time Bitácora · Behavior Intelligence · Audit Trail · Railway Dashboard · Local Network Monitor</p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.9.0-blue?style=flat" alt="Version 2.9.0"/>
+  <img src="https://img.shields.io/badge/version-2.9.1-blue?style=flat" alt="Version 2.9.1"/>
   <img src="https://img.shields.io/badge/Node.js-22+-339933?style=flat&logo=node.js&logoColor=white" alt="Node.js"/>
   <img src="https://img.shields.io/badge/TypeScript-5.7+-3178C6?style=flat&logo=typescript&logoColor=white" alt="TypeScript"/>
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat&logo=react&logoColor=black" alt="React"/>
@@ -137,6 +137,7 @@ Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to M
 
 ### Call Traffic Analysis (Local Full Mode)
 - 📞 Manual authorized capture window during WhatsApp Web calls or interactions
+- 🧭 The app does **not** initiate WhatsApp calls directly; the operator starts the call from WhatsApp Web/Desktop on the same machine and WP MONITOR observes the local traffic window
 - 🗺️ Visual route map: local host → local network/ISP → WhatsApp/Meta infrastructure → relays/cloud → candidate IPs
 - 🧭 Provider classification for Meta/WhatsApp, Google, Cloudflare, private ranges, and unknown public IPs
 - 🧮 Candidate IP scoring 0-100 with explainable reason codes and technical limitations
@@ -144,6 +145,8 @@ Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to M
 - 🗺️ Optional DB-IP-first enrichment adds estimated city/region/country and complements with ip-api for coordinates, ISP, organization, ASN, mobile/proxy/hosting flags, and Google Maps links when needed
 - 🧹 Enriched CDN/cloud/hosting/proxy networks are demoted after lookup so AWS CloudFront, Akamai, Fastly, Google Cloud, Cloudflare, and similar infrastructure are not treated as user IP candidates
 - ⚠️ Candidate IP language by design: observed IPs are not treated as verified person identity
+
+> **Why calls are started outside the app:** Baileys is reliable for WhatsApp session/authentication events, messaging and presence-style observations, but programmatically initiating and controlling WhatsApp calls from a backend is not a stable official surface. For professional operation, WP MONITOR treats calls as an external authorized action performed in WhatsApp Web/Desktop, while the local capture service records the visible network metadata from the same host/interface.
 
 ### Authorized Check-In
 - 📍 Protected dashboard tab to generate consent-based check-in links tied to an active case
@@ -711,7 +714,13 @@ For **network monitoring**: Use a VPN to encrypt and tunnel all traffic.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
-### v2.9.0 (June 2026) — Current
+### v2.9.1 (June 2026) — Current
+- 🧮 **Call-analysis correlation** — tiny packet samples, one-way flows, and phone-country/GeoIP mismatch now apply hard score caps
+- 🧭 **Non-conclusive observations** — weak unknown IPs are preserved for audit but separated from true candidate IPs
+- 🛡️ **OPSEC score explanation** — privacy score now shows the formula, deductions, and plain-language reason
+- 📚 **Call workflow documentation** — README and local guide explain why calls are started from WhatsApp Web/Desktop outside WP MONITOR
+
+### v2.9.0 (June 2026)
 - 🧾 **Audit Trail console** — active case selector, operational summary, scope/action/search filters, paginated custody timeline, readable event cards, and technical table
 - 🧷 **Call audit consistency** — call-capture stop now snapshots active audit context before async enrichment to reduce mismatched `callId` evidence entries
 - 🧭 **Navigation UX** — collapsible desktop sidebar, mobile drawer menu, persistent sidebar state, and cleaner WP MONITOR branding with drone icon

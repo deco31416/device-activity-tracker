@@ -1,6 +1,6 @@
 import React from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { Activity, Briefcase, Check, Clock, Globe, Mail, MapPin, Moon, Pencil, Shield, Sun, User, X, Zap } from 'lucide-react';
+import { Activity, Briefcase, Calculator, Check, Clock, Globe, Mail, MapPin, Moon, Pencil, Shield, Sun, User, X, Zap } from 'lucide-react';
 import clsx from 'clsx';
 
 interface ProfileData {
@@ -343,6 +343,12 @@ function PatternMetric({ icon, value, label }: { icon: React.ReactNode; value: s
 }
 
 function PrivacyScoreCard({ privacyScore }: { privacyScore: PrivacyScore }) {
+    const totalDeductions = privacyScore.deductions.reduce((sum, item) => sum + item.points, 0);
+    const formula = totalDeductions > 0
+        ? `100 - ${privacyScore.deductions.map(item => item.points).join(' - ')} = ${privacyScore.score}`
+        : '100 - 0 = 100';
+    const explanation = buildPrivacyExplanation(privacyScore);
+
     return (
         <div className="bg-surface-overlay rounded-xl border border-surface-border p-5">
             <h5 className="text-xs font-semibold text-txt-muted uppercase tracking-wider mb-4 flex items-center gap-1.5">
@@ -373,6 +379,24 @@ function PrivacyScoreCard({ privacyScore }: { privacyScore: PrivacyScore }) {
                     </p>
                 </div>
             </div>
+
+            <div className="rounded-xl border border-surface-border bg-surface-hover p-3 mb-4">
+                <div className="flex items-start gap-2.5">
+                    <div className="p-1.5 rounded-lg bg-accent-muted text-accent mt-0.5">
+                        <Calculator size={14} />
+                    </div>
+                    <div className="min-w-0">
+                        <p className="text-xs font-semibold text-txt-primary">Por que recibio este puntaje</p>
+                        <p className="text-[11px] text-txt-secondary leading-relaxed mt-1">{explanation}</p>
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px]">
+                            <span className="px-2 py-1 rounded-full bg-surface-overlay border border-surface-border text-txt-muted">Base inicial: 100</span>
+                            <span className="px-2 py-1 rounded-full bg-surface-overlay border border-surface-border text-txt-muted">Exposicion detectada: -{totalDeductions}</span>
+                            <span className="px-2 py-1 rounded-full bg-accent-muted border border-accent/20 text-accent font-mono">{formula}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div className="space-y-1.5">
                 {privacyScore.deductions.map((deduction, index) => (
                     <div key={index} className="flex justify-between items-center text-xs">
@@ -383,6 +407,26 @@ function PrivacyScoreCard({ privacyScore }: { privacyScore: PrivacyScore }) {
             </div>
         </div>
     );
+}
+
+function buildPrivacyExplanation(privacyScore: PrivacyScore): string {
+    const exposureCount = privacyScore.deductions.length;
+    if (exposureCount === 0) {
+        return 'El contacto conserva el puntaje completo porque no se detectaron senales tecnicas de exposicion durante la ventana observada.';
+    }
+
+    const reasons = privacyScore.deductions
+        .slice(0, 3)
+        .map(item => item.reason.toLowerCase())
+        .join(', ');
+    const extra = exposureCount > 3 ? ` y ${exposureCount - 3} factor(es) adicional(es)` : '';
+    const interpretation = privacyScore.score >= 70
+        ? 'La exposicion observada es baja y el contacto resulta mas dificil de perfilar.'
+        : privacyScore.score >= 40
+            ? 'La exposicion observada es moderada y permite cierto perfilamiento tecnico.'
+            : 'La exposicion observada es alta y facilita el perfilamiento tecnico.';
+
+    return `El calculo parte de 100 puntos y descuenta ${exposureCount} senal(es) observable(s): ${reasons}${extra}. ${interpretation}`;
 }
 
 function ProfileItem({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {

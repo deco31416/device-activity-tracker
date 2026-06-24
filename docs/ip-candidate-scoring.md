@@ -19,8 +19,9 @@ El resultado debe leerse como **IP observada candidata**, no como identificacion
 - Bytes totales y tamano promedio.
 - Puertos observados.
 - Duracion de la ventana de captura.
+- Pais inferido por prefijo E.164/JID del numero observado, usado solo como contexto.
 - Geolocalizacion offline cuando exista en la base local.
-- Enriquecimiento externo opcional (`ip-api.com`) con ciudad, region, codigo postal, coordenadas, zona horaria, ISP, organizacion, ASN y senales mobile/proxy/hosting.
+- Enriquecimiento externo opcional, con DB-IP como fuente primaria por defecto e `ip-api.com` como complemento/fallback para ciudad, region, codigo postal, coordenadas, zona horaria, ISP, organizacion, ASN y senales mobile/proxy/hosting.
 
 ## Reglas v1
 
@@ -35,6 +36,20 @@ El resultado debe leerse como **IP observada candidata**, no como identificacion
 - Tamano promedio compatible con trafico UDP/multimedia suma confianza leve.
 - Puertos asociados a STUN/TURN/relay restan confianza.
 - Alta densidad temporal durante la ventana suma confianza leve.
+- Menos de 10 paquetes aplica un tope duro de 15/100 y clasifica la observacion como **no concluyente**.
+- Menos de 20 paquetes aplica un tope de 30/100.
+- Si el pais GeoIP observado no correlaciona con el prefijo telefonico y la muestra tiene menos de 50 paquetes, aplica tope de 20/100.
+- Trafico en una sola direccion no puede superar 45/100.
+
+## Correlacion telefonica/geografica
+
+La correlacion por numero usa el prefijo telefonico internacional como contexto operativo, no como prueba de ubicacion fisica:
+
+- `+52` se interpreta como Mexico.
+- `+57` se interpreta como Colombia.
+- `+58` se interpreta como Venezuela.
+
+Ejemplo profesional: si el objetivo observado es `+52` y aparece una IP colombiana con solo 2 paquetes, el sistema no debe llamarla candidata media. Debe registrarla como observacion tecnica de baja muestra, explicar la divergencia y recomendar nueva captura/corroboracion.
 
 ## Salida
 
@@ -46,6 +61,7 @@ Cada candidato incluye:
 - `networkIntelligence`: ASN, organizacion, categoria, fuente local, senal de datacenter probable y cautela.
 - `ipEnrichment`: datos externos cacheados de geolocalizacion/ISP/ASN cuando el proveedor esta habilitado.
 - `reasonCodes`: razones explicables con delta positivo o negativo.
+- `correlation`: lectura operacional con clasificacion, resumen, pais del numero, pais GeoIP observado y topes aplicados.
 - `technicalNote`: limitacion tecnica para evitar sobreinterpretacion.
 
 ## Interpretacion recomendada
@@ -53,6 +69,7 @@ Cada candidato incluye:
 - 75-100: candidato tecnico fuerte, requiere corroboracion.
 - 45-74: candidato tecnico medio, evidencia incompleta o mixta.
 - 0-44: baja confianza o infraestructura probable.
+- `No concluyente`: observacion preservada para auditoria, pero no debe contarse como IP candidata.
 
 ## Limitaciones
 
@@ -62,12 +79,14 @@ Cada candidato incluye:
 - `ip-api.com` en modo gratuito usa HTTP y esta sujeto a limites/terminos del proveedor; usarlo como apoyo tecnico, no como evidencia unica.
 - Ciudad, codigo postal y coordenadas son ubicacion estimada de red/ISP, no GPS ni ubicacion fisica confirmada.
 - WhatsApp puede usar relays, TURN, CDN, NAT y rutas cambiantes.
+- El prefijo telefonico no prueba donde esta una persona; solo sirve para detectar inconsistencias de contexto.
+- Pocas decenas de paquetes, especialmente 1-9 paquetes, pueden corresponder a ruido local, cache, CDN, DNS, trafico paralelo o relays residuales.
 - La IP candidata no prueba identidad, ubicacion exacta ni propiedad del usuario.
 
 ## Pendientes Profesionales
 
 - Integrar fuente ASN/ORG actualizada y cacheada para verificacion formal.
 - Ampliar base local de hosting, cloud, VPN/proxy y datacenters.
-- Correlacionar con subventanas exactas de evento de llamada.
+- Correlacionar con subventanas exactas de evento de llamada y linea base previa/posterior.
 - Agregar pruebas unitarias para cada regla de scoring.
 - Incluir pruebas visuales del bloque ASN/ORG en UI y reportes.

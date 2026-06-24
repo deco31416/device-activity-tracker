@@ -36,6 +36,14 @@ export interface CandidateIP {
     }>;
     technicalNote?: string;
     isP2P: boolean;
+    correlation?: {
+        classification: 'candidate' | 'weak' | 'insufficient' | 'context_mismatch' | 'infrastructure';
+        label: string;
+        summary: string;
+        phoneCountryCode?: string | null;
+        observedCountryCode?: string | null;
+        caps: string[];
+    };
     ipEnrichment?: {
         ip: string;
         provider: 'db-ip' | 'db-ip+ip-api' | 'ip-api';

@@ -127,6 +127,17 @@ Usar el panel de contacto y la pestana de llamada:
    - IPs candidatas
    - contacto via WhatsApp sin IP verificada
 
+### Por que la llamada se realiza fuera de WP MONITOR
+
+El flujo estable y profesional es iniciar la llamada desde WhatsApp Web o WhatsApp Desktop, no desde la app.
+
+Motivos:
+
+- Baileys permite mantener sesion, observar eventos y operar funciones de mensajeria/presencia, pero iniciar/controlar llamadas WhatsApp desde backend no es una superficie oficial ni suficientemente estable para produccion.
+- La captura de paquetes necesita observar el trafico real en la interfaz local; por eso la llamada debe ocurrir en la misma maquina, VM o VPS donde corre el servicio de captura.
+- Separar "accion WhatsApp" y "observacion de red" mejora auditoria: el operador documenta caso, autorizacion y ventana; WP MONITOR registra paquetes, relays, infraestructura, scoring y limitaciones.
+- Si la llamada se hace desde otro telefono o computador, el backend local no vera el trafico util de esa llamada.
+
 ## Auditoria
 
 La vista `Audit Trail` permite consultar eventos por `Case ID`.

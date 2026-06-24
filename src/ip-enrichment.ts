@@ -1,5 +1,6 @@
 import { isPrivateIP } from './meta-ip-ranges.js';
 import type { CallAnalysisResult, CandidateIP } from './call-analyzer.js';
+import { scoreCandidate } from './call-scoring.js';
 import type { CandidateConfidence, NetworkIntelligenceCategory } from './call-scoring.js';
 
 export interface IpEnrichment {
@@ -120,7 +121,7 @@ export async function enrichCallAnalysis(result: CallAnalysisResult): Promise<Ca
 
     const enrichedCandidates: CandidateIP[] = [];
     for (const candidate of result.candidateIps) {
-        enrichedCandidates.push(await enrichCandidate(candidate));
+        enrichedCandidates.push(await enrichCandidate(candidate, result.targetJid, result.durationSec));
     }
 
     enrichedCandidates.sort((a, b) => {
@@ -144,7 +145,7 @@ export async function enrichCallAnalysis(result: CallAnalysisResult): Promise<Ca
     };
 }
 
-async function enrichCandidate(candidate: CandidateIP): Promise<CandidateIP> {
+async function enrichCandidate(candidate: CandidateIP, targetJid: string, durationSec: number): Promise<CandidateIP> {
     const enrichment = await lookupIpEnrichment(candidate.ip);
     if (!enrichment || enrichment.status !== 'success') {
         return enrichment ? { ...candidate, ipEnrichment: enrichment } : candidate;
@@ -161,11 +162,12 @@ async function enrichCandidate(candidate: CandidateIP): Promise<CandidateIP> {
         }
         : candidate.geo;
 
-    return applyEnrichmentClassification({
+    const enriched = applyEnrichmentClassification({
         ...candidate,
         geo,
         ipEnrichment: enrichment,
     }, enrichment);
+    return reScoreEnrichedCandidate(enriched, targetJid, durationSec);
 }
 
 export function applyEnrichmentClassification(candidate: CandidateIP, enrichment: IpEnrichment): CandidateIP {
@@ -222,6 +224,34 @@ export function applyEnrichmentClassification(candidate: CandidateIP, enrichment
     }
 
     return candidate;
+}
+
+function reScoreEnrichedCandidate(candidate: CandidateIP, targetJid: string, durationSec: number): CandidateIP {
+    const observedCountryCode = candidate.ipEnrichment?.countryCode
+        || candidate.ipEnrichment?.country
+        || candidate.geo?.country;
+    const score = scoreCandidate({
+        provider: candidate.provider,
+        networkIntelligence: candidate.networkIntelligence,
+        packets: candidate.packets,
+        bytesTotal: candidate.bytesTotal,
+        direction: candidate.direction,
+        ports: candidate.ports,
+        durationSec,
+        targetJid,
+        observedCountryCode,
+    });
+
+    return {
+        ...candidate,
+        networkCategory: score.networkCategory,
+        confidence: score.confidence,
+        confidenceScore: score.confidenceScore,
+        reasonCodes: score.reasonCodes,
+        technicalNote: score.technicalNote,
+        isP2P: score.isP2P,
+        correlation: score.correlation,
+    };
 }
 
 function detectInfrastructureEnrichment(enrichment: IpEnrichment): {
@@ -378,7 +408,7 @@ async function fetchWithTimeout(url: string): Promise<Response> {
         return await fetch(url, {
             signal: controller.signal,
             headers: {
-                'User-Agent': 'MONITORIZACION-DECO/2.8.0 ip-enrichment',
+                'User-Agent': 'WP-MONITOR/2.9.1 ip-enrichment',
             },
         });
     } finally {

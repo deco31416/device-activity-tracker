@@ -105,3 +105,27 @@ test('penalizes STUN/TURN ports even when traffic volume is useful', () => {
     assert.ok(withTurn.confidenceScore < withoutTurn.confidenceScore);
     assert.ok(withTurn.reasonCodes.some(reason => reason.code === 'STUN_TURN_PORT'));
 });
+
+test('caps tiny samples and country mismatch as non-conclusive observations', () => {
+    const networkIntelligence = lookupNetworkIntelligence('200.24.51.144', 'unknown');
+    const score = scoreCandidate({
+        provider: 'unknown',
+        networkIntelligence,
+        packets: 2,
+        bytesTotal: 280,
+        direction: 'bidirectional',
+        ports: [56000, 58000],
+        durationSec: 38,
+        targetJid: '529611233361@s.whatsapp.net',
+        observedCountryCode: 'CO',
+    });
+
+    assert.equal(score.isP2P, false);
+    assert.equal(score.confidence, 'low');
+    assert.ok(score.confidenceScore <= 15);
+    assert.equal(score.correlation.classification, 'insufficient');
+    assert.equal(score.correlation.phoneCountryCode, 'MX');
+    assert.equal(score.correlation.observedCountryCode, 'CO');
+    assert.ok(score.reasonCodes.some(reason => reason.code === 'HARD_CAP_TINY_SAMPLE'));
+    assert.ok(score.reasonCodes.some(reason => reason.code === 'PHONE_GEO_COUNTRY_MISMATCH'));
+});
