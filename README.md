@@ -1,8 +1,8 @@
-<h1 align="center">Device Activity Tracker v2.9.1</h1>
+<h1 align="center">Device Activity Tracker v2.9.2</h1>
 <p align="center">WhatsApp Activity Tracker — RTT Analysis · Real-Time Bitácora · Behavior Intelligence · Audit Trail · Railway Dashboard · Local Network Monitor</p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.9.1-blue?style=flat" alt="Version 2.9.1"/>
+  <img src="https://img.shields.io/badge/version-2.9.2-blue?style=flat" alt="Version 2.9.2"/>
   <img src="https://img.shields.io/badge/Node.js-22+-339933?style=flat&logo=node.js&logoColor=white" alt="Node.js"/>
   <img src="https://img.shields.io/badge/TypeScript-5.7+-3178C6?style=flat&logo=typescript&logoColor=white" alt="TypeScript"/>
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat&logo=react&logoColor=black" alt="React"/>
@@ -133,7 +133,21 @@ Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to M
 - 📤 Export to CSV and JSON
 - 🧾 Requires `caseId`, operator, and authorization note before starting manual capture
 - 🗂️ Active case selector auto-fills operator and authorization context so captures are linked as case evidence
-- 🧭 Investigative view separates candidate public IPs from known local/Meta/Google/Cloudflare infrastructure and can show UDP-only traffic
+- 🧭 Backend-generated IP intelligence separates candidate public IPs from local/private ranges, Meta/WhatsApp relays, Google STUN/TURN, Cloudflare, GitHub, Akamai/CDN, and cloud/hosting ranges
+- 🧾 IP Tracker cards include role, verdict, packet counts, direction, ASN/ORG when known, GeoIP hints, DB-IP/DNSChecker links, and Maps links when coordinates exist
+- 🧹 Optional table filters hide known infrastructure/local traffic or show UDP-only traffic without changing the original exportable capture
+- ⚠️ Network Monitor is for baseline and raw local evidence; call-specific conclusions should be reviewed in the contact `Llamada` tab because it applies call-window scoring, relay filtering, enrichment, and correlation limits
+
+#### Network Monitor IP Intelligence
+
+The Network Monitor now receives `ipInsights` from the backend instead of relying only on frontend display heuristics. During capture, the backend recomputes top source/destination IPs and classifies them as:
+
+- `Descartada`: private, local, CGNAT, reserved, multicast, or documentation ranges.
+- `Infraestructura`: known Meta/WhatsApp, Google STUN/TURN, Cloudflare, GitHub, Akamai/CDN, AWS/Azure/DigitalOcean-style cloud or hosting ranges.
+- `Candidata preliminar`: public unknown IP with bidirectional flow and enough packet volume for manual review.
+- `Revisar`: public unknown IP with weak, one-way, or low-volume context.
+
+This classification is deliberately conservative. It helps operators filter noise and prioritize review, but it does not identify a person, prove exact location, or establish ownership of an IP address.
 
 ### Call Traffic Analysis (Local Full Mode)
 - 📞 Manual authorized capture window during WhatsApp Web calls or interactions
@@ -744,7 +758,12 @@ For **network monitoring**: Use a VPN to encrypt and tunnel all traffic.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
-### v2.9.1 (June 2026) — Current
+### v2.9.2 (June 2026) — Current
+- 🧭 **Network IP Intelligence** — backend-generated `ipInsights` classify local/private, Meta/WhatsApp, Google, Cloudflare, GitHub, Akamai/CDN, cloud/hosting, and public IPs to review
+- 🧾 **Professional IP Tracker** — separates preliminary public IPs from infrastructure, showing direction, packet counts, ASN/ORG, GeoIP hints, and DB-IP/DNSChecker/Maps links
+- 🧷 **Network Monitor UX** — page no longer jumps to the packet table during active capture, and empty states are scoped to the active tab
+
+### v2.9.1 (June 2026)
 - 🧮 **Call-analysis correlation** — tiny packet samples, one-way flows, and phone-country/GeoIP mismatch now apply hard score caps
 - 🧭 **Non-conclusive observations** — weak unknown IPs are preserved for audit but separated from true candidate IPs
 - 🛡️ **OPSEC score explanation** — privacy score now shows the formula, deductions, and plain-language reason

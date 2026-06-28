@@ -81,6 +81,20 @@ const LOCAL_NETWORK_RULES: LocalNetworkRule[] = [
         isDatacenterLikely: true,
     },
     {
+        cidrs: ['140.82.112.0/20', '185.199.108.0/22'],
+        asn: 36459,
+        org: 'GitHub',
+        category: 'cloud_hosting',
+        isDatacenterLikely: true,
+    },
+    {
+        cidrs: ['2.16.0.0/13', '2.22.0.0/15', '23.0.0.0/12', '23.32.0.0/11', '23.64.0.0/14'],
+        asn: 20940,
+        org: 'Akamai CDN',
+        category: 'cdn',
+        isDatacenterLikely: true,
+    },
+    {
         cidrs: ['3.0.0.0/8', '13.32.0.0/15', '18.0.0.0/8', '52.0.0.0/8', '54.0.0.0/8'],
         asn: null,
         org: 'Amazon/AWS range heuristic',

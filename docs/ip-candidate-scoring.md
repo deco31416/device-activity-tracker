@@ -1,6 +1,6 @@
 # Scoring Tecnico de IP Candidata
 
-Ultima actualizacion: 2026-06-23
+Ultima actualizacion: 2026-06-28
 
 ## Objetivo
 
@@ -23,6 +23,33 @@ El resultado debe leerse como **IP observada candidata**, no como identificacion
 - Geolocalizacion offline cuando exista en la base local.
 - Enriquecimiento externo opcional, con DB-IP como fuente primaria por defecto e `ip-api.com` como complemento/fallback para ciudad, region, codigo postal, coordenadas, zona horaria, ISP, organizacion, ASN y senales mobile/proxy/hosting.
 
+## Network Monitor `ipInsights`
+
+El Network Monitor usa una clasificacion preliminar distinta al scoring final de llamada. Su objetivo es filtrar ruido de captura general y orientar revision, no declarar candidatos finales.
+
+El backend genera `ipInsights` con:
+
+- IP observada.
+- Conteo total de paquetes.
+- Conteo como origen y como destino.
+- Direccion observada: origen, destino o bidireccional.
+- GeoIP local aproximado cuando existe.
+- Proveedor local: Meta, Google, Cloudflare, unknown o local.
+- Categoria local: Meta, STUN/TURN, CDN, cloud/hosting, ISP/unknown o local.
+- ASN/ORG cuando el rango esta catalogado localmente.
+- Rol investigativo.
+- Veredicto.
+- Razon legible.
+
+Veredictos:
+
+- `Descartada`: red local, privada, CGNAT, reservada, multicast, link-local o rangos de documentacion.
+- `Infraestructura`: Meta/WhatsApp relay, Google STUN/TURN, Cloudflare, GitHub, Akamai/CDN, AWS/Azure/DigitalOcean-style cloud/hosting u otro servicio auxiliar catalogado.
+- `Candidata preliminar`: IP publica desconocida con flujo bidireccional y al menos 20 paquetes en los top origen/destino.
+- `Revisar`: IP publica desconocida que no cumple todavia condiciones fuertes de candidata preliminar.
+
+Esta capa no reemplaza el scoring de llamada. Solo prepara la lectura de la captura general. El scoring de llamada agrega ventana temporal, volumen, puertos, direccion, enriquecimiento IP, prefijo telefonico, topes por muestra pequena y limitaciones formales.
+
 ## Reglas v1
 
 - IP publica desconocida inicia con score positivo porque no coincide con relays conocidos.
@@ -40,6 +67,8 @@ El resultado debe leerse como **IP observada candidata**, no como identificacion
 - Menos de 20 paquetes aplica un tope de 30/100.
 - Si el pais GeoIP observado no correlaciona con el prefijo telefonico y la muestra tiene menos de 50 paquetes, aplica tope de 20/100.
 - Trafico en una sola direccion no puede superar 45/100.
+- Rango GitHub se trata como infraestructura/herramientas del equipo, no como IP candidata.
+- Rango Akamai/CDN se trata como infraestructura, no como IP candidata, salvo que una fuente externa posterior contradiga claramente esa clasificacion.
 
 ## Correlacion telefonica/geografica
 
@@ -74,6 +103,7 @@ Cada candidato incluye:
 ## Limitaciones
 
 - ASN/ORG usa reglas locales heuristicas; no es una consulta WHOIS/BGP en tiempo real.
+- Las reglas locales priorizan evitar falsos positivos; pueden clasificar como infraestructura un rango amplio de CDN/cloud y requerir revision externa si el caso lo amerita.
 - No detecta VPN/proxy/hosting con precision sin fuente externa o base ASN actualizada.
 - GeoIP es aproximado y puede apuntar a ISP, datacenter, relay o salida NAT.
 - `ip-api.com` en modo gratuito usa HTTP y esta sujeto a limites/terminos del proveedor; usarlo como apoyo tecnico, no como evidencia unica.

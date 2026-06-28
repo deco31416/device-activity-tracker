@@ -274,7 +274,7 @@ function ActivityPatternsCard({ patterns }: { patterns: PatternsData }) {
                 <Sun size={13} /> Patrones de Actividad
             </h5>
 
-            <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                 <PatternMetric icon={<Zap size={14} className="mx-auto text-accent mb-1" />} value={patterns.peakHour >= 0 ? formatHour(patterns.peakHour) : '-'} label="Hora Pico" />
                 <PatternMetric icon={<Clock size={14} className="mx-auto text-success mb-1" />} value={patterns.avgSessionLength > 0 ? formatSeconds(patterns.avgSessionLength) : '-'} label="Sesion Avg" />
                 <PatternMetric icon={<Activity size={14} className="mx-auto text-warning mb-1" />} value={patterns.totalOnlineMinutes > 0 ? `${patterns.totalOnlineMinutes}m` : '-'} label="Total Online" />

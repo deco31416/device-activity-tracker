@@ -4,7 +4,35 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [2.9.1] — 2026-06-23 · Current
+## [2.9.2] — 2026-06-28 · Current
+
+### ✨ New Features
+- **Backend Network IP Intelligence**: Network Monitor now receives backend-generated `ipInsights` with role, verdict, direction, packet counts, provider, network category, ASN/ORG, GeoIP hints, and investigation reason.
+- **Expanded infrastructure classification**: shared local network intelligence now includes GitHub and Akamai/CDN ranges in addition to Meta/WhatsApp, Google, Cloudflare, AWS/Azure/DigitalOcean-style cloud/hosting, private, CGNAT, and reserved ranges.
+- **Professional IP Tracker view**: Network Monitor now separates public IPs to review from infrastructure/local traffic and includes DB-IP, DNSChecker, and Maps links when useful.
+
+### 🔧 Changes
+- Network Monitor filtering now hides broader known infrastructure/local traffic consistently instead of only Meta/Google/Cloudflare/private ranges.
+- Backend packet capture now rebuilds top IP stats and `ipInsights` every 25 packets, on status reads, and when capture stops, reducing stale UI results.
+- Private/local IP detection in packet capture now uses the shared `isPrivateIP` logic, including CGNAT, benchmark, documentation, multicast, reserved, loopback, link-local, and RFC1918 ranges.
+- Network Monitor no longer scrolls the whole page to the packet table during active capture; auto-scroll now avoids trapping the operator at the bottom of the view.
+- IP Tracker empty states are scoped to the active tab so Statistics/IP Tracker no longer display packet-table empty messages incorrectly.
+
+### 📚 Documentation
+- Documented Network Monitor IP Intelligence in README and local operation guide.
+- Documented the difference between Network Monitor baseline/raw capture and call-specific analysis in the `Llamada` tab.
+- Updated IP candidate methodology to clarify backend `ipInsights`, infrastructure filtering, and conservative interpretation limits.
+- Updated planner with completed Network Monitor intelligence and scroll/UX fixes.
+
+### ✅ QA
+- `pnpm run test:unit`: 40 tests passing.
+- `pnpm run build`: backend TypeScript build passing.
+- `pnpm --dir client run build`: frontend production build passing.
+- Local runtime verified on backend `http://127.0.0.1:4000` and frontend `http://127.0.0.1:4001`; `/api/network/status` returns the new `ipInsights` contract.
+
+---
+
+## [2.9.1] — 2026-06-23
 
 ### ✨ New Features
 - **Call-analysis correlation model**: added phone-country/GeoIP context, hard caps for tiny samples, and non-conclusive observation handling.

@@ -207,7 +207,7 @@ function CallAnalysisResultCard({ analysis }: { analysis: CallAnalysisResult }) 
                 <VerdictBadge verdict={analysis.verdict} />
             </div>
 
-            <div className="grid grid-cols-4 gap-3 mb-4">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
                 <SummaryStat value={analysis.totalPackets} label="Paquetes" tone="primary" />
                 <SummaryStat value={observedCandidates.length} label="Candidatas" tone="accent" />
                 <SummaryStat value={analysis.metaIps?.length || 0} label="IPs Meta" tone="danger" />

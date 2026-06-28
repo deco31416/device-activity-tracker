@@ -150,7 +150,7 @@ function PeriodTrendPanel({ periods }: { periods: PeriodInsight[] }) {
             <h6 className="text-[10px] text-txt-dim uppercase tracking-wider mb-4 flex items-center gap-1.5">
                 <TrendingUp size={12} /> Tendencias por periodo
             </h6>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 {periods.map(period => (
                     <div key={period.key} className="rounded-lg border border-surface-border bg-surface-hover p-3 min-h-[112px]">
                         <div className="flex items-center justify-between gap-2 mb-2">
@@ -218,7 +218,7 @@ function StateDistribution({ stats }: { stats: StatsData }) {
                     )
                 ))}
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 {segments.map(segment => (
                     <div key={segment.label} className="rounded-lg border border-surface-border bg-surface-hover p-3">
                         <div className="flex items-center gap-1.5 mb-1">

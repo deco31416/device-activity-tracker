@@ -126,6 +126,29 @@ Usar `Network Monitor` para observar trafico local autorizado:
 4. Detener captura al finalizar la ventana de observacion.
 5. Exportar CSV/JSON si se requiere analisis posterior.
 
+### IP Tracker e inteligencia de red
+
+La pestana `IP Tracker` del Network Monitor es una vista investigativa preliminar sobre la captura general. El backend calcula `ipInsights` a partir de los top origen/destino y los separa en:
+
+- **Descartada**: IP privada, local, CGNAT, reservada, multicast o de documentacion.
+- **Infraestructura**: Meta/WhatsApp, Google STUN/TURN, Cloudflare, GitHub, Akamai/CDN, nube/hosting o servicios auxiliares conocidos.
+- **Candidata preliminar**: IP publica no catalogada con flujo bidireccional y volumen suficiente para revision manual.
+- **Revisar**: IP publica no catalogada, pero con senal debil, baja muestra o flujo limitado.
+
+Cada tarjeta puede mostrar direccion del flujo, conteo origen/destino, ASN/ORG local cuando se conoce, GeoIP aproximado, enlaces DB-IP/DNSChecker y Maps cuando existan coordenadas.
+
+Interpretacion profesional:
+
+- Network Monitor sirve como linea base, ruido general y evidencia cruda del equipo.
+- La pestana `Llamada` del contacto debe usarse para analisis especializado de llamadas WhatsApp, porque aplica ventana de llamada, scoring, relays, enriquecimiento IP y correlacion con contexto telefonico.
+- Una IP en `Candidata preliminar` no prueba identidad, ubicacion exacta ni titularidad. Solo significa que merece revision externa y corroboracion con hora, caso, llamada, volumen y fuentes ASN/GeoIP actualizadas.
+
+Si la tabla queda vacia con paquetes capturados, revisar filtros:
+
+- `Ocultar infraestructura conocida/local en tabla` puede dejar fuera Meta, Google, Cloudflare, GitHub, Akamai, cloud/hosting y red privada.
+- `Solo UDP` puede ocultar TCP/otros protocolos.
+- Los CSV/JSON exportados conservan la captura original disponible en memoria, no solo lo visible por filtros.
+
 ## Captura de Llamada
 
 Usar el panel de contacto y la pestana de llamada:

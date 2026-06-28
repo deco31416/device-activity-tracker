@@ -1,6 +1,6 @@
 # Device Activity Tracker - Planner y Auditoria
 
-Ultima actualizacion: 2026-06-24
+Ultima actualizacion: 2026-06-28
 
 ## Objetivo
 
@@ -40,6 +40,7 @@ Nota tecnica: el sistema debe hablar de "trafico observado", "infraestructura", 
 - [x] Auditoria de dependencias iniciada: overrides aplicados donde son compatibles, frontend prod audit limpio y riesgos residuales documentados.
 - [x] Auditoria de codigo pre-QA: corregido consentimiento personalizado en hash/evidencia, aviso tecnico minimo obligatorio no sobreescribible, version de manifest, parsing seguro de env/rate-limit y fallback local de backend a puerto 4000.
 - [x] QA documental: aclarada diferencia operativa entre Bitacora, Full Contact Report, historial de llamada, Final Case Report y Evidence Package.
+- [x] Network Monitor profesionalizado: backend genera `ipInsights`, filtros consistentes de infraestructura/local, IP Tracker separa preliminares vs infraestructura y se corrigio auto-scroll que atrapaba la vista durante captura.
 - [ ] Resolver residuales de Baileys/libsignal/protobufjs/music-metadata en rama separada con smoke test real de WhatsApp antes de promover.
 
 ## Arquitectura Definida
@@ -156,6 +157,7 @@ Pendiente:
 ### Epica 11 - Scoring Tecnico de IP Candidata
 
 - [x] Clasificacion inicial de Meta/Google/Cloudflare/unknown.
+- [x] Extender clasificacion local a GitHub y Akamai/CDN para reducir falsos positivos de infraestructura.
 - [x] Confianza inicial `high/medium/low`.
 - [x] Convertir confianza a score numerico 0-100.
 - [x] Agregar `reasonCodes` explicables.
@@ -172,6 +174,7 @@ Pendiente:
 - [x] Mostrar disclaimer tecnico junto a cada candidato.
 - [x] Documentar metodologia de scoring.
 - [x] Documentar limites de correlacion telefonica/geografica y muestras insuficientes.
+- [x] Documentar `ipInsights` de Network Monitor como capa preliminar distinta del scoring formal de llamada.
 
 ### Epica 12 - Reporte Final Profesional
 
@@ -216,6 +219,8 @@ Pendiente:
 - [x] Incluir `activity-stats.json` y `annexes/activity-stats.csv` en Evidence ZIP.
 - [x] Crear fixture QA reproducible para reporte final HTML/PDF/ZIP.
 - [x] Validar estructura PDF con `pypdf`: paginas y secciones clave.
+- [x] Corregir Network Monitor para que el auto-scroll no bloquee volver arriba durante captura activa.
+- [x] Mejorar IP Tracker de Network Monitor con separacion visual entre preliminares, infraestructura y red local.
 - [ ] Renderizar PDF a PNG con Poppler para QA visual final.
 - [ ] Mejorar mapa visual con timeline.
 - [ ] Agregar vista de replay/resumen de sesion.

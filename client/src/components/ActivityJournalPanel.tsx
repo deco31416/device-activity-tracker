@@ -91,13 +91,13 @@ export function ActivityJournalPanel({
 
     return (
         <div className="bg-surface-overlay rounded-xl border border-surface-border overflow-hidden">
-            <div className="px-5 py-3 border-b border-surface-border flex items-center justify-between">
+            <div className="px-5 py-3 border-b border-surface-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                     <FileText size={14} className="text-accent" />
                     <h5 className="text-xs font-semibold text-txt-muted uppercase tracking-wider">Bitacora de Actividad</h5>
                     <span className="badge-neutral !text-[9px] !py-0 !px-1.5">{entries.length} eventos</span>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                     <button onClick={exportJson} className="btn-ghost !text-[10px] !py-1 !px-2 flex items-center gap-1" title="Exportar JSON">
                         <Code size={10} /> JSON
                     </button>
@@ -132,17 +132,21 @@ export function ActivityJournalPanel({
                 </div>
             ) : (
                 <>
-                    <div className="grid grid-cols-[80px_90px_100px_1fr] gap-0 px-5 py-2 bg-surface-hover text-[10px] font-semibold text-txt-dim uppercase tracking-wider">
-                        <span>Fecha</span>
-                        <span>Hora</span>
-                        <span>Estado</span>
-                        <span>Descripcion</span>
-                    </div>
+                    <div className="overflow-x-auto">
+                        <div className="min-w-[680px]">
+                            <div className="grid grid-cols-[80px_90px_100px_1fr] gap-0 px-5 py-2 bg-surface-hover text-[10px] font-semibold text-txt-dim uppercase tracking-wider">
+                                <span>Fecha</span>
+                                <span>Hora</span>
+                                <span>Estado</span>
+                                <span>Descripcion</span>
+                            </div>
 
-                    <div className="divide-y divide-surface-border">
-                        {pagedEntries.map((entry, index) => (
-                            <JournalRow key={`${entry.rawTimestamp}-${index}`} entry={entry} />
-                        ))}
+                            <div className="divide-y divide-surface-border">
+                                {pagedEntries.map((entry, index) => (
+                                    <JournalRow key={`${entry.rawTimestamp}-${index}`} entry={entry} />
+                                ))}
+                            </div>
+                        </div>
                     </div>
 
                     {totalLogPages > 1 && (

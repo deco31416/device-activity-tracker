@@ -13,6 +13,12 @@ import capModule from 'cap';
 // @ts-ignore - geoip-lite is CJS
 import geoipModule from 'geoip-lite';
 import os from 'os';
+import { classifyIP, isPrivateIP } from './meta-ip-ranges.js';
+import {
+    lookupNetworkIntelligence,
+    type CandidateProvider,
+    type NetworkIntelligenceCategory,
+} from './call-scoring.js';
 
 const geoip = (geoipModule as any)?.default ?? geoipModule as any;
 
@@ -57,6 +63,24 @@ export interface CaptureStats {
     protocols: Record<string, number>;
     topSrcIps: Array<{ ip: string; count: number; geo: GeoInfo | null }>;
     topDstIps: Array<{ ip: string; count: number; geo: GeoInfo | null }>;
+    ipInsights: NetworkIpInsight[];
+}
+
+export interface NetworkIpInsight {
+    ip: string;
+    count: number;
+    sourceCount: number;
+    destinationCount: number;
+    direction: 'source' | 'destination' | 'bidirectional';
+    geo: GeoInfo | null;
+    provider: CandidateProvider | 'local';
+    networkCategory: NetworkIntelligenceCategory | 'local';
+    asn: number | null;
+    org: string;
+    role: string;
+    verdict: 'Descartada' | 'Infraestructura' | 'Candidata preliminar' | 'Revisar';
+    tone: 'success' | 'warning' | 'accent' | 'neutral';
+    reason: string;
 }
 
 export interface NetworkInterface {
@@ -78,6 +102,7 @@ let captureStats: CaptureStats = {
     protocols: {},
     topSrcIps: [],
     topDstIps: [],
+    ipInsights: [],
 };
 
 const recentPackets: PacketMeta[] = [];
@@ -105,7 +130,7 @@ function resetCaptureState() {
 
 function lookupGeo(ip: string): GeoInfo | null {
     // Skip private/local IPs
-    if (isPrivateIp(ip)) return null;
+    if (isPrivateIP(ip)) return null;
     const geo = geoip.lookup(ip);
     if (!geo) return null;
     return {
@@ -114,21 +139,6 @@ function lookupGeo(ip: string): GeoInfo | null {
         city: geo.city || '',
         ll: geo.ll as [number, number],
     };
-}
-
-function isPrivateIp(ip: string): boolean {
-    const parts = ip.split('.').map(Number);
-    const isPrivate172 = parts.length === 4 && parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31;
-    return (
-        ip.startsWith('10.') ||
-        isPrivate172 ||
-        ip.startsWith('192.168.') ||
-        ip.startsWith('127.') ||
-        ip === '0.0.0.0' ||
-        ip === '255.255.255.255' ||
-        ip.startsWith('224.') || // multicast
-        ip.startsWith('169.254.') // link-local
-    );
 }
 
 function getProtocolName(proto: number): string {
@@ -178,18 +188,140 @@ function updateStats(packet: PacketMeta) {
     srcIpCounts.set(packet.srcIp, (srcIpCounts.get(packet.srcIp) || 0) + 1);
     dstIpCounts.set(packet.dstIp, (dstIpCounts.get(packet.dstIp) || 0) + 1);
 
-    // Rebuild top IPs every 100 packets
-    if (captureStats.totalPackets % 100 === 0) {
-        captureStats.topSrcIps = [...srcIpCounts.entries()]
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 10)
-            .map(([ip, count]) => ({ ip, count, geo: lookupGeo(ip) }));
-
-        captureStats.topDstIps = [...dstIpCounts.entries()]
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 10)
-            .map(([ip, count]) => ({ ip, count, geo: lookupGeo(ip) }));
+    if (captureStats.totalPackets === 1 || captureStats.totalPackets % 25 === 0) {
+        rebuildIpStats();
     }
+}
+
+function rebuildIpStats() {
+    captureStats.topSrcIps = [...srcIpCounts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([ip, count]) => ({ ip, count, geo: lookupGeo(ip) }));
+
+    captureStats.topDstIps = [...dstIpCounts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([ip, count]) => ({ ip, count, geo: lookupGeo(ip) }));
+
+    captureStats.ipInsights = buildIpInsights(captureStats.topSrcIps, captureStats.topDstIps);
+}
+
+function buildIpInsights(
+    topSrcIps: CaptureStats['topSrcIps'],
+    topDstIps: CaptureStats['topDstIps'],
+): NetworkIpInsight[] {
+    const merged = new Map<string, { ip: string; sourceCount: number; destinationCount: number; geo: GeoInfo | null }>();
+
+    for (const entry of topSrcIps) {
+        const current = merged.get(entry.ip) || { ip: entry.ip, sourceCount: 0, destinationCount: 0, geo: entry.geo };
+        current.sourceCount += entry.count;
+        current.geo = current.geo || entry.geo;
+        merged.set(entry.ip, current);
+    }
+
+    for (const entry of topDstIps) {
+        const current = merged.get(entry.ip) || { ip: entry.ip, sourceCount: 0, destinationCount: 0, geo: entry.geo };
+        current.destinationCount += entry.count;
+        current.geo = current.geo || entry.geo;
+        merged.set(entry.ip, current);
+    }
+
+    return [...merged.values()]
+        .map(entry => {
+            const count = entry.sourceCount + entry.destinationCount;
+            const direction: NetworkIpInsight['direction'] = entry.sourceCount > 0 && entry.destinationCount > 0
+                ? 'bidirectional'
+                : entry.sourceCount > 0 ? 'source' : 'destination';
+            return classifyNetworkIp(entry.ip, count, entry.sourceCount, entry.destinationCount, direction, entry.geo);
+        })
+        .sort((a, b) => {
+            const rank = { success: 0, accent: 1, warning: 2, neutral: 3 };
+            return rank[a.tone] - rank[b.tone] || b.count - a.count;
+        });
+}
+
+function classifyNetworkIp(
+    ip: string,
+    count: number,
+    sourceCount: number,
+    destinationCount: number,
+    direction: NetworkIpInsight['direction'],
+    geo: GeoInfo | null,
+): NetworkIpInsight {
+    if (isPrivateIP(ip)) {
+        return {
+            ip,
+            count,
+            sourceCount,
+            destinationCount,
+            direction,
+            geo,
+            provider: 'local',
+            networkCategory: 'local',
+            asn: null,
+            org: 'Red local / privada',
+            role: 'Red local / privada',
+            verdict: 'Descartada',
+            tone: 'neutral',
+            reason: 'IP privada, local, CGNAT o reservada del entorno de captura. No representa ubicacion publica del contacto.',
+        };
+    }
+
+    const provider = classifyIP(ip);
+    const intelligence = lookupNetworkIntelligence(ip, provider);
+
+    if (provider === 'meta') {
+        return baseInsight(ip, count, sourceCount, destinationCount, direction, geo, provider, intelligence, 'Meta / WhatsApp relay', 'Infraestructura', 'warning', 'Rango asociado a Meta/Facebook. Normalmente corresponde a relay, mensajeria o infraestructura WhatsApp.');
+    }
+    if (provider === 'google') {
+        return baseInsight(ip, count, sourceCount, destinationCount, direction, geo, provider, intelligence, 'Google / STUN-TURN probable', 'Infraestructura', 'warning', 'Rango Google observado frecuentemente en servicios, resolucion, STUN/TURN o infraestructura auxiliar.');
+    }
+    if (provider === 'cloudflare') {
+        return baseInsight(ip, count, sourceCount, destinationCount, direction, geo, provider, intelligence, 'Cloudflare / CDN', 'Infraestructura', 'warning', 'Rango Cloudflare. Suele ser CDN, proxy o proteccion de aplicaciones; no debe tratarse como IP del objetivo.');
+    }
+
+    if (intelligence.isDatacenterLikely || intelligence.category === 'cloud_hosting' || intelligence.category === 'cdn') {
+        return baseInsight(ip, count, sourceCount, destinationCount, direction, geo, provider, intelligence, intelligence.org, 'Infraestructura', 'warning', `${intelligence.org}. Puede ser infraestructura de aplicaciones, CDN, proxy, VPN o servicios auxiliares.`);
+    }
+
+    if (direction === 'bidirectional' && count >= 20) {
+        return baseInsight(ip, count, sourceCount, destinationCount, direction, geo, provider, intelligence, 'IP publica no clasificada', 'Candidata preliminar', 'success', 'Flujo bidireccional y volumen suficiente para revision manual. Requiere correlacion con hora de llamada, caso y fuentes externas.');
+    }
+
+    return baseInsight(ip, count, sourceCount, destinationCount, direction, geo, provider, intelligence, 'IP publica observada', 'Revisar', 'accent', 'No coincide con infraestructura catalogada localmente. Muestra preliminar; revisar volumen, direccion y contexto antes de reportar.');
+}
+
+function baseInsight(
+    ip: string,
+    count: number,
+    sourceCount: number,
+    destinationCount: number,
+    direction: NetworkIpInsight['direction'],
+    geo: GeoInfo | null,
+    provider: CandidateProvider,
+    intelligence: ReturnType<typeof lookupNetworkIntelligence>,
+    role: string,
+    verdict: NetworkIpInsight['verdict'],
+    tone: NetworkIpInsight['tone'],
+    reason: string,
+): NetworkIpInsight {
+    return {
+        ip,
+        count,
+        sourceCount,
+        destinationCount,
+        direction,
+        geo,
+        provider,
+        networkCategory: intelligence.category,
+        asn: intelligence.asn,
+        org: intelligence.org,
+        role,
+        verdict,
+        tone,
+        reason,
+    };
 }
 
 // ── Public API ─────────────────────────────────────────────────
@@ -244,6 +376,7 @@ export function startCapture(
             protocols: {},
             topSrcIps: [],
             topDstIps: [],
+            ipInsights: [],
         };
 
         // Build BPF filter string
@@ -354,6 +487,7 @@ export function startCapture(
  */
 export function stopCapture(): void {
     if (capSession && isCapturing) {
+        rebuildIpStats();
         resetCaptureState();
         console.log('[CAPTURE] Stopped');
     }
@@ -363,6 +497,7 @@ export function stopCapture(): void {
  * Get capture status
  */
 export function getCaptureStatus(): { isCapturing: boolean; stats: CaptureStats } {
+    if (captureStats.totalPackets > 0) rebuildIpStats();
     return { isCapturing, stats: captureStats };
 }
 

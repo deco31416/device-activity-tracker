@@ -2,7 +2,8 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { socket } from '../App';
 import {
     Activity, Play, Square, Download, Filter, Globe, AlertTriangle,
-    Shield, Info, Wifi, BarChart3, MapPin, CheckCircle2, Clock, Database, BellRing
+    Shield, Info, Wifi, BarChart3, MapPin, CheckCircle2, Clock, Database, BellRing,
+    ExternalLink
 } from 'lucide-react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -42,6 +43,7 @@ interface CaptureStats {
     protocols: Record<string, number>;
     topSrcIps: Array<{ ip: string; count: number; geo: GeoInfo | null }>;
     topDstIps: Array<{ ip: string; count: number; geo: GeoInfo | null }>;
+    ipInsights?: IpInsight[];
 }
 
 interface NetworkInterface {
@@ -155,13 +157,6 @@ export function NetworkMonitor() {
             socket.off('network-status', onStatus);
         };
     }, []);
-
-    // Auto-scroll
-    useEffect(() => {
-        if (autoScroll && tableEndRef.current) {
-            tableEndRef.current.scrollIntoView({ behavior: 'smooth' });
-        }
-    }, [packets, autoScroll]);
 
     // Periodic stats refresh while capturing
     useEffect(() => {
@@ -506,7 +501,7 @@ export function NetworkMonitor() {
                                     onChange={e => setHideKnownInfrastructure(e.target.checked)}
                                     className="rounded border-surface-border-strong bg-surface-overlay accent-accent"
                                 />
-                                Ocultar Meta/Google/Cloudflare/local en tabla
+                                Ocultar infraestructura conocida/local en tabla
                             </label>
                             <label className="flex items-center gap-1.5 text-xs text-txt-muted cursor-pointer select-none">
                                 <input
@@ -555,18 +550,18 @@ export function NetworkMonitor() {
             )}
 
             {activeTab === 'geo' && stats && (
-                <GeoPanel stats={stats} />
+                <IpIntelligencePanel stats={stats} />
             )}
 
             {/* Empty state */}
-            {packets.length === 0 && !isCapturing && (
+            {activeTab === 'packets' && packets.length === 0 && !isCapturing && (
                 <div className="empty-state">
                     <Activity size={48} className="mx-auto text-txt-dim mb-4" />
                     <p className="text-txt-secondary text-lg">No packets captured yet</p>
                     <p className="text-txt-dim text-sm mt-2">Select a network interface and click Start Capture</p>
                 </div>
             )}
-            {packets.length > 0 && investigativePackets.length === 0 && (
+            {activeTab === 'packets' && packets.length > 0 && investigativePackets.length === 0 && (
                 <div className="empty-state">
                     <Database size={42} className="mx-auto text-txt-dim mb-4" />
                     <p className="text-txt-secondary text-lg">Todo el trafico visible esta filtrado</p>
@@ -645,17 +640,32 @@ function isKnownInfrastructurePacket(packet: PacketMeta): boolean {
 
 function isKnownInfrastructureIp(ip: string): boolean {
     if (isLocalOrPrivateIp(ip)) return true;
-    return isMetaIp(ip) || isGoogleIp(ip) || isCloudflareIp(ip);
+    return isMetaIp(ip)
+        || isGoogleIp(ip)
+        || isCloudflareIp(ip)
+        || isGithubIp(ip)
+        || isAkamaiIp(ip)
+        || isCloudHostingIp(ip);
 }
 
 function isLocalOrPrivateIp(ip: string): boolean {
     const parts = ip.split('.').map(Number);
+    if (parts.length !== 4 || parts.some(part => Number.isNaN(part) || part < 0 || part > 255)) return true;
     const isPrivate172 = parts.length === 4 && parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31;
+    const isCarrierNat = parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127;
+    const isBenchmark = parts[0] === 198 && (parts[1] === 18 || parts[1] === 19);
+    const isDocumentation =
+        (parts[0] === 192 && parts[1] === 0 && parts[2] === 2)
+        || (parts[0] === 198 && parts[1] === 51 && parts[2] === 100)
+        || (parts[0] === 203 && parts[1] === 0 && parts[2] === 113);
     return ip.startsWith('10.')
         || ip.startsWith('127.')
         || ip.startsWith('192.168.')
         || ip.startsWith('169.254.')
-        || ip.startsWith('224.')
+        || parts[0] >= 224
+        || isCarrierNat
+        || isBenchmark
+        || isDocumentation
         || isPrivate172;
 }
 
@@ -993,61 +1003,310 @@ function StatsPanel({
     );
 }
 
-function GeoPanel({ stats }: { stats: CaptureStats }) {
-    const allIps = [...stats.topSrcIps, ...stats.topDstIps]
-        .filter(e => e.geo)
-        .reduce((acc, curr) => {
-            const existing = acc.find(a => a.ip === curr.ip);
-            if (existing) {
-                existing.count += curr.count;
-            } else {
-                acc.push({ ...curr });
-            }
-            return acc;
-        }, [] as Array<{ ip: string; count: number; geo: GeoInfo | null }>)
-        .sort((a, b) => b.count - a.count);
+interface IpInsight {
+    ip: string;
+    count: number;
+    sourceCount: number;
+    destinationCount: number;
+    direction: 'source' | 'destination' | 'bidirectional';
+    geo: GeoInfo | null;
+    provider?: string;
+    networkCategory?: string;
+    asn?: number | null;
+    org?: string;
+    role: string;
+    verdict: string;
+    tone: 'success' | 'warning' | 'accent' | 'neutral';
+    reason: string;
+}
+
+function IpIntelligencePanel({ stats }: { stats: CaptureStats }) {
+    const insights = stats.ipInsights?.length ? stats.ipInsights : buildIpInsights(stats);
+    const candidateIps = insights.filter(entry => entry.tone === 'success' || entry.tone === 'accent');
+    const infrastructureIps = insights.filter(entry => entry.tone !== 'success' && entry.tone !== 'accent');
 
     return (
-        <div className="card p-5">
-            <h3 className="text-xs font-semibold text-txt-muted uppercase tracking-wider mb-4 flex items-center gap-2">
-                <MapPin size={16} className="text-accent" /> IP Geolocation Tracker
-            </h3>
-            {allIps.length > 0 ? (
-                <div className="overflow-auto max-h-[400px]">
-                    <table className="w-full text-sm">
-                        <thead className="bg-surface-overlay sticky top-0">
-                            <tr>
-                                <th className="px-4 py-2.5 text-left font-semibold text-txt-muted uppercase tracking-wider text-[10px]">IP</th>
-                                <th className="px-4 py-2.5 text-left font-semibold text-txt-muted uppercase tracking-wider text-[10px]">Country</th>
-                                <th className="px-4 py-2.5 text-left font-semibold text-txt-muted uppercase tracking-wider text-[10px]">Region</th>
-                                <th className="px-4 py-2.5 text-left font-semibold text-txt-muted uppercase tracking-wider text-[10px]">City</th>
-                                <th className="px-4 py-2.5 text-left font-semibold text-txt-muted uppercase tracking-wider text-[10px]">Lat/Lon</th>
-                                <th className="px-4 py-2.5 text-right font-semibold text-txt-muted uppercase tracking-wider text-[10px]">Packets</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-surface-border">
-                            {allIps.map(entry => (
-                                <tr key={entry.ip} className="hover:bg-surface-hover transition-colors">
-                                    <td className="px-4 py-2 font-mono text-txt-primary">{entry.ip}</td>
-                                    <td className="px-4 py-2 text-txt-secondary">{entry.geo?.country}</td>
-                                    <td className="px-4 py-2 text-txt-secondary">{entry.geo?.region}</td>
-                                    <td className="px-4 py-2 text-txt-secondary">{entry.geo?.city}</td>
-                                    <td className="px-4 py-2 text-txt-muted font-mono text-xs">
-                                        {entry.geo?.ll[0].toFixed(2)}, {entry.geo?.ll[1].toFixed(2)}
-                                    </td>
-                                    <td className="px-4 py-2 text-right font-bold text-txt-primary">{entry.count}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+        <div className="space-y-4">
+            <div className="card p-5">
+                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-4">
+                    <div>
+                        <h3 className="text-xs font-semibold text-txt-muted uppercase tracking-wider flex items-center gap-2">
+                            <MapPin size={16} className="text-accent" /> IP Intelligence Tracker
+                        </h3>
+                        <p className="text-xs text-txt-muted mt-2 max-w-3xl">
+                            Clasificacion preliminar de IPs observadas en la captura general. Esta vista separa infraestructura conocida de IPs publicas que ameritan revision; no prueba identidad ni ubicacion fisica del contacto.
+                        </p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 min-w-[280px]">
+                        <InvestigationMetric label="Preliminares" value={String(candidateIps.length)} tone="success" />
+                        <InvestigationMetric label="Infraestructura" value={String(infrastructureIps.length)} tone="warning" />
+                        <InvestigationMetric label="Total IPs" value={String(insights.length)} tone="neutral" />
+                    </div>
                 </div>
-            ) : (
-                <div className="text-center py-8">
-                    <Globe size={48} className="mx-auto text-txt-dim mb-3" />
-                    <p className="text-txt-secondary">No geolocated IPs yet</p>
-                    <p className="text-txt-dim text-xs mt-1">Public IPs will appear here with location data</p>
-                </div>
-            )}
+
+                {insights.length > 0 ? (
+                    <div className="space-y-5">
+                        <IpInsightSection
+                            title="IPs publicas a revisar"
+                            description="Prioriza estas IPs para verificacion externa, siempre correlacionando hora, flujo, protocolo y contexto del caso."
+                            entries={candidateIps}
+                            emptyText="No hay IPs publicas preliminares en los top origen/destino de esta captura."
+                        />
+                        <IpInsightSection
+                            title="Infraestructura / relays / red local"
+                            description="Estas IPs explican ruido operativo: CDN, servidores, relays de WhatsApp/Meta, Google/STUN o red privada."
+                            entries={infrastructureIps}
+                            emptyText="No hay infraestructura conocida en los top origen/destino."
+                        />
+                    </div>
+                ) : (
+                    <div className="text-center py-8">
+                        <Globe size={48} className="mx-auto text-txt-dim mb-3" />
+                        <p className="text-txt-secondary">No hay IPs para clasificar todavia</p>
+                        <p className="text-txt-dim text-xs mt-1">Cuando existan top IPs de origen/destino apareceran con rol, razon y enlaces de verificacion.</p>
+                    </div>
+                )}
+            </div>
         </div>
     );
+}
+
+function IpInsightSection({ title, description, entries, emptyText }: { title: string; description: string; entries: IpInsight[]; emptyText: string }) {
+    return (
+        <section>
+            <div className="flex items-end justify-between gap-3 mb-2">
+                <div>
+                    <h4 className="text-[11px] font-semibold text-txt-muted uppercase tracking-wider">{title}</h4>
+                    <p className="text-xs text-txt-dim mt-1">{description}</p>
+                </div>
+                <span className="badge-neutral !text-[10px]">{entries.length}</span>
+            </div>
+            {entries.length > 0 ? (
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                    {entries.map(entry => <IpInsightCard key={entry.ip} entry={entry} />)}
+                </div>
+            ) : (
+                <div className="rounded-xl border border-surface-border bg-surface-overlay px-4 py-3 text-xs text-txt-muted">
+                    {emptyText}
+                </div>
+            )}
+        </section>
+    );
+}
+
+function IpInsightCard({ entry }: { entry: IpInsight }) {
+    const toneClasses = {
+        success: 'border-success/30 bg-success/5 text-success',
+        warning: 'border-warning/30 bg-warning/5 text-warning',
+        accent: 'border-accent/30 bg-accent/5 text-accent',
+        neutral: 'border-surface-border bg-surface-overlay text-txt-secondary',
+    }[entry.tone];
+    const mapsUrl = entry.geo ? `https://www.google.com/maps?q=${entry.geo.ll[0]},${entry.geo.ll[1]}` : null;
+    const dbIpUrl = `https://db-ip.com/${encodeURIComponent(entry.ip)}`;
+    const dnsCheckerUrl = `https://dnschecker.org/ip-location.php?ip=${encodeURIComponent(entry.ip)}`;
+
+    return (
+        <article className={`rounded-2xl border p-4 ${toneClasses}`}>
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-base font-bold text-txt-primary">{entry.ip}</span>
+                        <span className="rounded-full border border-current/30 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider">{entry.verdict}</span>
+                    </div>
+                    <p className="text-xs font-semibold mt-2">{entry.role}</p>
+                    <p className="text-xs text-txt-muted mt-1">{entry.reason}</p>
+                </div>
+                <div className="text-left sm:text-right shrink-0">
+                    <p className="text-2xl font-bold text-txt-primary">{entry.count.toLocaleString()}</p>
+                    <p className="text-[10px] uppercase tracking-wider text-txt-dim">paquetes</p>
+                </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 xl:grid-cols-5 gap-2 text-xs">
+                <MiniStatus label="Direccion" value={formatDirection(entry.direction)} />
+                <MiniStatus label="Origen/Destino" value={`${entry.sourceCount}/${entry.destinationCount}`} />
+                <MiniStatus label="ASN/Org" value={formatAsnOrg(entry)} />
+                <MiniStatus label="Geo" value={formatGeo(entry.geo)} />
+                <MiniStatus label="Coords" value={entry.geo ? `${entry.geo.ll[0].toFixed(2)}, ${entry.geo.ll[1].toFixed(2)}` : '-'} />
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+                <a href={dbIpUrl} target="_blank" rel="noreferrer" className="btn-secondary !py-1.5 !px-3 !text-xs inline-flex items-center gap-1.5">
+                    <ExternalLink size={12} /> DB-IP
+                </a>
+                <a href={dnsCheckerUrl} target="_blank" rel="noreferrer" className="btn-secondary !py-1.5 !px-3 !text-xs inline-flex items-center gap-1.5">
+                    <ExternalLink size={12} /> DNSChecker
+                </a>
+                {mapsUrl && (
+                    <a href={mapsUrl} target="_blank" rel="noreferrer" className="btn-secondary !py-1.5 !px-3 !text-xs inline-flex items-center gap-1.5">
+                        <MapPin size={12} /> Maps
+                    </a>
+                )}
+            </div>
+        </article>
+    );
+}
+
+function buildIpInsights(stats: CaptureStats): IpInsight[] {
+    const map = new Map<string, { ip: string; sourceCount: number; destinationCount: number; geo: GeoInfo | null }>();
+    stats.topSrcIps.forEach(entry => {
+        const current = map.get(entry.ip) || { ip: entry.ip, sourceCount: 0, destinationCount: 0, geo: entry.geo };
+        current.sourceCount += entry.count;
+        current.geo = current.geo || entry.geo;
+        map.set(entry.ip, current);
+    });
+    stats.topDstIps.forEach(entry => {
+        const current = map.get(entry.ip) || { ip: entry.ip, sourceCount: 0, destinationCount: 0, geo: entry.geo };
+        current.destinationCount += entry.count;
+        current.geo = current.geo || entry.geo;
+        map.set(entry.ip, current);
+    });
+
+    return Array.from(map.values())
+        .map(entry => {
+            const count = entry.sourceCount + entry.destinationCount;
+            const direction: IpInsight['direction'] = entry.sourceCount > 0 && entry.destinationCount > 0
+                ? 'bidirectional'
+                : entry.sourceCount > 0 ? 'source' : 'destination';
+            const classification = classifyIpInsight(entry.ip, direction, count);
+            return {
+                ...entry,
+                count,
+                direction,
+                geo: entry.geo,
+                ...classification,
+            };
+        })
+        .sort((a, b) => {
+            const rank = { success: 0, accent: 1, warning: 2, neutral: 3 };
+            return rank[a.tone] - rank[b.tone] || b.count - a.count;
+        });
+}
+
+function classifyIpInsight(ip: string, direction: IpInsight['direction'], count: number): Pick<IpInsight, 'role' | 'verdict' | 'tone' | 'reason'> {
+    if (isLocalOrPrivateIp(ip)) {
+        return {
+            role: 'Red local / privada',
+            verdict: 'Descartada',
+            tone: 'neutral',
+            reason: 'IP privada o local del entorno de captura. No representa ubicacion publica del contacto.',
+        };
+    }
+    if (isMetaIp(ip)) {
+        return {
+            role: 'Meta / WhatsApp relay',
+            verdict: 'Infraestructura',
+            tone: 'warning',
+            reason: 'Rango asociado a Meta/Facebook. Normalmente corresponde a relay, mensajeria o infraestructura WhatsApp.',
+        };
+    }
+    if (isGoogleIp(ip)) {
+        return {
+            role: 'Google / STUN-TURN probable',
+            verdict: 'Infraestructura',
+            tone: 'warning',
+            reason: 'Rango Google observado frecuentemente en servicios, resolucion, STUN/TURN o infraestructura auxiliar.',
+        };
+    }
+    if (isCloudflareIp(ip)) {
+        return {
+            role: 'Cloudflare / CDN',
+            verdict: 'Infraestructura',
+            tone: 'warning',
+            reason: 'Rango Cloudflare. Suele ser CDN, proxy o proteccion de aplicaciones; no debe tratarse como IP del objetivo.',
+        };
+    }
+    if (isGithubIp(ip)) {
+        return {
+            role: 'GitHub / infraestructura',
+            verdict: 'Infraestructura',
+            tone: 'warning',
+            reason: 'Rango conocido de GitHub. Probablemente trafico del navegador, actualizaciones o herramientas del equipo.',
+        };
+    }
+    if (isAkamaiIp(ip)) {
+        return {
+            role: 'Akamai / CDN',
+            verdict: 'Infraestructura',
+            tone: 'warning',
+            reason: 'Rango Akamai. Suele corresponder a CDN o distribucion de contenido.',
+        };
+    }
+    if (isCloudHostingIp(ip)) {
+        return {
+            role: 'Cloud / hosting probable',
+            verdict: 'Infraestructura',
+            tone: 'warning',
+            reason: 'Rango asociado a nube/hosting. Puede ser infraestructura de aplicaciones, actualizaciones, proxy, VPN o servicios auxiliares.',
+        };
+    }
+    if (direction === 'bidirectional' && count >= 20) {
+        return {
+            role: 'IP publica no clasificada',
+            verdict: 'Candidata preliminar',
+            tone: 'success',
+            reason: 'Flujo bidireccional y volumen suficiente para revision manual. Requiere corroboracion con llamada, hora y fuentes externas.',
+        };
+    }
+    return {
+        role: 'IP publica observada',
+        verdict: 'Revisar',
+        tone: 'accent',
+        reason: 'No coincide con infraestructura catalogada localmente. Muestra preliminar; revisar volumen, direccion y contexto antes de reportar.',
+    };
+}
+
+function isGithubIp(ip: string): boolean {
+    return ip.startsWith('140.82.')
+        || ip.startsWith('185.199.108.')
+        || ip.startsWith('185.199.109.')
+        || ip.startsWith('185.199.110.')
+        || ip.startsWith('185.199.111.');
+}
+
+function isAkamaiIp(ip: string): boolean {
+    const parts = ip.split('.').map(Number);
+    if (parts.length !== 4 || parts.some(part => Number.isNaN(part))) return false;
+    return (parts[0] === 2 && parts[1] >= 16 && parts[1] <= 23)
+        || (parts[0] === 23 && parts[1] >= 0 && parts[1] <= 15)
+        || (parts[0] === 23 && parts[1] >= 32 && parts[1] <= 67)
+        || ip.startsWith('23.32.')
+        || ip.startsWith('23.33.')
+        || ip.startsWith('23.64.')
+        || ip.startsWith('23.65.');
+}
+
+function isCloudHostingIp(ip: string): boolean {
+    return ip.startsWith('3.')
+        || ip.startsWith('13.32.')
+        || ip.startsWith('13.33.')
+        || ip.startsWith('18.')
+        || ip.startsWith('20.')
+        || ip.startsWith('34.')
+        || ip.startsWith('35.')
+        || ip.startsWith('40.')
+        || ip.startsWith('52.')
+        || ip.startsWith('54.')
+        || ip.startsWith('104.131.')
+        || ip.startsWith('138.68.')
+        || ip.startsWith('143.198.')
+        || ip.startsWith('159.65.')
+        || ip.startsWith('167.71.');
+}
+
+function formatDirection(direction: IpInsight['direction']): string {
+    if (direction === 'bidirectional') return 'Bidireccional';
+    if (direction === 'source') return 'Origen';
+    return 'Destino';
+}
+
+function formatGeo(geo: GeoInfo | null): string {
+    if (!geo) return '-';
+    return [geo.country, geo.region, geo.city].filter(Boolean).join(' / ') || '-';
+}
+
+function formatAsnOrg(entry: IpInsight): string {
+    const asn = entry.asn ? `AS${entry.asn}` : '';
+    const org = entry.org && entry.org !== 'Unknown public network' ? entry.org : '';
+    return [asn, org].filter(Boolean).join(' · ') || entry.networkCategory || '-';
 }
