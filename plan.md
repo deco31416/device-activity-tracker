@@ -1,6 +1,6 @@
 # Device Activity Tracker - Planner y Auditoria
 
-Ultima actualizacion: 2026-06-23
+Ultima actualizacion: 2026-06-24
 
 ## Objetivo
 
@@ -36,6 +36,11 @@ Nota tecnica: el sistema debe hablar de "trafico observado", "infraestructura", 
 - [x] Clasificacion de red privada `172.16.0.0/12` corregida.
 - [x] Guardado de analisis de llamada usa upsert por `callId`.
 - [x] Guia operativa local documentada en `docs/local-operation-guide.md`.
+- [x] Auditoria severa 2026-06-24 iniciada con hardening de produccion, proxy trust, auth sin query string, rate limit de Check-In, GPS tratado como evidencia declarada y reportes con observaciones no concluyentes separadas.
+- [x] Auditoria de dependencias iniciada: overrides aplicados donde son compatibles, frontend prod audit limpio y riesgos residuales documentados.
+- [x] Auditoria de codigo pre-QA: corregido consentimiento personalizado en hash/evidencia, aviso tecnico minimo obligatorio no sobreescribible, version de manifest, parsing seguro de env/rate-limit y fallback local de backend a puerto 4000.
+- [x] QA documental: aclarada diferencia operativa entre Bitacora, Full Contact Report, historial de llamada, Final Case Report y Evidence Package.
+- [ ] Resolver residuales de Baileys/libsignal/protobufjs/music-metadata en rama separada con smoke test real de WhatsApp antes de promover.
 
 ## Arquitectura Definida
 
@@ -157,6 +162,7 @@ Pendiente:
 - [x] Agregar correlacion contextual prefijo telefonico E.164 vs pais GeoIP observado.
 - [x] Aplicar topes duros para muestras pequenas: menos de 10 paquetes no puede salir como candidata.
 - [x] Mostrar observaciones no concluyentes separadas de IPs candidatas en UI.
+- [x] Preservar observaciones no concluyentes en reporte final JSON/HTML/PDF y anexo CSV.
 - [x] Agregar ASN/ORG lookup mediante enriquecimiento IP opcional.
 - [x] Agregar categoria de red inicial: Meta/relay, STUN/TURN probable, CDN, publica desconocida.
 - [x] Ampliar categoria de red: cloud, hosting, ISP, VPN/proxy.
@@ -177,6 +183,7 @@ Pendiente:
 - [x] Timeline de auditoria.
 - [ ] Timeline de capturas.
 - [x] Tabla de IPs observadas e IPs candidatas.
+- [x] Tabla separada de observaciones no concluyentes para evitar ocultar evidencia debil.
 - [ ] ASN/ORG completo.
 - [x] GeoIP, proveedor, puertos, paquetes y confidence score cuando existan en el analisis.
 - [ ] Mapa visual de ruta observada.
@@ -340,8 +347,10 @@ Pendiente:
 
 - [x] Auditoria TypeScript backend iniciada.
 - [x] Auditoria React frontend iniciada.
-- [ ] Auditoria de seguridad de variables `.env`.
-- [ ] Auditoria de dependencias.
+- [x] Auditoria de seguridad de variables `.env`.
+- [x] Auditoria de dependencias iniciada con mitigacion parcial.
+- [ ] Migrar frontend fuera de CRA/react-scripts para eliminar residuales `webpack-dev-server`.
+- [ ] Auditar upgrade/reemplazo de Baileys/libsignal/protobufjs/music-metadata sin romper QR, presencia, reportes ni llamadas.
 - [ ] Auditoria de Dockerfile.
 - [ ] Auditoria de Railway deploy.
 - [ ] QA responsive frontend.
@@ -522,11 +531,17 @@ Antes de cerrar cada bloque de trabajo:
 - [x] Corregido fallback frontend API de `localhost:3001` a `localhost:4000` y documentados puertos locales `4000/4001`.
 - [x] Documentada limitacion operativa: previews publicos requieren `PUBLIC_BASE_URL` con HTTPS publico; `127.0.0.1` solo funciona localmente.
 - [x] Preparada release `2.9.0` en `package.json`, `client/package.json`, `client/package-lock.json`, README, CHANGELOG y planner.
+- [x] Reforzadas dependencias con overrides compatibles y separacion frontend de dependencias runtime vs tooling; `pnpm --dir client audit --prod` queda limpio.
+- [x] Corregidos residuales backend de `lodash`/`ip-address` y `tar`/`node-gyp` mediante resoluciones compatibles.
+- [x] Documentados hallazgos residuales de auditoria: CRA/webpack-dev-server solo dev y backend Baileys/libsignal/protobufjs/music-metadata como upgrade controlado.
+- [x] Corregido hallazgo P1 de cadena de custodia Check-In: el texto personalizado aceptado se guarda en `consent.text` y entra al hash.
+- [x] Corregido hallazgo P2 de reportes: Evidence Package usa version actual del paquete, no `2.6.0` hardcoded.
+- [x] Corregido hallazgo P2 de configuracion: CORS/rate-limit/puerto/token toleran espacios o valores invalidos sin romper arranque.
 
 ## Proximo Bloque Sugerido
 
 1. Ejecutar QA manual completo de Check-In en URL publica HTTPS o tunel controlado para validar Open Graph real fuera de localhost.
-2. Integrar Check-In al reporte final y Evidence ZIP como anexo formal con preview, hash, IP, GPS y metadatos de dispositivo.
-3. Instalar/usar Poppler para render visual PNG del PDF fixture.
-4. Extraer bitacora/export de `ContactCard` si seguimos reduciendo deuda frontend.
+2. Crear rama tecnica para reemplazar CRA por Vite y cerrar residuales `webpack-dev-server`.
+3. Crear rama tecnica para upgrade/reemplazo Baileys/libsignal/protobufjs/music-metadata con smoke test real de WhatsApp.
+4. Instalar/usar Poppler para render visual PNG del PDF fixture.
 5. Congelar alcance antes de QA final.

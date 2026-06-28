@@ -4,8 +4,10 @@ import {
     buildCaptureUnavailablePayload,
     buildRuntimeCapabilities,
     buildRuntimeConfig,
+    resolveTrustProxy,
     resolveDeploymentMode,
     resolveLocalCaptureEnabled,
+    validateProductionSecurity,
 } from '../src/runtime.js';
 
 test('resolves Railway mode from Railway environment name and disables local capture by default', () => {
@@ -49,4 +51,27 @@ test('builds capture unavailable payload with operational hint', () => {
         mode: 'railway-dashboard',
         hint: 'Run with DEPLOYMENT_MODE=local-full and LOCAL_CAPTURE_ENABLED=true on an authorized local machine or VM.',
     });
+});
+
+test('requires a strong dashboard token in production', () => {
+    assert.deepEqual(validateProductionSecurity({ NODE_ENV: 'development' }), []);
+    assert.deepEqual(validateProductionSecurity({ NODE_ENV: 'production' }), [
+        'DASHBOARD_TOKEN is required when NODE_ENV=production',
+    ]);
+    assert.deepEqual(validateProductionSecurity({ NODE_ENV: 'production', DASHBOARD_TOKEN: 'short' }), [
+        'DASHBOARD_TOKEN must be at least 32 characters when NODE_ENV=production',
+    ]);
+    assert.deepEqual(validateProductionSecurity({
+        NODE_ENV: 'production',
+        DASHBOARD_TOKEN: '12345678901234567890123456789012',
+    }), []);
+});
+
+test('resolves trust proxy safely for local and Railway deployments', () => {
+    assert.equal(resolveTrustProxy({}), false);
+    assert.equal(resolveTrustProxy({ RAILWAY_ENVIRONMENT_NAME: 'production' }), 1);
+    assert.equal(resolveTrustProxy({ TRUST_PROXY: 'true' }), true);
+    assert.equal(resolveTrustProxy({ TRUST_PROXY: 'false' }), false);
+    assert.equal(resolveTrustProxy({ TRUST_PROXY: '2' }), 2);
+    assert.equal(resolveTrustProxy({ TRUST_PROXY: 'loopback' }), 'loopback');
 });

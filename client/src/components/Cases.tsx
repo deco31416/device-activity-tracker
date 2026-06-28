@@ -200,38 +200,39 @@ export function Cases() {
 
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                 {cases.map(item => (
-                    <div key={item.caseId} className="card p-5 space-y-4">
-                        <div className="flex items-start justify-between gap-3">
+                    <div key={item.caseId} className="card p-5 sm:p-6 space-y-5">
+                        <div className="space-y-4">
                             <div className="min-w-0">
-                                <div className="flex items-center gap-2 mb-1">
-                                    <h4 className="text-sm font-semibold text-txt-primary truncate">{item.title || item.caseId}</h4>
-                                    <span className={STATUS_STYLES[item.status]}>{item.status}</span>
+                                <div className="flex flex-wrap items-start gap-2 mb-2">
+                                    <h4 className="text-lg font-semibold leading-tight text-txt-primary break-words max-w-full">{item.title || item.caseId}</h4>
+                                    <span className={`${STATUS_STYLES[item.status]} shrink-0 mt-0.5`}>{item.status}</span>
                                 </div>
-                                <p className="text-xs font-mono text-txt-dim">{item.caseId}</p>
+                                <p className="text-xs font-mono text-txt-dim break-words max-w-full">{item.caseId}</p>
                             </div>
-                            <div className="flex flex-wrap items-center justify-end gap-2">
-                                <button onClick={() => downloadFinalReportPdf(item)} className="btn-primary !py-1.5 !px-3 !text-xs flex items-center gap-1.5">
+
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                <button onClick={() => downloadFinalReportPdf(item)} className="btn-primary !py-2 !px-3 !text-xs flex items-center justify-center gap-1.5 min-w-0">
                                     <FileText size={12} />
                                     Final PDF
                                 </button>
-                                <button onClick={() => downloadFinalReportHtml(item)} className="btn-primary !py-1.5 !px-3 !text-xs flex items-center gap-1.5">
+                                <button onClick={() => downloadFinalReportHtml(item)} className="btn-primary !py-2 !px-3 !text-xs flex items-center justify-center gap-1.5 min-w-0">
                                     <FileText size={12} />
                                     Final HTML
                                 </button>
-                                <button onClick={() => downloadFinalReportJson(item)} className="btn-ghost !py-1.5 !px-3 !text-xs flex items-center gap-1.5">
+                                <button onClick={() => downloadFinalReportJson(item)} className="btn-ghost !py-2 !px-3 !text-xs flex items-center justify-center gap-1.5 min-w-0">
                                     <Download size={12} />
                                     Final JSON
                                 </button>
-                                <button onClick={() => downloadEvidencePackage(item)} className="btn-ghost !py-1.5 !px-3 !text-xs flex items-center gap-1.5">
+                                <button onClick={() => downloadEvidencePackage(item)} className="btn-ghost !py-2 !px-3 !text-xs flex items-center justify-center gap-1.5 min-w-0">
                                     <Download size={12} />
                                     JSON
                                 </button>
-                                <button onClick={() => downloadEvidenceZip(item)} className="btn-ghost !py-1.5 !px-3 !text-xs flex items-center gap-1.5">
+                                <button onClick={() => downloadEvidenceZip(item)} className="btn-ghost !py-2 !px-3 !text-xs flex items-center justify-center gap-1.5 min-w-0">
                                     <Download size={12} />
                                     ZIP
                                 </button>
                                 {item.status !== 'closed' && item.status !== 'archived' && (
-                                    <button onClick={() => closeExistingCase(item)} className="btn-ghost !py-1.5 !px-3 !text-xs flex items-center gap-1.5">
+                                    <button onClick={() => closeExistingCase(item)} className="btn-ghost !py-2 !px-3 !text-xs flex items-center justify-center gap-1.5 min-w-0">
                                         <Lock size={12} />
                                         Cerrar
                                     </button>

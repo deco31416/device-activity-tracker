@@ -90,6 +90,31 @@ function sampleEvidencePackage(): any {
                             technicalNote: 'IP publica observada como candidata tecnica. No confirma identidad, ubicacion exacta ni titularidad.',
                             isP2P: true,
                         },
+                        {
+                            ip: '23.2.68.26',
+                            packets: 2,
+                            bytesTotal: 600,
+                            firstSeen: new Date('2026-06-18T00:00:02.000Z'),
+                            lastSeen: new Date('2026-06-18T00:00:03.000Z'),
+                            avgSize: 300,
+                            ports: [443],
+                            direction: 'outgoing',
+                            provider: 'akamai',
+                            networkCategory: 'cloud_or_cdn',
+                            networkIntelligence: {
+                                asn: 20940,
+                                org: 'Akamai',
+                                category: 'cdn',
+                                source: 'local_rules',
+                                isDatacenterLikely: true,
+                            },
+                            geo: null,
+                            confidence: 'low',
+                            confidenceScore: 16,
+                            reasonCodes: [{ code: 'TINY_SAMPLE', label: 'Tiny sample', delta: -15 }],
+                            technicalNote: 'Observacion no concluyente; puede ser CDN o infraestructura.',
+                            isP2P: false,
+                        },
                     ],
                     metaIps: ['157.240.1.1'],
                     verdict: 'mixed',
@@ -154,10 +179,12 @@ test('builds final reports with candidate IP limitations and integrity', () => {
 
     assert.equal(report.summary.caseId, 'CASE-UNIT-001');
     assert.equal(report.summary.candidateIpCount, 1);
+    assert.equal(report.summary.nonConclusiveIpObservationCount, 1);
     assert.equal(report.summary.activityStatsCount, 1);
     assert.equal(report.summary.highestCandidateScore, 55);
     assert.equal(report.findings.activityStats[0].reliability.score, 85);
     assert.equal(report.findings.candidateIps[0].networkIntelligence.org, 'Google');
+    assert.equal(report.findings.nonConclusiveIpObservations[0].networkIntelligence.org, 'Akamai');
     assert.match(report.integrity.reportHash, /^[a-f0-9]{64}$/);
 
     const html = renderFinalCaseReportHtml(report);
@@ -165,6 +192,7 @@ test('builds final reports with candidate IP limitations and integrity', () => {
     assert.match(html, /Estadisticas de Actividad Observada/);
     assert.match(html, /85\/100/);
     assert.match(html, /No prueban identidad/);
+    assert.match(html, /Observaciones No Concluyentes/);
 
     const pdf = renderFinalCaseReportPdf(report);
     assert.equal(pdf.subarray(0, 5).toString('ascii'), '%PDF-');
@@ -183,6 +211,7 @@ test('builds evidence ZIP with CSV annexes and integrity manifest', () => {
         'annexes/call-analysis.csv',
         'annexes/activity-stats.csv',
         'annexes/candidate-ips.csv',
+        'annexes/non-conclusive-ip-observations.csv',
         'annexes/network-captures.csv',
         'annexes/csv-integrity.json',
     ]) {

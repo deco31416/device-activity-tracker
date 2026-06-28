@@ -16,15 +16,35 @@ All notable changes to this project will be documented in this file.
 - IP enrichment now re-scores call candidates after DB-IP/ip-api lookup so enriched country/provider context can demote weak observations before verdict calculation.
 - Privacy OPSEC score now explains the formula and why each deduction affected the final score.
 - README and local operation guide now document that WhatsApp calls should be started from WhatsApp Web/Desktop outside WP MONITOR, while the app observes the local traffic window.
+- Production startup now fails closed when `NODE_ENV=production` is missing a strong `DASHBOARD_TOKEN`.
+- API and Socket.IO authentication no longer accept dashboard tokens through URL query strings.
+- `TRUST_PROXY` now controls forwarded IP trust; Railway defaults to one trusted proxy hop and local mode defaults to no proxy trust.
+- Swagger/OpenAPI version now follows the package version instead of a hardcoded release number.
+- Public Authorized Check-In submissions now have configurable in-memory rate limits by IP and token/IP pair.
+- Check-In consistency now treats browser GPS as client-declared corroborative evidence, not as independently verified location proof.
+- Final reports now preserve non-conclusive call IP observations in JSON, HTML, PDF, and CSV annexes instead of silently hiding them.
+- Dependency hardening added Yarn/pnpm/npm overrides for patched transitive packages such as `ws`, `qs`, `path-to-regexp`, `postcss`, `brace-expansion`, `socket.io-parser`, and related frontend build-chain packages.
+- Frontend runtime dependencies were reduced by moving test/build tooling out of production dependencies.
+- Authorized Check-In evidence now stores the exact custom consent text plus mandatory disclosure that the user accepted, so the receipt hash matches the public landing content.
+- Authorized Check-In custom consent can no longer override or weaken the mandatory minimum technical disclosure.
+- Startup/env parsing now trims `DASHBOARD_TOKEN`, ignores empty CORS origins, and falls back safely if numeric port/rate-limit variables are invalid.
+- Backend default port now falls back to `4000` when no `PORT` or `BACKEND_PORT` is provided, matching the frontend local API fallback.
+- Evidence Package manifests now use the current package version instead of a stale hardcoded release.
 
 ### 📚 Documentation
 - Documented the IP candidate scoring methodology for E.164 phone-country context, tiny packet samples, country mismatch, one-way traffic caps, and interpretation limits.
 - Updated the planner with completed scoring-correlation and non-conclusive observation tasks.
+- Documented Railway security variables for strong dashboard token enforcement and proxy trust.
+- Documented dependency-audit residual risks: CRA `webpack-dev-server` advisories remain dev-only until Vite migration, and Baileys/libsignal/protobuf/music-metadata transitive advisories require a separate compatibility upgrade plan.
+- Documented the operational difference between Activity Bitácora exports, Full Contact Report, Call Analysis, Final Case Report, and Evidence Package.
 
 ### ✅ QA
-- `pnpm run test:unit`: 36 tests passing.
+- `pnpm run test:unit`: 40 tests passing.
 - `pnpm run build`: backend TypeScript build passing.
 - `pnpm --dir client run build`: frontend production build passing.
+- `pnpm --dir client audit --prod`: no known vulnerabilities found.
+- `pnpm --dir client audit --dev`: 4 moderate `react-scripts`/`webpack-dev-server` findings remain for migration planning.
+- `yarn npm audit --recursive --severity high`: still reports upstream/transitive findings through Baileys/libsignal/protobufjs and Baileys/music-metadata; tracked as residual upgrade work, not force-overridden.
 
 ---
 

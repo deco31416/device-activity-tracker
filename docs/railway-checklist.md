@@ -14,7 +14,7 @@ Railway must run with packet capture disabled.
 
 - [ ] Repo pushed to GitHub.
 - [ ] MongoDB URI ready.
-- [ ] Long random `DASHBOARD_TOKEN` generated.
+- [ ] Long random `DASHBOARD_TOKEN` generated with 32+ characters.
 - [ ] Backend public Railway domain chosen.
 - [ ] Frontend public Railway domain chosen.
 - [ ] Decision made for WhatsApp auth persistence volume.
@@ -34,10 +34,16 @@ LOCAL_CAPTURE_ENABLED=false
 ENABLE_SWAGGER=false
 MONGODB_URI=mongodb+srv://...
 MONGODB_DB=activity-tracker
-DASHBOARD_TOKEN=change-this-long-random-token
+DASHBOARD_TOKEN=change-this-long-random-token-with-32-plus-chars
+TRUST_PROXY=1
 ALLOWED_ORIGINS=https://your-client.up.railway.app
 PUBLIC_BASE_URL=https://your-backend.up.railway.app
+CHECKIN_SUBMIT_RATE_WINDOW_MS=600000
+CHECKIN_SUBMIT_RATE_MAX_PER_IP=60
+CHECKIN_SUBMIT_RATE_MAX_PER_TOKEN_IP=8
 ```
+
+Production startup is blocked if `DASHBOARD_TOKEN` is missing or shorter than 32 characters. `TRUST_PROXY=1` is recommended on Railway so client IP detection trusts only the Railway proxy hop instead of arbitrary direct spoofing.
 
 Volumes:
 

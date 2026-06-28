@@ -41,8 +41,11 @@ MONGODB_DB=activity-tracker
 Opcionalmente, proteger dashboard, API y sockets con token:
 
 ```env
-DASHBOARD_TOKEN=un-token-largo-y-privado
+DASHBOARD_TOKEN=un-token-largo-y-privado-de-32-caracteres-o-mas
+TRUST_PROXY=false
 ```
+
+En `NODE_ENV=production`, `DASHBOARD_TOKEN` es obligatorio y debe tener al menos 32 caracteres. En local puede omitirse para pruebas cerradas.
 
 Si se quiere permitir captura automatica vinculada a eventos de llamada, tambien se deben configurar estos campos:
 
@@ -98,6 +101,20 @@ Si `DASHBOARD_TOKEN` esta activo, ingresar el token en la pantalla inicial.
 11. Revisar actividad, mapa de ruta observada, paquetes, relays e IPs candidatas.
 12. Consultar `Audit Trail` por `Case ID`.
 13. Exportar auditoria JSON o `Evidence Package` cuando aplique.
+
+## Tipos de Reporte
+
+La herramienta tiene varios reportes. No todos significan lo mismo:
+
+| Reporte | Donde se genera | Alcance | Contenido principal | Cuando usarlo |
+|---------|-----------------|---------|---------------------|---------------|
+| **Bitacora de Actividad JSON/HTML/PDF** | Tarjeta del contacto, seccion `Bitacora de Actividad` | Un contacto | Cambios de estado, hora local, UTC, RTT y descripcion legible | Revision rapida de actividad observada |
+| **Full Contact Report** | Boton `Full` del contacto o `/api/report/:jid/download` | Un contacto | Perfil, estadisticas RTT, distribucion de estados, patrones, historial y mediciones recientes | Informe tecnico del contacto monitoreado |
+| **Historial de Llamadas** | Pestana `Llamada` del contacto | Un contacto y sus capturas locales | Mapa observado, paquetes, infraestructura, relays, IPs candidatas/no concluyentes, scoring y limitaciones | Revisar una captura de llamada/interaccion WhatsApp Web autorizada |
+| **Final Case Report JSON/HTML/PDF** | Vista `Cases` o `Audit Trail` | Caso completo | Caso, autorizacion, auditoria, evidencias, actividad, analisis de llamada, hashes y limitaciones | Informe formal de caso |
+| **Evidence Package JSON/ZIP** | Vista `Cases` o `Audit Trail` | Caso completo para archivo | Manifest, caso, auditoria, enlaces de evidencia, analisis, resumen de red, reportes, CSV anexos e integridad SHA-256 | Cadena de custodia, archivo y revision externa |
+
+Regla operativa: si se esta revisando un contacto aislado, usar `Bitacora` o `Full`. Si se esta cerrando una investigacion/caso, usar `Final Case Report` y `Evidence Package`.
 
 ## Captura General
 

@@ -4,6 +4,8 @@ export interface RuntimeConfig {
     dashboardTokenConfigured: boolean;
 }
 
+export type TrustProxySetting = boolean | number | string;
+
 export interface RuntimeCapabilities {
     mode: string;
     localCapture: boolean;
@@ -31,6 +33,36 @@ export function buildRuntimeConfig(env: NodeJS.ProcessEnv): RuntimeConfig {
         localCaptureEnabled: resolveLocalCaptureEnabled(env, deploymentMode),
         dashboardTokenConfigured: Boolean(env.DASHBOARD_TOKEN),
     };
+}
+
+export function validateProductionSecurity(env: NodeJS.ProcessEnv): string[] {
+    const errors: string[] = [];
+    const nodeEnv = env.NODE_ENV || 'development';
+    const token = env.DASHBOARD_TOKEN || '';
+
+    if (nodeEnv === 'production') {
+        if (!token.trim()) {
+            errors.push('DASHBOARD_TOKEN is required when NODE_ENV=production');
+        } else if (token.trim().length < 32) {
+            errors.push('DASHBOARD_TOKEN must be at least 32 characters when NODE_ENV=production');
+        }
+    }
+
+    return errors;
+}
+
+export function resolveTrustProxy(env: NodeJS.ProcessEnv): TrustProxySetting {
+    const configured = env.TRUST_PROXY?.trim();
+    if (!configured) {
+        return env.RAILWAY_ENVIRONMENT_NAME ? 1 : false;
+    }
+
+    const lower = configured.toLowerCase();
+    if (lower === 'true') return true;
+    if (lower === 'false') return false;
+    const numeric = Number(configured);
+    if (Number.isFinite(numeric) && numeric >= 0) return numeric;
+    return configured;
 }
 
 export function buildRuntimeCapabilities(config: RuntimeConfig): RuntimeCapabilities {

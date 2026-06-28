@@ -9,9 +9,11 @@ interface CallAnalysisPanelProps {
     callCapturing: boolean;
     callEvent: CallEvent | null;
     callPacketCount: number;
+    callStopping: boolean;
     callCaseId: string;
     callOperatorName: string;
     callAuthorizationNote: string;
+    callCaptureError: string | null;
     onCaseIdChange: (value: string) => void;
     onOperatorNameChange: (value: string) => void;
     onAuthorizationNoteChange: (value: string) => void;
@@ -26,9 +28,11 @@ export function CallAnalysisPanel({
     callCapturing,
     callEvent,
     callPacketCount,
+    callStopping,
     callCaseId,
     callOperatorName,
     callAuthorizationNote,
+    callCaptureError,
     onCaseIdChange,
     onOperatorNameChange,
     onAuthorizationNoteChange,
@@ -52,7 +56,7 @@ export function CallAnalysisPanel({
                         value={callCaseId}
                         onChange={event => onCaseIdChange(event.target.value)}
                         disabled={callCapturing}
-                        placeholder="Case ID"
+                        placeholder="Case ID (ej. EDUARDO-SAINZ)"
                         className="input-field !text-xs"
                     />
                     <input
@@ -83,19 +87,35 @@ export function CallAnalysisPanel({
                     ) : (
                         <button
                             onClick={onStopManualCapture}
-                            className="btn-danger flex items-center gap-2 !text-xs !py-2 !px-4 animate-pulse"
+                            disabled={callStopping}
+                            className="btn-danger flex items-center gap-2 !text-xs !py-2 !px-4 animate-pulse disabled:opacity-60 disabled:cursor-wait"
                         >
-                            <Square size={14} /> Detener Captura ({callPacketCount} paquetes)
+                            <Square size={14} /> {callStopping ? 'Analizando captura...' : `Detener Captura (${callPacketCount} paquetes)`}
                         </button>
                     )}
                 </div>
+
+                <p className="mt-2 text-[10px] text-txt-dim">
+                    Case ID tecnico: letras, numeros, punto, guion bajo, dos puntos o guion. Los espacios se normalizan antes de iniciar.
+                </p>
+
+                {callCaptureError && (
+                    <div className="mt-3 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3">
+                        <p className="text-xs font-bold text-red-300">No se pudo iniciar la captura</p>
+                        <p className="text-[11px] text-red-100/80">{callCaptureError}</p>
+                    </div>
+                )}
 
                 {callCapturing && (
                     <div className="mt-3 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 flex items-center gap-3">
                         <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
                         <div>
-                            <p className="text-xs font-bold text-red-400">Captura en curso</p>
-                            <p className="text-[10px] text-txt-dim">{callPacketCount} paquetes UDP capturados · Haz la llamada desde este equipo local</p>
+                            <p className="text-xs font-bold text-red-400">
+                                {callStopping ? 'Cerrando y analizando captura' : 'Captura en curso'}
+                            </p>
+                            <p className="text-[10px] text-txt-dim">
+                                {callPacketCount} paquetes UDP capturados · {callStopping ? 'Procesando resultado, GeoIP y auditoria' : 'Haz la llamada desde este equipo local'}
+                            </p>
                         </div>
                     </div>
                 )}

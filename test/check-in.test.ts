@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCheckInConsistency, buildCheckInHash, createCheckInToken, normalizeCheckInSubmission, renderCheckInPage } from '../src/check-in.js';
+import { buildCheckInConsistency, buildCheckInHash, buildConsentText, createCheckInToken, normalizeCheckInSubmission, renderCheckInPage } from '../src/check-in.js';
 import type { CheckInDoc } from '../src/db.js';
 
 function fixture(): CheckInDoc {
@@ -104,6 +104,23 @@ test('renders custom landing labels, button, and minimum disclosure', () => {
     assert.match(html, /https:\/\/example.test\/gracias/);
 });
 
+test('builds stored consent text from custom policy plus mandatory disclosure', () => {
+    const consent = buildConsentText('Acepto la politica operacional del cliente.', false);
+
+    assert.match(consent, /Acepto la politica operacional del cliente/);
+    assert.match(consent, /Aviso tecnico minimo/);
+    assert.match(consent, /IP publica observada/);
+    assert.doesNotMatch(consent, /permiso GPS/);
+});
+
+test('does not allow custom consent to weaken mandatory disclosure', () => {
+    const consent = buildConsentText('Acepto la politica operacional.\n\nAviso tecnico minimo: solo guardamos nombre.', true);
+
+    assert.match(consent, /Acepto la politica operacional/);
+    assert.match(consent, /ubicacion aproximada solo si se concede permiso GPS/);
+    assert.doesNotMatch(consent, /solo guardamos nombre/);
+});
+
 test('builds check-in consistency signals from IP, browser, and GPS evidence', () => {
     const consistency = buildCheckInConsistency({
         request: {
@@ -138,5 +155,6 @@ test('builds check-in consistency signals from IP, browser, and GPS evidence', (
     assert.ok(consistency.score < 45);
     assert.ok(consistency.signals.some(signal => signal.label === 'Proxy/VPN posible'));
     assert.ok(consistency.signals.some(signal => signal.label === 'Zona horaria divergente'));
+    assert.ok(consistency.signals.some(signal => signal.label === 'GPS declarado por navegador'));
     assert.ok(consistency.signals.some(signal => signal.label === 'GPS/IP distantes'));
 });

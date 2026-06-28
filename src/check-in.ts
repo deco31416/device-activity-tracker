@@ -151,21 +151,31 @@ export function buildCheckInConsistency(doc: Partial<CheckInDoc>): CheckInConsis
     const ipLat = numberValue(enrichment.lat);
     const ipLon = numberValue(enrichment.lon);
     if (location?.permission === 'granted' && typeof location.lat === 'number' && typeof location.lon === 'number') {
+        const gpsAccuracy = numberValue(location.accuracy);
+        signals.push({
+            severity: 'info',
+            label: 'GPS declarado por navegador',
+            detail: 'Las coordenadas GPS fueron entregadas por el navegador del usuario con permiso explicito; son evidencia tecnica declarada por cliente y requieren corroboracion si se usan formalmente.',
+        });
+        if (typeof gpsAccuracy === 'number' && gpsAccuracy > 1000) {
+            score -= 4;
+            signals.push({ severity: 'info', label: 'GPS de baja precision', detail: `Precision reportada aproximadamente ${Math.round(gpsAccuracy)} m.` });
+        }
         if (typeof ipLat === 'number' && typeof ipLon === 'number') {
             const km = distanceKm(location.lat, location.lon, ipLat, ipLon);
             if (km <= 50) {
-                score += 15;
-                signals.push({ severity: 'ok', label: 'GPS/IP cercanos', detail: `Distancia aproximada ${Math.round(km)} km entre GPS e IP estimada.` });
+                score += 8;
+                signals.push({ severity: 'ok', label: 'GPS/IP cercanos', detail: `Distancia aproximada ${Math.round(km)} km entre GPS declarado e IP estimada.` });
             } else if (km <= 250) {
-                score += 4;
-                signals.push({ severity: 'info', label: 'GPS/IP razonablemente cercanos', detail: `Distancia aproximada ${Math.round(km)} km; puede depender del ISP.` });
+                score += 2;
+                signals.push({ severity: 'info', label: 'GPS/IP razonablemente cercanos', detail: `Distancia aproximada ${Math.round(km)} km; puede depender del ISP y debe leerse como corroboracion parcial.` });
             } else {
                 score -= 14;
-                signals.push({ severity: 'warning', label: 'GPS/IP distantes', detail: `Distancia aproximada ${Math.round(km)} km. Puede indicar VPN, CGNAT, salida centralizada del ISP o GeoIP impreciso.` });
+                signals.push({ severity: 'warning', label: 'GPS/IP distantes', detail: `Distancia aproximada ${Math.round(km)} km. Puede indicar VPN, CGNAT, salida centralizada del ISP, GPS declarado incorrecto o GeoIP impreciso.` });
             }
         } else {
-            score += 10;
-            signals.push({ severity: 'ok', label: 'GPS autorizado', detail: 'El navegador entrego coordenadas GPS con consentimiento.' });
+            score += 3;
+            signals.push({ severity: 'info', label: 'GPS sin comparacion GeoIP', detail: 'El navegador entrego coordenadas, pero no hay coordenadas IP confiables para comparar.' });
         }
     } else if (location?.permission === 'denied') {
         score -= 5;
@@ -557,7 +567,7 @@ function safeColor(value: unknown, fallback: string): string {
     return /^#[0-9a-f]{6}$/i.test(text) ? text : fallback;
 }
 
-function buildConsentText(customText: unknown, requestGps: boolean): string {
+export function buildConsentText(customText: unknown, requestGps: boolean): string {
     const parts = buildConsentParts(customText, requestGps);
     return `${parts.primary}\n\n${parts.disclosure}`;
 }
@@ -567,14 +577,8 @@ function buildConsentParts(customText: unknown, requestGps: boolean): { primary:
     const minimum = requestGps ? REQUIRED_DISCLOSURE_GPS : REQUIRED_DISCLOSURE_NO_GPS;
     const fallback = requestGps ? CHECK_IN_CONSENT_TEXT : CHECK_IN_CONSENT_TEXT_NO_GPS;
     if (!custom) return { primary: fallback, disclosure: minimum };
-    const [primary, ...rest] = custom.split(/Aviso tecnico minimo:/i);
-    if (rest.length > 0) {
-        return {
-            primary: primary.trim() || fallback,
-            disclosure: `Aviso tecnico minimo:${rest.join('Aviso tecnico minimo:')}`.trim(),
-        };
-    }
-    return { primary: custom, disclosure: minimum };
+    const [primary] = custom.split(/Aviso tecnico minimo:/i);
+    return { primary: primary.trim() || fallback, disclosure: minimum };
 }
 
 function safeRedirectUrl(value: unknown): string {

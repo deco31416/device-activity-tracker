@@ -63,34 +63,11 @@ export function ActivityJournalPanel({
     };
 
     const exportHtml = () => {
-        const rows = entries.map(entry => {
-            const color = stateColor(entry.state);
-            return `<tr>
-                <td style="padding:8px;font-family:monospace;white-space:nowrap">${entry.date}</td>
-                <td style="padding:8px;font-family:monospace;white-space:nowrap">${entry.local} (${entry.utc} UTC)</td>
-                <td style="padding:8px;color:${color};font-weight:600">${entry.stateLabel}</td>
-                <td style="padding:8px">${entry.description}</td>
-            </tr>`;
-        }).join('\n');
-
-        const html = `<!DOCTYPE html>
-<html lang="es"><head><meta charset="UTF-8"><title>Bitacora - ${privacyMode ? '***' : displayNumber}</title>
-<style>
-body{font-family:system-ui,-apple-system,sans-serif;background:#070b18;color:#f1f5f9;padding:40px}
-h1{font-size:20px;color:#25d366;margin-bottom:4px}
-.meta{color:#64748b;font-size:13px;margin-bottom:24px}
-table{width:100%;border-collapse:collapse;background:#0f1629;border-radius:12px;overflow:hidden}
-th{background:#1e2545;padding:10px 8px;text-align:left;font-size:11px;text-transform:uppercase;color:#64748b;letter-spacing:1px}
-td{border-bottom:1px solid #1e2545;font-size:13px}
-tr:hover{background:#141b2d}
-.footer{margin-top:20px;color:#475569;font-size:11px;text-align:center}
-</style></head><body>
-<h1>Bitacora de Actividad</h1>
-<div class="meta">Contacto: ${privacyMode ? '***' : displayNumber} - Generado: ${new Date().toLocaleString('es-MX')} - Total eventos: ${entries.length}</div>
-<table><thead><tr><th>Fecha</th><th>Hora (Local / UTC)</th><th>Estado</th><th>Descripcion</th></tr></thead>
-<tbody>${rows}</tbody></table>
-<div class="footer">WP MONITOR - Activity Journal</div>
-</body></html>`;
+        const html = buildActivityReportHtml(entries, {
+            contact: privacyMode ? '***' : displayNumber,
+            jid: privacyMode ? '***' : jid,
+            mode: 'html',
+        });
         downloadBlob(
             new Blob([html], { type: 'text/html' }),
             `bitacora-${displayNumber}-${new Date().toISOString().slice(0, 10)}.html`,
@@ -98,28 +75,11 @@ tr:hover{background:#141b2d}
     };
 
     const exportPdf = () => {
-        const rows = entries.map(entry => {
-            const color = stateColor(entry.state, true);
-            return `<tr>
-                <td style="padding:6px 8px;font-family:monospace;font-size:11px;white-space:nowrap;border-bottom:1px solid #e2e8f0">${entry.date}</td>
-                <td style="padding:6px 8px;font-family:monospace;font-size:11px;white-space:nowrap;border-bottom:1px solid #e2e8f0">${entry.local}<br/><span style="color:#94a3b8;font-size:9px">${entry.utc} UTC</span></td>
-                <td style="padding:6px 8px;color:${color};font-weight:700;font-size:11px;border-bottom:1px solid #e2e8f0">${entry.stateLabel}</td>
-                <td style="padding:6px 8px;font-size:11px;border-bottom:1px solid #e2e8f0">${entry.description}</td>
-            </tr>`;
-        }).join('\n');
-
-        const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Bitacora ${displayNumber}</title>
-<style>@media print{body{margin:0}}body{font-family:system-ui,sans-serif;padding:20px;color:#1e293b}
-h1{font-size:16px;margin-bottom:2px}
-.meta{color:#64748b;font-size:11px;margin-bottom:16px}
-table{width:100%;border-collapse:collapse;font-size:11px}
-th{background:#f1f5f9;padding:8px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #cbd5e1}
-</style></head><body>
-<h1>Bitacora de Actividad</h1>
-<div class="meta">Contacto: ${privacyMode ? '***' : displayNumber} - ${new Date().toLocaleString('es-MX')} - ${entries.length} eventos</div>
-<table><thead><tr><th>Fecha</th><th>Hora</th><th>Estado</th><th>Descripcion</th></tr></thead>
-<tbody>${rows}</tbody></table>
-</body></html>`;
+        const html = buildActivityReportHtml(entries, {
+            contact: privacyMode ? '***' : displayNumber,
+            jid: privacyMode ? '***' : jid,
+            mode: 'print',
+        });
 
         const win = window.open('', '_blank');
         if (win) {
@@ -330,6 +290,121 @@ function stateColor(state: string, print = false): string {
     if (state === 'Standby') return print ? '#ca8a04' : '#eab308';
     if (state === 'OFFLINE') return print ? '#dc2626' : '#ef4444';
     return print ? '#64748b' : '#94a3b8';
+}
+
+function buildActivityReportHtml(
+    entries: JournalEntry[],
+    options: { contact: string; jid: string; mode: 'html' | 'print' },
+): string {
+    const generatedAt = new Date();
+    const summary = buildActivitySummary(entries);
+    const printable = options.mode === 'print';
+    const rows = entries.map((entry, index) => {
+        const color = stateColor(entry.state, printable);
+        return `<tr>
+            <td class="idx">${index + 1}</td>
+            <td class="date">${escapeHtml(entry.date)}</td>
+            <td class="time"><strong>${escapeHtml(entry.local)}</strong><span>${escapeHtml(entry.utc)} UTC</span></td>
+            <td><span class="state" style="color:${color};border-color:${color}33;background:${color}12">${escapeHtml(entry.stateLabel)}</span></td>
+            <td class="rtt">${entry.rtt > 0 ? `${escapeHtml(entry.rtt)} ms` : '-'}</td>
+            <td class="desc">${escapeHtml(entry.description)}</td>
+        </tr>`;
+    }).join('\n');
+    const emptyRows = entries.length === 0
+        ? '<tr><td colspan="6" class="empty">Sin eventos registrados para este contacto.</td></tr>'
+        : rows;
+
+    return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WP MONITOR - Bitacora ${escapeHtml(options.contact)}</title>
+  <style>
+    :root{--ink:#0f172a;--muted:#64748b;--line:#dbe5ef;--panel:#ffffff;--soft:#f8fafc;--accent:#16a34a;--dark:#071411}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:"Inter","Aptos","Segoe UI",Arial,sans-serif;color:${printable ? 'var(--ink)' : '#e8f3f0'};background:${printable ? '#fff' : '#071411'};line-height:1.45}
+    .page{max-width:${printable ? '100%' : '1120px'};margin:0 auto;padding:${printable ? '22px' : '40px'}}
+    .hero{border-radius:${printable ? '0' : '24px'};padding:${printable ? '18px 0 16px' : '30px'};background:${printable ? '#fff' : 'linear-gradient(135deg,#0c1c18,#10241f)'};border-bottom:${printable ? '2px solid #0f172a' : '0'};box-shadow:${printable ? 'none' : '0 22px 70px rgba(0,0,0,.28)'}}
+    .brand{font-size:11px;font-weight:850;letter-spacing:.16em;text-transform:uppercase;color:${printable ? '#166534' : '#73e6a1'};margin-bottom:12px}
+    h1{margin:0;font-size:${printable ? '24px' : '34px'};line-height:1.08;letter-spacing:0}
+    .subtitle{margin:10px 0 0;color:${printable ? 'var(--muted)' : '#9bb9b0'};font-size:13px}
+    .meta-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:${printable ? '16px 0' : '18px 0 24px'}}
+    .metric{border:1px solid ${printable ? 'var(--line)' : 'rgba(148,163,184,.22)'};border-radius:14px;padding:12px 14px;background:${printable ? 'var(--soft)' : 'rgba(255,255,255,.045)'}}
+    .metric span{display:block;color:${printable ? 'var(--muted)' : '#86a69d'};font-size:10px;text-transform:uppercase;letter-spacing:.12em;font-weight:800}
+    .metric strong{display:block;margin-top:5px;font-size:18px;color:${printable ? 'var(--ink)' : '#fff'}}
+    .note{margin:0 0 18px;padding:12px 14px;border-radius:14px;border:1px solid ${printable ? '#bbf7d0' : 'rgba(37,211,102,.28)'};background:${printable ? '#f0fdf4' : 'rgba(37,211,102,.08)'};color:${printable ? '#14532d' : '#b9f8cf'};font-size:12px}
+    .table-wrap{border:1px solid ${printable ? 'var(--line)' : 'rgba(148,163,184,.22)'};border-radius:${printable ? '0' : '18px'};overflow:hidden;background:${printable ? '#fff' : '#0d1c18'}}
+    table{width:100%;border-collapse:collapse}
+    thead{display:table-header-group}
+    th{padding:11px 10px;text-align:left;background:${printable ? '#ecfdf5' : '#122923'};color:${printable ? '#166534' : '#7ae6a8'};font-size:10px;text-transform:uppercase;letter-spacing:.11em;border-bottom:1px solid ${printable ? '#bbf7d0' : 'rgba(37,211,102,.22)'}}
+    td{padding:11px 10px;border-bottom:1px solid ${printable ? '#e2e8f0' : 'rgba(148,163,184,.16)'};font-size:${printable ? '10.5px' : '12px'};vertical-align:top}
+    tbody tr:nth-child(even){background:${printable ? '#f8fafc' : 'rgba(255,255,255,.025)'}}
+    .idx{width:42px;color:var(--muted);font-family:Consolas,monospace}
+    .date,.time,.rtt{white-space:nowrap;font-family:Consolas,"SFMono-Regular",monospace}
+    .time span{display:block;color:${printable ? 'var(--muted)' : '#78958d'};font-size:10px;margin-top:2px}
+    .state{display:inline-flex;border:1px solid;border-radius:999px;padding:4px 8px;font-size:10px;font-weight:850;white-space:nowrap}
+    .desc{min-width:260px}
+    .empty{text-align:center;color:var(--muted);padding:28px}
+    .footer{display:flex;justify-content:space-between;gap:16px;margin-top:16px;color:${printable ? 'var(--muted)' : '#78958d'};font-size:10px;border-top:1px solid ${printable ? 'var(--line)' : 'rgba(148,163,184,.18)'};padding-top:12px}
+    @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.page{padding:16mm}.hero{break-inside:avoid}.metric,.note,.table-wrap{break-inside:avoid}tr{break-inside:avoid}.footer{position:fixed;bottom:8mm;left:16mm;right:16mm}}
+    @media(max-width:760px){.page{padding:18px}.meta-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.table-wrap{overflow:auto}.desc{min-width:220px}}
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="brand">WP MONITOR</div>
+      <h1>Bitacora de Actividad</h1>
+      <p class="subtitle">Registro cronologico de cambios observados para el contacto ${escapeHtml(options.contact)}.</p>
+    </section>
+    <section class="meta-grid" aria-label="Resumen">
+      <div class="metric"><span>Contacto</span><strong>${escapeHtml(options.contact)}</strong></div>
+      <div class="metric"><span>JID</span><strong style="font-size:13px;overflow-wrap:anywhere">${escapeHtml(options.jid)}</strong></div>
+      <div class="metric"><span>Eventos</span><strong>${entries.length}</strong></div>
+      <div class="metric"><span>Rango</span><strong style="font-size:13px">${escapeHtml(summary.range)}</strong></div>
+    </section>
+    <section class="meta-grid" aria-label="Distribucion">
+      <div class="metric"><span>Conectado</span><strong>${summary.online}</strong></div>
+      <div class="metric"><span>En espera</span><strong>${summary.standby}</strong></div>
+      <div class="metric"><span>Desconectado</span><strong>${summary.offline}</strong></div>
+      <div class="metric"><span>RTT promedio</span><strong>${summary.averageRtt ? `${summary.averageRtt} ms` : '-'}</strong></div>
+    </section>
+    <p class="note">Lectura tecnica: estos eventos describen actividad observada por RTT y cambios de estado. No sustituyen corroboracion externa ni prueban por si solos identidad, ubicacion exacta o titularidad del dispositivo.</p>
+    <section class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Fecha</th><th>Hora</th><th>Estado</th><th>RTT</th><th>Descripcion</th></tr></thead>
+        <tbody>${emptyRows}</tbody>
+      </table>
+    </section>
+    <footer class="footer">
+      <span>Generado: ${escapeHtml(generatedAt.toLocaleString('es-CO'))}</span>
+      <span>WP MONITOR · Activity Journal</span>
+    </footer>
+  </main>
+</body>
+</html>`;
+}
+
+function buildActivitySummary(entries: JournalEntry[]) {
+    const online = entries.filter(entry => entry.state.includes('Online')).length;
+    const standby = entries.filter(entry => entry.state === 'Standby').length;
+    const offline = entries.filter(entry => entry.state === 'OFFLINE').length;
+    const rtts = entries.map(entry => entry.rtt).filter(value => value > 0);
+    const averageRtt = rtts.length ? Math.round(rtts.reduce((sum, value) => sum + value, 0) / rtts.length) : 0;
+    const last = entries[0];
+    const first = entries[entries.length - 1];
+    const range = first && last ? `${first.date} ${first.local} - ${last.date} ${last.local}` : '-';
+    return { online, standby, offline, averageRtt, range };
+}
+
+function escapeHtml(value: unknown): string {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 function downloadBlob(blob: Blob, filename: string) {

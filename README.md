@@ -160,10 +160,11 @@ Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to M
 - 🧭 Calculates a transparent consistency score from IP reputation flags, timezone/language alignment, GPS-vs-IP distance, referer, mobile/hosting/proxy flags, and browser metadata
 - 🔐 Stores SHA-256 evidence hash and links the result to the case evidence timeline
 - 🧾 Emits audit events for creation, completion, edit, revocation, and administrative deletion
+- 🧯 Public submit endpoint has a built-in per-IP/per-token rate limit to reduce abuse of open consent links
 - 🔄 Dashboard updates automatically through Socket.IO events with a short polling fallback; no manual refresh required for completed check-ins
 - 🗑️ Administrative delete removes the check-in record and related case evidence link from MongoDB
 - 🔗 `PUBLIC_BASE_URL` must be a public HTTPS URL for third-party previews and external recipients; `127.0.0.1` only works on the local machine
-- ⚠️ GeoIP is estimated network/ISP location. GPS is only available when the browser/user explicitly permits it.
+- ⚠️ GeoIP is estimated network/ISP location. GPS is only available when the browser/user explicitly permits it and is treated as client-declared corroborative evidence, not independent proof of identity or exact physical location.
 
 ### Audit Trail & Evidence Metadata
 - 🧾 Required capture metadata: `caseId`, `operatorName`, `authorizationNote`
@@ -182,7 +183,7 @@ Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to M
 - 💻 `local-full`: complete local/VM/VPS mode with packet capture, Network Monitor, and call traffic analysis
 - 🧠 `/api/runtime-capabilities` lets the frontend show or hide capture features automatically
 - 🟢 `/api/health` reports `operational` or `degraded` without printing secrets
-- 🔐 Optional `DASHBOARD_TOKEN` protects REST API, Socket.IO, dashboard access, and download links
+- 🔐 `DASHBOARD_TOKEN` protects REST API, Socket.IO, dashboard access, and download links; required when `NODE_ENV=production`
 
 ### MongoDB Persistence
 - 💾 Measurements stored with 30-day TTL auto-cleanup
@@ -206,6 +207,12 @@ Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to M
 | **Packet Capture** | cap 0.2.1 (libpcap binding) + Npcap (Windows) |
 | **Geolocation** | geoip-lite 2.0 (offline MaxMind DB) |
 | **Package Managers** | Yarn 4 (backend) / pnpm (frontend) |
+
+### Dependency Audit Status
+
+The project keeps lockfiles for backend and frontend dependencies and uses package-manager overrides to pin patched transitive packages where compatibility is safe. The current hardening pass leaves the frontend production audit clean. The remaining frontend advisories are development-server findings from CRA `react-scripts` / `webpack-dev-server`; they should be eliminated by a future Vite migration instead of forcing an incompatible Webpack Dev Server major version.
+
+Backend audit still reports upstream/transitive advisories through the WhatsApp stack (`@whiskeysockets/baileys`, `libsignal`, `protobufjs`, `music-metadata`). Those are tracked as residual risk because force-overriding them can break WhatsApp session/call behavior. The recommended production path is a separate compatibility branch that upgrades or replaces those packages, runs QR login, contact restore, call capture, reports, Railway mode, and local packet capture smoke tests, then promotes only after manual verification.
 
 ---
 
@@ -253,12 +260,20 @@ MONGODB_URI=mongodb://localhost:27017       # or mongodb+srv://... for Atlas
 MONGODB_DB=device-tracker
 
 # Runtime
-NODE_ENV=production
+NODE_ENV=development
 DEPLOYMENT_MODE=local-full                  # local-full | railway-dashboard
 LOCAL_CAPTURE_ENABLED=true                  # false in Railway dashboard mode
 
-# Optional auth for public dashboards
-DASHBOARD_TOKEN=change-this-long-random-token
+# Optional locally, required in production. Use 32+ characters.
+# DASHBOARD_TOKEN=change-this-long-random-token-with-32-plus-chars
+
+# Client IP handling. Local default: false. Railway default: one trusted proxy hop.
+# TRUST_PROXY=false
+
+# Public Check-In submit rate limits.
+# CHECKIN_SUBMIT_RATE_WINDOW_MS=600000
+# CHECKIN_SUBMIT_RATE_MAX_PER_IP=60
+# CHECKIN_SUBMIT_RATE_MAX_PER_TOKEN_IP=8
 
 # API docs. Served only when true and NODE_ENV is not production.
 ENABLE_SWAGGER=false
@@ -382,7 +397,8 @@ PORT=4000
 MONGODB_URI=mongodb+srv://...
 MONGODB_DB=activity-tracker
 ALLOWED_ORIGINS=https://your-frontend.up.railway.app
-DASHBOARD_TOKEN=change-this-long-random-token
+DASHBOARD_TOKEN=change-this-long-random-token-with-32-plus-chars
+TRUST_PROXY=1
 ```
 
 Attach a Railway volume to:
@@ -579,6 +595,20 @@ The `/api/report/:jid` endpoint generates a comprehensive report:
 }
 ```
 
+### Report Types And When To Use Them
+
+WP MONITOR has several exports because each one answers a different operational question:
+
+| Export | Where | Scope | Includes | Best use |
+|--------|-------|-------|----------|----------|
+| **Activity Bitácora JSON/HTML/PDF** | Contact card → `RTT Chart` → `Bitácora de Actividad` buttons | One contact, activity timeline only | State changes, local time, UTC time, RTT, plain-language description, event count and activity summary | Fast chronological review for an operator or stakeholder |
+| **Full Contact Report** | Contact card → `Full` / `/api/report/:jid/download` | One contact, complete tracker profile | Contact/profile data, RTT stats, state distribution, activity history, behavior patterns, recent measurements and executive summary | Technical report for one monitored contact |
+| **Call Analysis History** | Contact card → `Llamada` tab | One contact, local call-capture sessions | Observed route map, packet count, relays/infrastructure, candidate IP scoring, non-conclusive observations, GeoIP/provider hints and limitations | Review authorized WhatsApp Web/Desktop call or interaction captures |
+| **Final Case Report JSON/HTML/PDF** | `Cases` / `Audit Trail` → final report exports | Full case | Case record, authorization, audit timeline, evidence links, activity stats, call analyses, candidate/non-conclusive IP observations, hashes and limitations | Formal case-level investigative report |
+| **Evidence Package JSON/ZIP** | `Cases` / `Audit Trail` → evidence package exports | Full case, archival package | Manifest, case, audit events, evidence links, call analysis, network summary, final report, CSV annexes and SHA-256 integrity hashes | Chain-of-custody archive and external review package |
+
+The contact-level **Full** report is not the same as the case-level **Final Case Report**. The Full report explains what is known about one contact inside WhatsApp Tracker; the Final Case Report and Evidence Package consolidate the broader investigation, including call captures, check-ins, network captures, audit trail, exports and evidence hashes.
+
 ### Network Packet Capture
 
 Captures packet **metadata only** (no payload/content inspection):
@@ -747,7 +777,7 @@ See [CHANGELOG.md](CHANGELOG.md) for full version history.
 - 🚆 **Railway/local split** — `railway-dashboard` mode disables local capture; `local-full` keeps the complete capture stack
 - 🟢 **Operational health** — `/api/health` reports MongoDB, WhatsApp, local capture, runtime mode, and degraded reasons without secrets
 - 📚 **Swagger/OpenAPI** — `/docs` available only outside production when `ENABLE_SWAGGER=true`
-- 🔐 **Dashboard token auth** — optional `DASHBOARD_TOKEN` for REST, Socket.IO, dashboard, and downloads
+- 🔐 **Dashboard token auth** — `DASHBOARD_TOKEN` for REST, Socket.IO, dashboard, and downloads; required in production
 - 📞 **Call Traffic Analysis** — local authorized capture window, observed route map, relays/providers, and candidate IP classification
 - 🌍 **IP enrichment** — optional DB-IP-first lookup for candidate/infrastructure IPs with estimated network location, ISP/ORG/ASN, flags, caching, and Maps links
 - 🧾 **Case audit/evidence** — required capture metadata, Case ID event lookup, SHA-256 audit export, Evidence ZIP, CSV annexes, and final report JSON/HTML/PDF

@@ -1,5 +1,8 @@
 import { createHash } from 'crypto';
 import { getAuditEvents, getCallAnalysesByCallIds, getCase, getCaseEvidenceLinks, getStateDistribution } from './db.js';
+
+const SOFTWARE_VERSION = process.env.npm_package_version || '2.9.1';
+
 export function hashJson(value: unknown): string {
     return createHash('sha256').update(JSON.stringify(value, null, 2)).digest('hex');
 }
@@ -91,7 +94,7 @@ export async function buildEvidencePackage(caseId: string) {
         version: '1.0',
         software: {
             name: 'WP MONITOR',
-            version: '2.6.0',
+            version: SOFTWARE_VERSION,
             developedBy: 'WP MONITOR',
         },
         caseId,
@@ -152,6 +155,27 @@ function getCandidateScore(candidate: any): number {
     return 25;
 }
 
+function mapCallIpObservation(analysis: any, candidate: any) {
+    return {
+        callId: analysis.callId,
+        targetJid: analysis.targetJid,
+        ip: candidate.ip,
+        score: getCandidateScore(candidate),
+        confidence: candidate.confidence || 'low',
+        networkCategory: candidate.networkCategory || 'unknown_public',
+        packets: candidate.packets || 0,
+        direction: candidate.direction || 'unknown',
+        provider: candidate.provider || 'unknown',
+        networkIntelligence: candidate.networkIntelligence || null,
+        ports: candidate.ports || [],
+        geo: candidate.geo || null,
+        ipEnrichment: candidate.ipEnrichment || null,
+        reasonCodes: candidate.reasonCodes || [],
+        technicalNote: candidate.technicalNote || 'IP publica observada como candidata tecnica. No confirma identidad, ubicacion exacta ni titularidad.',
+        isP2P: candidate.isP2P === true,
+    };
+}
+
 function formatStatsChange(value: unknown): string {
     if (typeof value !== 'number') return '-';
     if (value === 0) return '0';
@@ -202,27 +226,12 @@ export function buildFinalCaseReport(evidencePackage: NonNullable<Awaited<Return
         ...auditEvents.map(event => event.targetJid).filter(Boolean),
         ...evidenceLinks.map(link => link.targetJid).filter(Boolean),
     ]));
-    const candidateIps = callAnalysis
+    const observedCallIps = callAnalysis
         .flatMap((analysis: any) => (analysis.candidateIps || [])
-            .filter((candidate: any) => candidate.isP2P)
-            .map((candidate: any) => ({
-                callId: analysis.callId,
-                targetJid: analysis.targetJid,
-                ip: candidate.ip,
-                score: getCandidateScore(candidate),
-                confidence: candidate.confidence || 'low',
-                networkCategory: candidate.networkCategory || 'unknown_public',
-                packets: candidate.packets || 0,
-                direction: candidate.direction || 'unknown',
-                provider: candidate.provider || 'unknown',
-                networkIntelligence: candidate.networkIntelligence || null,
-                ports: candidate.ports || [],
-                geo: candidate.geo || null,
-                ipEnrichment: candidate.ipEnrichment || null,
-                reasonCodes: candidate.reasonCodes || [],
-                technicalNote: candidate.technicalNote || 'IP publica observada como candidata tecnica. No confirma identidad, ubicacion exacta ni titularidad.',
-            })))
+            .map((candidate: any) => mapCallIpObservation(analysis, candidate)))
         .sort((a: any, b: any) => b.score - a.score || b.packets - a.packets);
+    const candidateIps = observedCallIps.filter((candidate: any) => candidate.isP2P);
+    const nonConclusiveIpObservations = observedCallIps.filter((candidate: any) => !candidate.isP2P);
 
     const timeline = auditEvents
         .slice()
@@ -250,6 +259,7 @@ export function buildFinalCaseReport(evidencePackage: NonNullable<Awaited<Return
         activityStatsCount: activityStats.length,
         networkCaptureCount: evidencePackage.sections.networkSummary?.captureStopCount || 0,
         candidateIpCount: candidateIps.length,
+        nonConclusiveIpObservationCount: nonConclusiveIpObservations.length,
         highestCandidateScore: candidateIps[0]?.score || 0,
     };
 
@@ -262,6 +272,7 @@ export function buildFinalCaseReport(evidencePackage: NonNullable<Awaited<Return
         network: evidencePackage.sections.networkSummary,
         activityStats,
         candidateIps,
+        nonConclusiveIpObservations,
         limitations: evidencePackage.manifest.limitations,
     };
 
@@ -298,6 +309,7 @@ export function buildFinalCaseReport(evidencePackage: NonNullable<Awaited<Return
 
 export function renderFinalCaseReportHtml(report: ReturnType<typeof buildFinalCaseReport>): string {
     const topCandidates = report.findings.candidateIps.slice(0, 10);
+    const topNonConclusive = (report.findings.nonConclusiveIpObservations || []).slice(0, 10);
     const timelineRows = report.timeline.slice(-80);
     const scoreTone = report.summary.highestCandidateScore >= 75
         ? 'strong'
@@ -319,6 +331,19 @@ export function renderFinalCaseReportHtml(report: ReturnType<typeof buildFinalCa
             </tr>
         `).join('')
         : '<tr><td colspan="8" class="muted">No se registraron IPs candidatas en los analisis vinculados.</td></tr>';
+
+    const nonConclusiveRows = topNonConclusive.length
+        ? topNonConclusive.map((candidate: any) => `
+            <tr>
+                <td><code>${escapeHtml(candidate.ip)}</code></td>
+                <td><span class="score low">${candidate.score}/100</span></td>
+                <td>${escapeHtml(candidate.networkCategory)}</td>
+                <td>${escapeHtml(candidate.direction)}</td>
+                <td>${escapeHtml(candidate.packets)}</td>
+                <td>${escapeHtml(candidate.technicalNote)}</td>
+            </tr>
+        `).join('')
+        : '<tr><td colspan="6" class="muted">No se registraron observaciones no concluyentes separadas.</td></tr>';
 
     const activityRows = report.findings.activityStats.length
         ? report.findings.activityStats.map((item: any) => `
@@ -571,6 +596,19 @@ export function renderFinalCaseReportHtml(report: ReturnType<typeof buildFinalCa
       <table>
         <thead><tr><th>IP</th><th>Score</th><th>Categoria</th><th>ASN/ORG</th><th>Direccion</th><th>Paquetes</th><th>Geo</th><th>Nota tecnica</th></tr></thead>
         <tbody>${candidateRows}</tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Observaciones No Concluyentes</h2>
+    <div class="notice">
+      Estas IPs quedaron documentadas por transparencia, pero no alcanzaron el criterio tecnico para presentarse como candidatas. Pueden corresponder a muestras pequenas, relays, cloud/CDN, trafico unidireccional o contexto geografico incoherente.
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>IP</th><th>Score</th><th>Categoria</th><th>Direccion</th><th>Paquetes</th><th>Nota tecnica</th></tr></thead>
+        <tbody>${nonConclusiveRows}</tbody>
       </table>
     </div>
   </section>
@@ -863,6 +901,26 @@ export function renderFinalCaseReportPdf(report: ReturnType<typeof buildFinalCas
         }
     }
 
+    pdf.heading('Observaciones no concluyentes');
+    pdf.paragraph('IPs documentadas por transparencia, pero sin criterio suficiente para presentarse como candidatas. Revisar si fueron muestras pequenas, relays, cloud/CDN, trafico unidireccional o contexto geografico incoherente.', 92, 8, '9A3412');
+    const nonConclusive = (report.findings.nonConclusiveIpObservations || []).slice(0, 12);
+    if (nonConclusive.length === 0) {
+        pdf.paragraph('No se registraron observaciones no concluyentes separadas.');
+    } else {
+        for (const candidate of nonConclusive) {
+            const note = `${candidate.networkCategory || 'unknown'} · ${candidate.direction || 'unknown'} · ${candidate.technicalNote || ''}`;
+            const noteLines = wrapPdfText(note, 64).slice(0, 2);
+            const rowHeight = Math.max(28, noteLines.length * 10 + 10);
+            pdf.ensure(rowHeight + 8);
+            pdf.rect(pdf.margin, pdf.y - rowHeight + 8, usable, rowHeight, 'FFFFFF', 'E2E8F0');
+            pdf.text(pdf.margin + 8, pdf.y - 8, candidate.ip, 8, 'F3', '172033');
+            pdf.text(pdf.margin + 98, pdf.y - 8, `${candidate.score}/100`, 8, 'F2', '475569');
+            pdf.text(pdf.margin + 150, pdf.y - 8, `${candidate.packets} pkts`, 8, 'F1', '334155');
+            noteLines.forEach((line, idx) => pdf.text(pdf.margin + 215, pdf.y - 8 - idx * 10, line, 7, 'F1', '475569'));
+            pdf.y -= rowHeight + 6;
+        }
+    }
+
     pdf.heading('Timeline de auditoria');
     const timeline = report.timeline.slice(-70);
     const drawTimelineHeader = (continued = false) => {
@@ -1110,6 +1168,23 @@ function buildCsvAnnexes(
         candidate.technicalNote,
     ]);
 
+    const nonConclusiveRows = (finalReport.findings.nonConclusiveIpObservations || []).map((candidate: any) => [
+        candidate.callId,
+        candidate.targetJid,
+        candidate.ip,
+        candidate.score,
+        candidate.confidence,
+        candidate.provider,
+        candidate.networkCategory,
+        candidate.networkIntelligence?.asn || '',
+        candidate.networkIntelligence?.org || '',
+        candidate.direction,
+        candidate.packets,
+        candidate.ports?.join('|') || '',
+        candidate.reasonCodes?.map((reason: any) => `${reason.code}:${reason.delta}`).join('|') || '',
+        candidate.technicalNote,
+    ]);
+
     const networkRows = (evidencePackage.sections.networkSummary?.captures || []).map((capture: any) => [
         capture.timestampUtc,
         capture.operatorName,
@@ -1167,6 +1242,13 @@ function buildCsvAnnexes(
             data: toCsv(
                 ['callId', 'targetJid', 'ip', 'score', 'confidence', 'provider', 'networkCategory', 'asn', 'org', 'asnCategory', 'isDatacenterLikely', 'direction', 'packets', 'ports', 'geoCountry', 'geoRegion', 'geoCity', 'geoLat', 'geoLon', 'geoTimezone', 'enrichmentProvider', 'enrichmentStatus', 'enrichmentCity', 'enrichmentRegion', 'enrichmentPostalCode', 'enrichmentIsp', 'enrichmentOrg', 'enrichmentAsn', 'enrichmentMobile', 'enrichmentProxy', 'enrichmentHosting', 'enrichmentMapsUrl', 'enrichmentAccuracyNote', 'reasonCodes', 'technicalNote'],
                 candidateRows
+            ),
+        },
+        {
+            name: 'annexes/non-conclusive-ip-observations.csv',
+            data: toCsv(
+                ['callId', 'targetJid', 'ip', 'score', 'confidence', 'provider', 'networkCategory', 'asn', 'org', 'direction', 'packets', 'ports', 'reasonCodes', 'technicalNote'],
+                nonConclusiveRows
             ),
         },
         {

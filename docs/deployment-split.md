@@ -24,7 +24,8 @@ PORT=4000
 MONGODB_URI=mongodb+srv://...
 MONGODB_DB=activity-tracker
 ALLOWED_ORIGINS=https://your-client.up.railway.app
-DASHBOARD_TOKEN=change-this-long-random-token
+DASHBOARD_TOKEN=change-this-long-random-token-with-32-plus-chars
+TRUST_PROXY=1
 PUBLIC_BASE_URL=https://your-backend.up.railway.app
 ```
 
@@ -71,7 +72,8 @@ PORT=4000
 MONGODB_URI=mongodb+srv://...
 MONGODB_DB=activity-tracker
 # Optional in local development:
-# DASHBOARD_TOKEN=change-this-long-random-token
+# DASHBOARD_TOKEN=change-this-long-random-token-with-32-plus-chars
+# TRUST_PROXY=false
 ```
 
 Run the backend locally with administrator/root permissions when packet capture is needed, because `cap` needs access to the network interface.
@@ -100,4 +102,4 @@ The export includes:
 - audit events
 - SHA-256 hash of the canonical payload
 
-When `DASHBOARD_TOKEN` is configured, the export endpoint requires the same dashboard token.
+When `DASHBOARD_TOKEN` is configured, the export endpoint requires the same dashboard token through `Authorization: Bearer <token>`. In production, the backend refuses to start without a strong token.

@@ -56,6 +56,31 @@ interface ProfileData {
     verifiedOnWhatsApp: boolean;
 }
 
+function normalizeCaptureCaseId(value: string): string {
+    return value
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9._:-]+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 80);
+}
+
+async function readApiError(response: Response): Promise<string> {
+    const fallback = `HTTP ${response.status}`;
+    try {
+        const payload = await response.json();
+        if (Array.isArray(payload?.details) && payload.details.length > 0) {
+            return payload.details.join(', ');
+        }
+        if (typeof payload?.error === 'string') return payload.error;
+        if (typeof payload?.message === 'string') return payload.message;
+    } catch {
+        return fallback;
+    }
+    return fallback;
+}
+
 /* ── Intelligence types ── */
 
 interface IntelSession {
@@ -217,9 +242,11 @@ export function ContactCard({
     const [callCapturing, setCallCapturing] = useState(false);
     const [callEvent, setCallEvent] = useState<CallEvent | null>(null);
     const [callPacketCount, setCallPacketCount] = useState(0);
+    const [callStopping, setCallStopping] = useState(false);
     const [callCaseId, setCallCaseId] = useState('');
     const [callOperatorName, setCallOperatorName] = useState('');
     const [callAuthorizationNote, setCallAuthorizationNote] = useState('');
+    const [callCaptureError, setCallCaptureError] = useState<string | null>(null);
     const callCapturingRef = useRef(false);
 
     useEffect(() => {
@@ -245,6 +272,8 @@ export function ContactCard({
         function onCallCaptureStarted(data: CallCaptureStarted) {
             if (data.targetJid === jid) {
                 setCallCapturing(true);
+                setCallStopping(false);
+                setCallCaptureError(null);
                 setCallPacketCount(0);
             }
         }
@@ -257,6 +286,7 @@ export function ContactCard({
             if (result.targetJid === jid) {
                 setCallAnalysis(result);
                 setCallCapturing(false);
+                setCallStopping(false);
                 setCallPacketCount(0);
                 // Refresh history
                 fetchCallHistory();
@@ -274,19 +304,63 @@ export function ContactCard({
         };
     }, [jid, fetchCallHistory]);
 
-    const handleStartManualCapture = () => {
+    const handleStartManualCapture = async () => {
         if (!callTrafficAvailable) return;
         if (!callCaseId.trim() || !callOperatorName.trim() || !callAuthorizationNote.trim()) return;
-        socket.emit('start-call-capture', {
-            targetJid: jid,
-            caseId: callCaseId.trim(),
-            operatorName: callOperatorName.trim(),
-            authorizationNote: callAuthorizationNote.trim(),
-        });
+        setCallCaptureError(null);
+        const normalizedCaseId = normalizeCaptureCaseId(callCaseId);
+        if (!normalizedCaseId || normalizedCaseId.length < 3) {
+            setCallCaptureError('Case ID debe tener minimo 3 caracteres validos. Ejemplo: EDUARDO-SAINZ');
+            return;
+        }
+        if (normalizedCaseId !== callCaseId.trim()) {
+            setCallCaseId(normalizedCaseId);
+        }
+        try {
+            setCallAnalysis(null);
+            const response = await authFetch(`${API_URL}/api/call-capture/start`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    targetJid: jid,
+                    caseId: normalizedCaseId,
+                    operatorName: callOperatorName.trim(),
+                    authorizationNote: callAuthorizationNote.trim(),
+                }),
+            });
+            if (!response.ok) {
+                throw new Error(await readApiError(response));
+            }
+            setCallCapturing(true);
+            setCallStopping(false);
+            setCallPacketCount(0);
+        } catch (error) {
+            setCallCaptureError(error instanceof Error ? error.message : 'Error iniciando captura manual');
+        }
     };
 
-    const handleStopManualCapture = () => {
-        socket.emit('stop-call-capture');
+    const handleStopManualCapture = async () => {
+        setCallCaptureError(null);
+        setCallStopping(true);
+        try {
+            const response = await authFetch(`${API_URL}/api/call-capture/stop`, { method: 'POST' });
+            if (!response.ok) {
+                throw new Error(await readApiError(response));
+            }
+            const result = await response.json();
+            if (result?.candidateIps) {
+                setCallAnalysis(result as CallAnalysisResult);
+                fetchCallHistory();
+            } else if (result?.message) {
+                setCallCaptureError(result.message);
+            }
+            setCallCapturing(false);
+            setCallStopping(false);
+            setCallPacketCount(0);
+        } catch (error) {
+            setCallCaptureError(error instanceof Error ? error.message : 'Error deteniendo captura manual');
+            setCallStopping(false);
+        }
     };
 
     const handleSaveCustomName = async () => {
@@ -945,9 +1019,11 @@ export function ContactCard({
                                 callCapturing={callCapturing}
                                 callEvent={callEvent}
                                 callPacketCount={callPacketCount}
+                                callStopping={callStopping}
                                 callCaseId={callCaseId}
                                 callOperatorName={callOperatorName}
                                 callAuthorizationNote={callAuthorizationNote}
+                                callCaptureError={callCaptureError}
                                 onCaseIdChange={setCallCaseId}
                                 onOperatorNameChange={setCallOperatorName}
                                 onAuthorizationNoteChange={setCallAuthorizationNote}

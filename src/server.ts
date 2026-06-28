@@ -23,17 +23,17 @@ import { listInterfaces, startCapture, stopCapture, getCaptureStatus, getRecentP
 import { initAnalytics, getFullIntelligence, getDailyRoutine, getAvailabilityProfile, getSessionStats, getWeeklyHeatmap, getHabitProfile, getCorrelation } from './analytics.js';
 import { startCallCapture, stopCallCapture, getCallCaptureStatus, getCallAnalysisHistory, getLatestCallAnalysis, autoDetectInterface } from './call-analyzer.js';
 import { enrichCallAnalysis, lookupIpEnrichment } from './ip-enrichment.js';
-import { CHECK_IN_CONSENT_TEXT, CHECK_IN_CONSENT_TEXT_NO_GPS, buildCheckInConsistency, buildCheckInHash, createCheckInToken, normalizeCheckInSubmission, renderCheckInPage } from './check-in.js';
+import { buildCheckInConsistency, buildCheckInHash, buildConsentText, createCheckInToken, normalizeCheckInSubmission, renderCheckInPage } from './check-in.js';
 import { registerAuditRoutes } from './routes/audit.js';
 import { registerCaseRoutes } from './routes/cases.js';
 import { registerReportRoutes } from './routes/reports.js';
 import { registerRuntimeRoutes, sendCaptureUnavailableIfNeeded } from './routes/runtime.js';
-import { buildRuntimeConfig } from './runtime.js';
+import { buildRuntimeConfig, resolveTrustProxy, validateProductionSecurity } from './runtime.js';
 import { CASE_STATUSES, cleanText, normalizeOptionalJid, parseLimit, socketValidationError, validateCaseId, validateJid, validateRequiredText, validationError } from './validation.js';
 
 // Configuration
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',')
+    ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim()).filter(Boolean)
     : [
         'http://localhost:3000',
         'http://localhost:3001',
@@ -46,12 +46,23 @@ const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
     ];
 
 const NODE_ENV = process.env.NODE_ENV || 'development';
-const PORT = parseInt(process.env.PORT || process.env.BACKEND_PORT || '3001', 10);
+function parsePositiveInteger(value: unknown, fallback: number, min = 1): number {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.max(min, Math.floor(parsed));
+}
+
+const PORT = parsePositiveInteger(process.env.PORT || process.env.BACKEND_PORT, 4000);
 const RUNTIME_CONFIG = buildRuntimeConfig(process.env);
 const DEPLOYMENT_MODE = RUNTIME_CONFIG.deploymentMode;
 const LOCAL_CAPTURE_ENABLED = RUNTIME_CONFIG.localCaptureEnabled;
-const DASHBOARD_TOKEN = process.env.DASHBOARD_TOKEN || '';
+const DASHBOARD_TOKEN = (process.env.DASHBOARD_TOKEN || '').trim();
 const ENABLE_SWAGGER = process.env.ENABLE_SWAGGER === 'true' && NODE_ENV !== 'production';
+const TRUST_PROXY = resolveTrustProxy(process.env);
+const APP_VERSION = process.env.npm_package_version || '2.9.1';
+const CHECKIN_SUBMIT_RATE_WINDOW_MS = parsePositiveInteger(process.env.CHECKIN_SUBMIT_RATE_WINDOW_MS, 10 * 60_000, 60_000);
+const CHECKIN_SUBMIT_RATE_MAX_PER_IP = parsePositiveInteger(process.env.CHECKIN_SUBMIT_RATE_MAX_PER_IP, 60);
+const CHECKIN_SUBMIT_RATE_MAX_PER_TOKEN_IP = parsePositiveInteger(process.env.CHECKIN_SUBMIT_RATE_MAX_PER_TOKEN_IP, 8);
 
 const SERVICE_TAG = '[MONITORIZACION-DECO]';
 let dbAvailableForStartupAudit = false;
@@ -104,8 +115,18 @@ function logStartupConfiguration() {
             ? 'Internal API guard: enabled'
             : 'DASHBOARD_TOKEN missing - dashboard/API guard disabled');
     bootLog('info', `Deployment mode: ${DEPLOYMENT_MODE}`);
+    bootLog('info', `Trust proxy: ${String(TRUST_PROXY)}`);
     bootLog(LOCAL_CAPTURE_ENABLED ? 'warn' : 'ok',
         LOCAL_CAPTURE_ENABLED ? 'Local capture: enabled' : 'Local capture: disabled');
+}
+
+const startupSecurityErrors = validateProductionSecurity(process.env);
+if (startupSecurityErrors.length > 0) {
+    for (const error of startupSecurityErrors) {
+        bootLog('error', error);
+    }
+    bootLog('error', 'Backend startup blocked by production security validation');
+    process.exit(1);
 }
 
 async function tryRecordStartupAudit() {
@@ -145,7 +166,7 @@ async function tryRecordStartupAudit() {
 logStartupBanner();
 
 const app = express();
-app.set('trust proxy', true);
+app.set('trust proxy', TRUST_PROXY);
 app.use(cors({ origin: ALLOWED_ORIGINS }));
 app.use(express.json({ limit: '3mb' }));
 app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));
@@ -153,7 +174,7 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')
 function extractAuthToken(req: express.Request): string {
     const auth = req.headers.authorization || '';
     if (auth.toLowerCase().startsWith('bearer ')) return auth.slice(7).trim();
-    return typeof req.query.auth === 'string' ? req.query.auth.trim() : '';
+    return '';
 }
 
 function isAuthorizedToken(token: string): boolean {
@@ -165,7 +186,7 @@ function buildOpenApiDocument() {
         openapi: '3.0.3',
         info: {
             title: 'Device Activity Tracker API',
-            version: '2.8.0',
+            version: APP_VERSION,
             description: 'Authorized activity monitoring, case management, audit trail, reports, and local capture API. WP MONITOR.',
         },
         servers: [{ url: `http://localhost:${PORT}` }],
@@ -391,7 +412,7 @@ function buildOpenApiDocument() {
                     summary: 'Submit explicit-consent check-in evidence',
                     security: [],
                     parameters: [{ name: 'token', in: 'path', required: true, schema: { type: 'string' } }],
-                    responses: { '200': { description: 'Check-in receipt' }, '400': { description: 'Consent required' }, '410': { description: 'Expired or revoked' } },
+                    responses: { '200': { description: 'Check-in receipt' }, '400': { description: 'Consent required' }, '410': { description: 'Expired or revoked' }, '429': { description: 'Too many submit attempts' } },
                 },
             },
             '/api/report/{jid}/download': {
@@ -499,9 +520,7 @@ const io = new Server(httpServer, {
 io.use((socket, next) => {
     const token = typeof socket.handshake.auth?.token === 'string'
         ? socket.handshake.auth.token
-        : typeof socket.handshake.query?.auth === 'string'
-            ? socket.handshake.query.auth
-            : '';
+        : '';
 
     if (!isAuthorizedToken(token)) {
         next(new Error('Unauthorized'));
@@ -647,14 +666,54 @@ async function linkEvidenceToCase(
 }
 
 function getClientIp(req: express.Request): string {
-    const forwarded = req.headers['x-forwarded-for'];
-    const raw = Array.isArray(forwarded)
-        ? forwarded[0]
-        : forwarded?.split(',')[0]
-            || req.headers['x-real-ip']
-            || req.socket.remoteAddress
-            || '';
-    return String(raw).trim().replace(/^::ffff:/, '') || 'unknown';
+    return String(req.ip || req.socket.remoteAddress || '').trim().replace(/^::ffff:/, '') || 'unknown';
+}
+
+interface RateLimitBucket {
+    count: number;
+    resetAt: number;
+}
+
+const publicCheckInSubmitBuckets = new Map<string, RateLimitBucket>();
+
+function consumeRateLimit(key: string, max: number, windowMs: number): { ok: true } | { ok: false; retryAfterSeconds: number } {
+    const now = Date.now();
+    if (publicCheckInSubmitBuckets.size > 10_000) {
+        for (const [bucketKey, bucket] of publicCheckInSubmitBuckets) {
+            if (bucket.resetAt <= now) publicCheckInSubmitBuckets.delete(bucketKey);
+        }
+    }
+
+    const existing = publicCheckInSubmitBuckets.get(key);
+    if (!existing || existing.resetAt <= now) {
+        publicCheckInSubmitBuckets.set(key, { count: 1, resetAt: now + windowMs });
+        return { ok: true };
+    }
+
+    if (existing.count >= max) {
+        return {
+            ok: false,
+            retryAfterSeconds: Math.max(1, Math.ceil((existing.resetAt - now) / 1000)),
+        };
+    }
+
+    existing.count += 1;
+    return { ok: true };
+}
+
+function enforcePublicCheckInSubmitRateLimit(req: express.Request, res: express.Response, token: string): boolean {
+    const ip = getClientIp(req);
+    const ipResult = consumeRateLimit(`checkin-submit:ip:${ip}`, CHECKIN_SUBMIT_RATE_MAX_PER_IP, CHECKIN_SUBMIT_RATE_WINDOW_MS);
+    const tokenIpResult = consumeRateLimit(`checkin-submit:token:${token}:ip:${ip}`, CHECKIN_SUBMIT_RATE_MAX_PER_TOKEN_IP, CHECKIN_SUBMIT_RATE_WINDOW_MS);
+    const denied = ipResult.ok ? tokenIpResult : ipResult;
+
+    if (!denied.ok) {
+        res.setHeader('Retry-After', String(denied.retryAfterSeconds));
+        res.status(429).json({ error: 'Too many check-in submit attempts. Try again later.' });
+        return false;
+    }
+
+    return true;
 }
 
 function getPublicBaseUrl(req: express.Request): string {
@@ -796,7 +855,7 @@ app.post('/api/checkins', async (req, res) => {
         browser: null,
         consent: {
             accepted: false,
-            text: requestGps ? CHECK_IN_CONSENT_TEXT : CHECK_IN_CONSENT_TEXT_NO_GPS,
+            text: buildConsentText(consentText, requestGps),
             acceptedAt: null,
         },
         location: null,
@@ -943,12 +1002,11 @@ app.patch('/api/checkins/:token', async (req, res) => {
             ...(req.body?.successMessage !== undefined ? { successMessage: successMessage || 'Check-in recibido. Hash de evidencia:' } : {}),
             ...(req.body?.redirectUrl !== undefined ? { redirectUrl } : {}),
         };
-        if (typeof requestGps === 'boolean') {
-            patch.consent = {
-                ...existing.consent,
-                text: requestGps ? CHECK_IN_CONSENT_TEXT : CHECK_IN_CONSENT_TEXT_NO_GPS,
-            };
-        }
+        const nextContent = patch.content || existing.content;
+        patch.consent = {
+            ...existing.consent,
+            text: buildConsentText(nextContent?.consentText, nextContent?.requestGps !== false),
+        };
     }
     if (ttlHours) patch.expiresAt = new Date(Date.now() + ttlHours * 3600 * 1000);
 
@@ -1038,6 +1096,8 @@ app.get('/checkin/:token', async (req, res) => {
 
 app.post('/public/checkin/:token/submit', async (req, res) => {
     const token = cleanText(req.params.token, 200);
+    if (!enforcePublicCheckInSubmitRateLimit(req, res, token || 'missing')) return;
+
     const existing = token ? await getCheckInByToken(token) : null;
     if (!existing) {
         res.status(404).json({ error: 'Check-in not found' });
@@ -1103,7 +1163,7 @@ app.post('/public/checkin/:token/submit', async (req, res) => {
         },
         consent: {
             accepted: true,
-            text: existing.content?.requestGps === false ? CHECK_IN_CONSENT_TEXT_NO_GPS : CHECK_IN_CONSENT_TEXT,
+            text: buildConsentText(existing.content?.consentText, existing.content?.requestGps !== false),
             acceptedAt: completedAt,
         },
         location: {
