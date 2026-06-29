@@ -1,6 +1,6 @@
 {
   "name": "@deco31416/device-activity-tracker-client",
-  "version": "2.9.2",
+  "version": "2.9.4",
   "private": true,
   "dependencies": {
     "clsx": "^2.1.1",

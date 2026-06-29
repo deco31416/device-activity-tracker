@@ -59,6 +59,61 @@ Sin esos tres campos, la captura automatica no inicia. La captura manual desde l
 
 ## Inicio Local
 
+### Arranque recomendado con un comando
+
+Desde la terminal de VS Code, ejecutar:
+
+```powershell
+pnpm run dev:local
+```
+
+El script `scripts/start-local.ps1` abre dos terminales visibles con titulo propio:
+
+- `WP MONITOR Backend 4000`
+- `WP MONITOR Frontend 4001`
+
+URLs esperadas:
+
+```text
+Backend:  http://127.0.0.1:4000
+Frontend: http://127.0.0.1:4001
+Health:   http://127.0.0.1:4000/api/health
+```
+
+Logs:
+
+```text
+.runtime-logs/backend-local.log
+.runtime-logs/frontend-local.log
+```
+
+Para detener el entorno, usar `Ctrl+C` en cada terminal visible o cerrar ambas ventanas.
+
+El script tiene guardas anti-duplicado:
+
+```powershell
+pnpm run dev:local -- -Status
+pnpm run dev:local -- -Restart
+```
+
+- El archivo `scripts/start-local.ps1` no arranca servicios si se ejecuta directo sin `-Start`.
+- `pnpm run dev:local` es el comando oficial y pasa `-Start` de forma explicita.
+- `-Status` revisa ventanas conocidas, puertos `4000/4001` y ultimo arranque sin abrir nuevas terminales.
+- `-Restart` detiene procesos conocidos en `4000/4001` y vuelve a levantar backend/frontend.
+- Si el script se ejecuta dos veces por accidente en menos de 20 segundos, no abre nuevas terminales.
+
+### Arranque desde tareas de VS Code
+
+Tambien existe `.vscode/tasks.json` con una tarea compuesta:
+
+```text
+Terminal -> Run Task... -> WP MONITOR: Start Local Full Stack
+```
+
+Esto levanta backend y frontend en terminales integradas separadas dentro de VS Code, agrupadas como `wp-monitor`.
+
+### Arranque manual
+
 Backend:
 
 ```powershell
@@ -228,6 +283,25 @@ El `Evidence Package` incluye manifiesto, caso, enlaces directos de evidencia, e
 
 - Verificar que `auth_info_baileys` persista.
 - En Docker/Railway, confirmar volumen montado en `/app/auth_info_baileys`.
+
+### WhatsApp queda en "Waiting for QR Code"
+
+Si el backend muestra:
+
+```text
+connection closed (status: 401), reconnecting: false
+```
+
+significa que WhatsApp/Baileys marco la sesion local como cerrada, caducada o desvinculada. En versiones actuales, WP MONITOR rota automaticamente `auth_info_baileys` a una carpeta de respaldo `auth_info_baileys.logged-out-*` y vuelve a iniciar la conexion para emitir un QR nuevo.
+
+Pasos:
+
+1. Mantener backend y frontend abiertos.
+2. Esperar a que aparezca el QR nuevo en la pantalla `Connect WhatsApp`.
+3. Escanear desde WhatsApp movil: `Settings -> Linked Devices -> Link a Device`.
+4. Si no aparece QR despues de unos segundos, reiniciar `pnpm run dev:local`.
+
+No borrar manualmente `auth_info_baileys` salvo que el respaldo automatico falle; esa carpeta contiene la sesion local de WhatsApp.
 
 ### Imagenes preview de Check-In desaparecen despues de redeploy
 

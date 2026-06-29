@@ -41,6 +41,8 @@ Nota tecnica: el sistema debe hablar de "trafico observado", "infraestructura", 
 - [x] Auditoria de codigo pre-QA: corregido consentimiento personalizado en hash/evidencia, aviso tecnico minimo obligatorio no sobreescribible, version de manifest, parsing seguro de env/rate-limit y fallback local de backend a puerto 4000.
 - [x] QA documental: aclarada diferencia operativa entre Bitacora, Full Contact Report, historial de llamada, Final Case Report y Evidence Package.
 - [x] Network Monitor profesionalizado: backend genera `ipInsights`, filtros consistentes de infraestructura/local, IP Tracker separa preliminares vs infraestructura y se corrigio auto-scroll que atrapaba la vista durante captura.
+- [x] Arranque local profesional: `pnpm run dev:local` y tareas VS Code levantan backend/frontend en 4000/4001 con terminales visibles, nombres y logs.
+- [x] Hotfix WhatsApp local: sesiones Baileys cerradas con `401/loggedOut` rotan `auth_info_baileys` y regeneran QR automaticamente.
 - [ ] Resolver residuales de Baileys/libsignal/protobufjs/music-metadata en rama separada con smoke test real de WhatsApp antes de promover.
 
 ## Arquitectura Definida
@@ -221,6 +223,8 @@ Pendiente:
 - [x] Validar estructura PDF con `pypdf`: paginas y secciones clave.
 - [x] Corregir Network Monitor para que el auto-scroll no bloquee volver arriba durante captura activa.
 - [x] Mejorar IP Tracker de Network Monitor con separacion visual entre preliminares, infraestructura y red local.
+- [x] Crear script operativo de arranque local con logs separados para backend y frontend.
+- [x] Crear tareas VS Code para levantar Local Full Stack en terminales integradas dedicadas.
 - [ ] Renderizar PDF a PNG con Poppler para QA visual final.
 - [ ] Mejorar mapa visual con timeline.
 - [ ] Agregar vista de replay/resumen de sesion.

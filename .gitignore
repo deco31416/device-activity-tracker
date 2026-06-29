@@ -9,6 +9,7 @@ client/build/
 
 # WhatsApp authentication data (IMPORTANT: Keep this private!)
 auth_info_baileys/
+auth_info_baileys.*/
 auth_info_multi/
 .wwebjs_auth/
 
@@ -49,7 +50,9 @@ Thumbs.db
 
 # IDE files
 .idea/
-.vscode/
+.vscode/*
+!.vscode/
+!.vscode/tasks.json
 *.swp
 *.swo
 *~

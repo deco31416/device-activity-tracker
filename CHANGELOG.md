@@ -4,7 +4,42 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [2.9.2] — 2026-06-28 · Current
+## [2.9.4] — 2026-06-28 · Current
+
+### 🔧 Changes
+- WhatsApp/Baileys auth recovery now rotates stale `auth_info_baileys` data when the connection closes with `401/loggedOut`, allowing the backend to generate a fresh QR automatically.
+- Local startup script now sets UTF-8 console output and suppresses frontend Node deprecation warnings that appeared as red PowerShell error records even though the React server compiled successfully.
+
+### 📚 Documentation
+- README documents the `401/loggedOut` auth recovery behavior and cleaner local terminal output.
+
+### ✅ QA
+- Backend TypeScript build passing.
+- Frontend production build passing.
+- PowerShell startup script syntax validated.
+
+---
+
+## [2.9.3] — 2026-06-28
+
+### ✨ New Features
+- **One-command local startup**: added `pnpm run dev:local` to launch backend and frontend on ports `4000/4001` with visible titled PowerShell terminals.
+- **VS Code task launcher**: added `.vscode/tasks.json` with `WP MONITOR: Start Local Full Stack`, creating dedicated integrated terminals for backend and frontend.
+
+### 🔧 Changes
+- Local startup logs are written to `.runtime-logs/backend-local.log` and `.runtime-logs/frontend-local.log`.
+- Startup script sets backend/frontend ports and frontend API URL explicitly to avoid collisions with other local projects on port `3000`.
+
+### 📚 Documentation
+- README and local operation guide now document the one-command startup, VS Code task flow, visible terminal names, URLs, logs, and stop procedure.
+
+### ✅ QA
+- `pnpm run build`: backend TypeScript build passing.
+- `pnpm --dir client run build`: frontend production build passing.
+
+---
+
+## [2.9.2] — 2026-06-28
 
 ### ✨ New Features
 - **Backend Network IP Intelligence**: Network Monitor now receives backend-generated `ipInsights` with role, verdict, direction, packet counts, provider, network category, ASN/ORG, GeoIP hints, and investigation reason.

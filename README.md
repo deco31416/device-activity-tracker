@@ -1,8 +1,8 @@
-<h1 align="center">Device Activity Tracker v2.9.2</h1>
+<h1 align="center">Device Activity Tracker v2.9.4</h1>
 <p align="center">WhatsApp Activity Tracker — RTT Analysis · Real-Time Bitácora · Behavior Intelligence · Audit Trail · Railway Dashboard · Local Network Monitor</p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.9.2-blue?style=flat" alt="Version 2.9.2"/>
+  <img src="https://img.shields.io/badge/version-2.9.4-blue?style=flat" alt="Version 2.9.4"/>
   <img src="https://img.shields.io/badge/Node.js-22+-339933?style=flat&logo=node.js&logoColor=white" alt="Node.js"/>
   <img src="https://img.shields.io/badge/TypeScript-5.7+-3178C6?style=flat&logo=typescript&logoColor=white" alt="TypeScript"/>
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat&logo=react&logoColor=black" alt="React"/>
@@ -339,6 +339,37 @@ Startup logs validate operational configuration without printing secrets:
 ## Usage
 
 ### Web Interface (Recommended)
+
+From VS Code, the easiest operational start is one command:
+
+```powershell
+pnpm run dev:local
+```
+
+This opens two visible PowerShell terminals:
+
+- `WP MONITOR Backend 4000` → `http://127.0.0.1:4000`
+- `WP MONITOR Frontend 4001` → `http://127.0.0.1:4001`
+
+Live logs are also written to:
+
+- `.runtime-logs/backend-local.log`
+- `.runtime-logs/frontend-local.log`
+
+To keep everything inside VS Code integrated terminals, use **Terminal → Run Task... → WP MONITOR: Start Local Full Stack**. VS Code will create named terminal panels for backend and frontend.
+
+Safe local controls:
+
+```powershell
+pnpm run dev:local -- -Status
+pnpm run dev:local -- -Restart
+```
+
+`-Status` only reports current local state. `-Restart` intentionally stops known local owners of `4000/4001` before relaunching. Accidental repeated starts are ignored for a short cooldown window to avoid duplicate terminals.
+
+Direct execution of `scripts/start-local.ps1` is safe by default: it will not start services unless `-Start` or `-Restart` is provided. The official command `pnpm run dev:local` passes `-Start` explicitly.
+
+Manual startup is still supported:
 
 ```bash
 # Terminal 1: Start backend (requires admin for packet capture)
@@ -758,7 +789,16 @@ For **network monitoring**: Use a VPN to encrypt and tunnel all traffic.
 
 See [CHANGELOG.md](CHANGELOG.md) for full version history.
 
-### v2.9.2 (June 2026) — Current
+### v2.9.4 (June 2026) — Current
+- 🔐 **WhatsApp auth recovery** — stale Baileys sessions that close with `401/loggedOut` are rotated automatically so a fresh QR can be generated
+- 🧼 **Cleaner local terminals** — local startup sets UTF-8 output and suppresses frontend deprecation warnings that looked like runtime failures
+
+### v2.9.3 (June 2026)
+- 🟢 **One-command local startup** — `pnpm run dev:local` opens visible backend/frontend terminals on ports `4000/4001`
+- 🧩 **VS Code tasks** — `WP MONITOR: Start Local Full Stack` launches dedicated integrated terminals for backend and frontend
+- 🧾 **Startup logs** — local logs are written to `.runtime-logs/backend-local.log` and `.runtime-logs/frontend-local.log`
+
+### v2.9.2 (June 2026)
 - 🧭 **Network IP Intelligence** — backend-generated `ipInsights` classify local/private, Meta/WhatsApp, Google, Cloudflare, GitHub, Akamai/CDN, cloud/hosting, and public IPs to review
 - 🧾 **Professional IP Tracker** — separates preliminary public IPs from infrastructure, showing direction, packet counts, ASN/ORG, GeoIP hints, and DB-IP/DNSChecker/Maps links
 - 🧷 **Network Monitor UX** — page no longer jumps to the packet table during active capture, and empty states are scoped to the active tab

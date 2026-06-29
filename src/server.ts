@@ -10,7 +10,7 @@
 import 'dotenv/config';
 import express from 'express';
 import { createServer } from 'http';
-import { mkdir, writeFile } from 'fs/promises';
+import { mkdir, rename, rm, writeFile } from 'fs/promises';
 import path from 'path';
 import { Server } from 'socket.io';
 import cors from 'cors';
@@ -534,12 +534,43 @@ let sock: any;
 let isWhatsAppConnected = false;
 let globalProbeMethod: ProbeMethod = 'delete'; // Default to delete method
 let currentWhatsAppQr: string | null = null; // Store current QR code for new clients
+let isWhatsAppConnecting = false;
+let isRotatingWhatsAppAuth = false;
+const WHATSAPP_AUTH_DIR = 'auth_info_baileys';
+let autoRestoreTimer: NodeJS.Timeout | null = null;
 
 interface TrackerEntry {
     tracker: WhatsAppTracker;
 }
 
 const trackers: Map<string, TrackerEntry> = new Map(); // JID -> Tracker entry
+
+type LiveSignalSource = 'presence' | 'call' | 'message' | 'rtt_probe' | 'system';
+type LiveConfidence = 'none' | 'low' | 'medium' | 'high';
+
+interface LiveSignal {
+    source: LiveSignalSource;
+    value: string;
+    label: string;
+    confidence: LiveConfidence;
+    timestamp: number;
+    details?: Record<string, unknown>;
+}
+
+interface ContactLiveState {
+    jid: string;
+    state: string;
+    label: string;
+    confidence: LiveConfidence;
+    source: LiveSignalSource;
+    lastSignalAt: string | null;
+    signals: Partial<Record<LiveSignalSource, LiveSignal>>;
+    recentSignals: LiveSignal[];
+    explanation: string;
+}
+
+const liveSignals: Map<string, Partial<Record<LiveSignalSource, LiveSignal>>> = new Map();
+const liveSignalHistory: Map<string, LiveSignal[]> = new Map();
 
 interface CaptureAuditContext {
     caseId: string;
@@ -626,6 +657,134 @@ async function auditEvent(
         targetJid: targetJid || null,
         details,
     });
+}
+
+function normalizeLiveJid(value: unknown): string | null {
+    const text = cleanText(value, 140);
+    if (!text) return null;
+    const base = text.split(':')[0] + (text.includes('@') ? `@${text.split('@')[1]}` : '');
+    const candidate = text.includes('@') ? text : `${text}@s.whatsapp.net`;
+    const normalized = candidate.endsWith('@lid') ? base.replace('@lid', '@s.whatsapp.net') : candidate;
+    const result = validateJid(normalized);
+    return result.ok ? result.value! : null;
+}
+
+function signalAgeMs(signal?: LiveSignal): number | null {
+    return signal ? Math.max(0, Date.now() - signal.timestamp) : null;
+}
+
+function formatPresenceLabel(value: string): string {
+    switch (value) {
+        case 'composing': return 'Escribiendo';
+        case 'recording': return 'Grabando audio';
+        case 'available': return 'Online';
+        case 'unavailable': return 'No disponible';
+        default: return value || 'Sin presencia';
+    }
+}
+
+function formatCallLabel(value: string): string {
+    switch (value) {
+        case 'offer': return 'Llamada entrante';
+        case 'ringing': return 'Llamando';
+        case 'accept': return 'Llamada activa';
+        case 'reject': return 'Llamada rechazada';
+        case 'timeout': return 'Llamada perdida';
+        case 'terminate': return 'Llamada finalizada';
+        default: return value || 'Evento de llamada';
+    }
+}
+
+function formatMessageLabel(direction: string, messageType: string): string {
+    return direction === 'outgoing'
+        ? `Mensaje enviado (${messageType})`
+        : `Mensaje recibido (${messageType})`;
+}
+
+function getMessageType(message: any): string {
+    const payload = message?.message;
+    if (!payload) return 'unknown';
+    if (payload.conversation || payload.extendedTextMessage) return 'text';
+    if (payload.imageMessage) return 'image';
+    if (payload.videoMessage) return 'video';
+    if (payload.audioMessage) return 'audio';
+    if (payload.documentMessage) return 'document';
+    if (payload.stickerMessage) return 'sticker';
+    if (payload.locationMessage || payload.liveLocationMessage) return 'location';
+    if (payload.contactMessage || payload.contactsArrayMessage) return 'contact';
+    if (payload.reactionMessage) return 'reaction';
+    if (payload.call) return 'call';
+    return Object.keys(payload)[0] || 'unknown';
+}
+
+function updateLiveSignal(jidInput: unknown, signal: Omit<LiveSignal, 'timestamp'> & { timestamp?: number }) {
+    const jid = normalizeLiveJid(jidInput);
+    if (!jid) return null;
+
+    const timestamp = signal.timestamp || Date.now();
+    const complete: LiveSignal = { ...signal, timestamp };
+    const signals = liveSignals.get(jid) || {};
+    signals[signal.source] = complete;
+    liveSignals.set(jid, signals);
+
+    const history = [complete, ...(liveSignalHistory.get(jid) || [])].slice(0, 200);
+    liveSignalHistory.set(jid, history);
+
+    const state = buildContactLiveState(jid);
+    io.emit('contact-live-state', state);
+    return state;
+}
+
+function buildContactLiveState(jid: string): ContactLiveState {
+    const signals = liveSignals.get(jid) || {};
+    const now = Date.now();
+    const fresh = (source: LiveSignalSource, maxAgeMs: number) => {
+        const signal = signals[source];
+        return signal && now - signal.timestamp <= maxAgeMs ? signal : null;
+    };
+
+    const call = fresh('call', 2 * 60_000);
+    const presence = fresh('presence', 90_000);
+    const message = fresh('message', 5 * 60_000);
+    const rtt = fresh('rtt_probe', 2 * 60_000);
+
+    let selected: LiveSignal | null = null;
+    let explanation = 'Sin senales recientes suficientes para clasificar actividad.';
+
+    if (call && ['offer', 'ringing', 'accept'].includes(call.value)) {
+        selected = call;
+        explanation = 'Evento de llamada recibido desde Baileys; esta senal tiene prioridad alta.';
+    } else if (presence && ['composing', 'recording', 'available'].includes(presence.value)) {
+        selected = presence;
+        explanation = 'Presence realtime de WhatsApp indica actividad directa del contacto.';
+    } else if (message) {
+        selected = message;
+        explanation = 'Mensaje reciente observado por Baileys; confirma actividad de mensajeria en la conversacion.';
+    } else if (presence && presence.value === 'unavailable') {
+        selected = presence;
+        explanation = 'Presence reporto unavailable; puede estar limitado por privacidad o caducidad de presencia.';
+    } else if (rtt) {
+        selected = rtt;
+        explanation = rtt.value === 'OFFLINE'
+            ? 'El probe RTT no recibio ACK. Esto es no concluyente y no prueba desconexion real.'
+            : 'Estado inferido por RTT/probe; menor prioridad que presence, mensajes o llamadas.';
+    }
+
+    const lastSignal = Object.values(signals)
+        .filter(Boolean)
+        .sort((a, b) => b!.timestamp - a!.timestamp)[0] || null;
+
+    return {
+        jid,
+        state: selected?.value || 'unknown',
+        label: selected?.label || 'Sin senal reciente',
+        confidence: selected?.confidence || 'none',
+        source: selected?.source || 'system',
+        lastSignalAt: lastSignal ? new Date(lastSignal.timestamp).toISOString() : null,
+        signals,
+        recentSignals: (liveSignalHistory.get(jid) || []).slice(0, 50),
+        explanation,
+    };
 }
 
 async function getCaseExportContext(caseId: string, authorizationNote: string): Promise<CaptureAuditContext | null> {
@@ -1231,8 +1390,43 @@ app.post('/public/checkin/:token/submit', async (req, res) => {
     });
 });
 
+async function rotateWhatsAppAuthState(reason: string) {
+    if (isRotatingWhatsAppAuth) return;
+    isRotatingWhatsAppAuth = true;
+    const backupDir = `${WHATSAPP_AUTH_DIR}.logged-out-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+    try {
+        console.log(`[WHATSAPP] Auth session invalid (${reason}). Rotating ${WHATSAPP_AUTH_DIR} -> ${backupDir}`);
+        await rm(backupDir, { recursive: true, force: true });
+        await rename(WHATSAPP_AUTH_DIR, backupDir);
+        console.log(`[WHATSAPP] Old auth session backed up at ${backupDir}. A new QR will be generated.`);
+    } catch (err: any) {
+        if (err?.code === 'ENOENT') {
+            console.log(`[WHATSAPP] Auth directory not found. A new QR will be generated.`);
+        } else {
+            console.log(`[WHATSAPP] Warning: could not backup auth directory (${err?.message || err}). Removing stale auth data.`);
+            await rm(WHATSAPP_AUTH_DIR, { recursive: true, force: true });
+        }
+    } finally {
+        isRotatingWhatsAppAuth = false;
+    }
+}
+
 async function connectToWhatsApp() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+    if (isWhatsAppConnecting) return;
+    isWhatsAppConnecting = true;
+
+    let state: any;
+    let saveCreds: any;
+    try {
+        const authState = await useMultiFileAuthState(WHATSAPP_AUTH_DIR);
+        state = authState.state;
+        saveCreds = authState.saveCreds;
+    } catch (err: any) {
+        isWhatsAppConnecting = false;
+        console.error(`[WHATSAPP] Could not load auth state (${err?.message || err}). Retrying in 3s.`);
+        setTimeout(() => connectToWhatsApp(), 3000);
+        return;
+    }
 
     sock = makeWASocket({
         auth: state,
@@ -1253,21 +1447,28 @@ async function connectToWhatsApp() {
         if (connection === 'close') {
             isWhatsAppConnected = false;
             currentWhatsAppQr = null; // Clear QR on close
+            stopAllTrackers('whatsapp connection closed');
             const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
             console.log(`connection closed (status: ${statusCode}), reconnecting: ${shouldReconnect}`);
             if (shouldReconnect) {
                 // Delay before reconnecting to avoid rapid loop
+                isWhatsAppConnecting = false;
                 setTimeout(() => connectToWhatsApp(), 3000);
+            } else {
+                isWhatsAppConnecting = false;
+                await rotateWhatsAppAuthState(`status ${statusCode}`);
+                setTimeout(() => connectToWhatsApp(), 1000);
             }
         } else if (connection === 'open') {
             isWhatsAppConnected = true;
             currentWhatsAppQr = null; // Clear QR on successful connection
+            isWhatsAppConnecting = false;
             console.log('opened connection');
             io.emit('connection-open');
 
-            // Auto-restore saved contacts from MongoDB
-            autoRestoreContacts();
+            // Let Baileys finish session sync before probes resume.
+            scheduleAutoRestoreContacts();
         }
     });
 
@@ -1340,7 +1541,43 @@ async function connectToWhatsApp() {
 
     sock.ev.on('messages.update', (updates: any) => {
         for (const update of updates) {
-            console.log(`[MSG UPDATE] JID: ${update.key.remoteJid}, ID: ${update.key.id}, Status: ${update.update.status}, FromMe: ${update.key.fromMe}`);
+            const remoteJid = normalizeLiveJid(update?.key?.remoteJid);
+            if (!remoteJid || !trackers.has(remoteJid)) continue;
+            console.log(`[MSG UPDATE] JID: ${remoteJid}, ID: ${update.key.id}, Status: ${update.update.status}, FromMe: ${update.key.fromMe}`);
+        }
+    });
+
+    sock.ev.on('messages.upsert', ({ messages, type }: any) => {
+        for (const message of messages || []) {
+            const remoteJid = normalizeLiveJid(message?.key?.remoteJid);
+            if (!remoteJid || !trackers.has(remoteJid)) continue;
+
+            const direction = message?.key?.fromMe ? 'outgoing' : 'incoming';
+            const messageType = getMessageType(message);
+            if (messageType === 'protocolMessage' || messageType === 'senderKeyDistributionMessage') {
+                continue;
+            }
+            const timestamp = Number(message?.messageTimestamp || 0);
+            const signalTimestamp = timestamp > 0 ? timestamp * 1000 : Date.now();
+            const payload = {
+                jid: remoteJid,
+                messageId: message?.key?.id || null,
+                direction,
+                messageType,
+                upsertType: type || null,
+                timestamp: new Date(signalTimestamp).toISOString(),
+            };
+
+            console.log(`[MSG UPSERT] ${remoteJid} ${direction} ${messageType} (${type || 'unknown'})`);
+            updateLiveSignal(remoteJid, {
+                source: 'message',
+                value: direction,
+                label: formatMessageLabel(direction, messageType),
+                confidence: 'high',
+                timestamp: signalTimestamp,
+                details: payload,
+            });
+            io.emit('message-activity', payload);
         }
     });
 
@@ -1348,6 +1585,19 @@ async function connectToWhatsApp() {
     sock.ev.on('call', async (calls: any[]) => {
         for (const call of calls) {
             console.log(`[CALL] Event: ${call.status} | From: ${call.from} | ID: ${call.id} | Video: ${call.isVideo || false}`);
+            updateLiveSignal(call.from, {
+                source: 'call',
+                value: call.status,
+                label: formatCallLabel(call.status),
+                confidence: ['offer', 'ringing', 'accept'].includes(call.status) ? 'high' : 'medium',
+                timestamp: call.date ? new Date(call.date).getTime() : Date.now(),
+                details: {
+                    callId: call.id,
+                    isVideo: call.isVideo || false,
+                    offline: call.offline,
+                    latencyMs: call.latencyMs,
+                },
+            });
 
             // Emit call event to all connected clients
             io.emit('call-event', {
@@ -1441,6 +1691,24 @@ async function connectToWhatsApp() {
 function wireTrackerCallbacks(tracker: WhatsAppTracker, jid: string) {
     tracker.onUpdate = (updateData) => {
         io.emit('tracker-update', { jid, ...updateData });
+        const devices = Array.isArray(updateData.devices) ? updateData.devices : [];
+        const primary = devices.find((d: any) => d.state?.includes?.('Online')) || devices[0];
+        const probeState = primary?.state;
+        if (probeState) {
+            updateLiveSignal(jid, {
+                source: 'rtt_probe',
+                value: String(probeState),
+                label: probeState === 'OFFLINE' ? 'Sin ACK' : String(probeState),
+                confidence: probeState === 'OFFLINE' ? 'low' : 'medium',
+                details: {
+                    rtt: primary?.rtt,
+                    avg: primary?.avg,
+                    median: updateData.median,
+                    threshold: updateData.threshold,
+                    deviceCount: updateData.deviceCount,
+                },
+            });
+        }
 
         if (updateData.median !== undefined && updateData.devices) {
             saveMeasurement({
@@ -1458,6 +1726,13 @@ function wireTrackerCallbacks(tracker: WhatsAppTracker, jid: string) {
 
     tracker.onPresenceChange = (data) => {
         console.log(`[PRESENCE] ${jid}: ${data.presence}`);
+        updateLiveSignal(jid, {
+            source: 'presence',
+            value: data.presence,
+            label: formatPresenceLabel(data.presence),
+            confidence: ['composing', 'recording', 'available'].includes(data.presence) ? 'high' : 'medium',
+            timestamp: data.timestamp,
+        });
         io.emit('presence-change', data);
     };
 
@@ -1465,6 +1740,34 @@ function wireTrackerCallbacks(tracker: WhatsAppTracker, jid: string) {
         console.log(`[NEW DEVICE] ${jid}: new device ${data.deviceJid} (total: ${data.totalDevices})`);
         io.emit('device-alert', data);
     };
+}
+
+function stopAllTrackers(reason: string) {
+    if (autoRestoreTimer) {
+        clearTimeout(autoRestoreTimer);
+        autoRestoreTimer = null;
+    }
+
+    if (trackers.size === 0) return;
+
+    console.log(`[TRACKERS] Stopping ${trackers.size} active tracker(s): ${reason}`);
+    for (const { tracker } of trackers.values()) {
+        try {
+            tracker.stopTracking();
+        } catch (err: any) {
+            console.log(`[TRACKERS] Warning: failed to stop tracker (${err?.message || err})`);
+        }
+    }
+    trackers.clear();
+}
+
+function scheduleAutoRestoreContacts(delayMs = 8000) {
+    if (autoRestoreTimer) clearTimeout(autoRestoreTimer);
+    autoRestoreTimer = setTimeout(() => {
+        autoRestoreTimer = null;
+        if (!isWhatsAppConnected || !sock) return;
+        autoRestoreContacts();
+    }, delayMs);
 }
 
 /**
@@ -1536,6 +1839,25 @@ app.get('/api/activity/:jid', async (req, res) => {
     const limit = parseLimit(req.query.limit, 50, 1000);
     const history = await getActivityHistory(jid, limit);
     res.json(history);
+});
+
+app.get('/api/contact/:jid/live-state', (req, res) => {
+    const jidResult = validateJid(req.params.jid);
+    if (!jidResult.ok) {
+        validationError(res, jidResult.errors || ['Invalid JID']);
+        return;
+    }
+    res.json(buildContactLiveState(jidResult.value!));
+});
+
+app.get('/api/contact/:jid/signals', (req, res) => {
+    const jidResult = validateJid(req.params.jid);
+    if (!jidResult.ok) {
+        validationError(res, jidResult.errors || ['Invalid JID']);
+        return;
+    }
+    const limit = parseLimit(req.query.limit, 50, 200);
+    res.json((liveSignalHistory.get(jidResult.value!) || []).slice(0, limit));
 });
 
 // REST endpoint: get state distribution stats
@@ -2138,6 +2460,7 @@ io.on('connection', (socket) => {
     socket.on('get-tracked-contacts', () => {
         const trackedContacts = Array.from(trackers.keys());
         socket.emit('tracked-contacts', trackedContacts);
+        trackedContacts.forEach(jid => socket.emit('contact-live-state', buildContactLiveState(jid)));
     });
 
     // Add contact - WhatsApp only

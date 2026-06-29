@@ -27,6 +27,15 @@ interface DeviceInfo {
     avg: number;
 }
 
+interface LiveState {
+    state: string;
+    label: string;
+    source: 'presence' | 'call' | 'message' | 'rtt_probe' | 'system';
+    confidence: 'none' | 'low' | 'medium' | 'high';
+    lastSignalAt: string | null;
+    explanation?: string;
+}
+
 interface ActivityEntry {
     state: string;
     timestamp: string;
@@ -159,6 +168,7 @@ interface ContactCardProps {
     profilePic: string | null;
     connectionType?: 'wifi' | 'cellular' | 'unknown';
     typingState?: 'composing' | 'recording' | null;
+    liveState?: LiveState | null;
     deviceAlerts?: { deviceJid: string; totalDevices: number; timestamp: number }[];
     onRemove: () => void;
     privacyMode?: boolean;
@@ -176,6 +186,7 @@ export function ContactCard({
     profilePic,
     connectionType,
     typingState,
+    liveState,
     deviceAlerts,
     onRemove,
     privacyMode = false
@@ -390,16 +401,29 @@ export function ContactCard({
     const resolvedName = customName || resolvedPushName || displayNumber;
 
     const lastData = data[data.length - 1];
-    const currentStatus = devices.length > 0
-        ? (devices.find(d => d.state === 'OFFLINE')?.state ||
-            devices.find(d => d.state.includes('Online'))?.state ||
+    const presenceStatus = typingState === 'composing' || presence === 'composing'
+        ? 'Escribiendo'
+        : typingState === 'recording' || presence === 'recording'
+            ? 'Grabando audio'
+            : presence === 'available'
+                ? 'Online'
+                : null;
+    const liveStatus = liveState && liveState.state !== 'unknown' && liveState.confidence !== 'none'
+        ? liveState.label
+        : null;
+    const deviceStatus = devices.length > 0
+        ? (devices.find(d => d.state.includes('Online'))?.state ||
+            devices.find(d => d.state === 'Standby')?.state ||
+            devices.find(d => d.state !== 'OFFLINE')?.state ||
+            devices.find(d => d.state === 'OFFLINE')?.state ||
             devices[0].state)
         : 'Unknown';
+    const currentStatus = liveStatus || presenceStatus || deviceStatus;
 
     const blurredNumber = privacyMode ? displayNumber.replace(/\d/g, '•') : displayNumber;
 
     const statusColor = currentStatus === 'OFFLINE' ? 'danger'
-        : currentStatus.includes('Online') ? 'success'
+        : currentStatus.includes('Online') || currentStatus === 'Escribiendo' || currentStatus === 'Grabando audio' || liveState?.source === 'message' || liveState?.source === 'call' ? 'success'
         : currentStatus === 'Standby' ? 'warning' : 'neutral';
 
     const statusConfig = {
@@ -635,6 +659,11 @@ export function ContactCard({
                             <span className={statusConfig.badge}>
                                 {currentStatus}
                             </span>
+                            {liveState && liveState.source !== 'system' && (
+                                <span className="text-[10px] text-txt-dim">
+                                    via {liveState.source} · {liveState.confidence}
+                                </span>
+                            )}
                             {profile?.about && !privacyMode && (
                                 <span className="text-[10px] text-txt-dim italic truncate max-w-[200px]">
                                     "{profile.about}"

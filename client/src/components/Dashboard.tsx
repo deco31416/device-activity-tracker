@@ -41,6 +41,16 @@ interface DeviceInfo {
     avg: number;
 }
 
+interface LiveState {
+    jid: string;
+    state: string;
+    label: string;
+    source: 'presence' | 'call' | 'message' | 'rtt_probe' | 'system';
+    confidence: 'none' | 'low' | 'medium' | 'high';
+    lastSignalAt: string | null;
+    explanation?: string;
+}
+
 interface ContactInfo {
     jid: string;
     displayNumber: string;
@@ -54,6 +64,7 @@ interface ContactInfo {
     profilePic: string | null;
     connectionType?: 'wifi' | 'cellular' | 'unknown';
     typingState?: 'composing' | 'recording' | null;
+    liveState?: LiveState | null;
     deviceAlerts?: { deviceJid: string; totalDevices: number; timestamp: number }[];
 }
 
@@ -92,6 +103,7 @@ export function Dashboard({ connectionState }: DashboardProps) {
                         profilePic: contact.profilePic || existing?.profilePic || null,
                         connectionType: existing?.connectionType,
                         typingState: existing?.typingState,
+                        liveState: existing?.liveState,
                         deviceAlerts: existing?.deviceAlerts,
                     });
                 });
@@ -205,7 +217,8 @@ export function Dashboard({ connectionState }: DashboardProps) {
                     devices: [],
                     deviceCount: 0,
                     presence: null,
-                    profilePic: null
+                    profilePic: null,
+                    liveState: null
                 });
                 return next;
             });
@@ -246,7 +259,8 @@ export function Dashboard({ connectionState }: DashboardProps) {
                             devices: [],
                             deviceCount: 0,
                             presence: null,
-                            profilePic: null
+                            profilePic: null,
+                            liveState: null
                         });
                     }
                 });
@@ -318,6 +332,50 @@ export function Dashboard({ connectionState }: DashboardProps) {
             });
         }
 
+        function onContactLiveState(data: LiveState) {
+            setContacts(prev => {
+                const next = new Map(prev);
+                const contact = next.get(data.jid);
+                if (contact) {
+                    const typing = data.state === 'composing'
+                        ? 'composing'
+                        : data.state === 'recording'
+                            ? 'recording'
+                            : contact.typingState;
+                    next.set(data.jid, {
+                        ...contact,
+                        liveState: data,
+                        typingState: typing,
+                        presence: data.source === 'presence' ? data.state : contact.presence,
+                    });
+                }
+                return next;
+            });
+        }
+
+        function onMessageActivity(data: { jid: string; direction: string; messageType: string; timestamp: string }) {
+            setContacts(prev => {
+                const next = new Map(prev);
+                const contact = next.get(data.jid);
+                if (contact) {
+                    next.set(data.jid, {
+                        ...contact,
+                        liveState: {
+                            jid: data.jid,
+                            state: data.direction,
+                            label: data.direction === 'outgoing'
+                                ? `Mensaje enviado (${data.messageType})`
+                                : `Mensaje recibido (${data.messageType})`,
+                            source: 'message',
+                            confidence: 'high',
+                            lastSignalAt: data.timestamp,
+                        },
+                    });
+                }
+                return next;
+            });
+        }
+
         function onDeviceAlert(data: { deviceJid: string; targetJid: string; totalDevices: number; timestamp: number }) {
             setContacts(prev => {
                 const next = new Map(prev);
@@ -341,6 +399,8 @@ export function Dashboard({ connectionState }: DashboardProps) {
         socket.on('custom-name-updated', onCustomNameUpdated);
         socket.on('contact-profile-update', onContactProfileUpdate);
         socket.on('presence-change', onPresenceChange);
+        socket.on('contact-live-state', onContactLiveState);
+        socket.on('message-activity', onMessageActivity);
         socket.on('device-alert', onDeviceAlert);
 
         socket.emit('get-tracked-contacts');
@@ -357,6 +417,8 @@ export function Dashboard({ connectionState }: DashboardProps) {
             socket.off('custom-name-updated', onCustomNameUpdated);
             socket.off('contact-profile-update', onContactProfileUpdate);
             socket.off('presence-change', onPresenceChange);
+            socket.off('contact-live-state', onContactLiveState);
+            socket.off('message-activity', onMessageActivity);
             socket.off('device-alert', onDeviceAlert);
         };
     }, []);
@@ -642,6 +704,7 @@ export function Dashboard({ connectionState }: DashboardProps) {
                             profilePic={contact.profilePic}
                             connectionType={contact.connectionType}
                             typingState={contact.typingState}
+                            liveState={contact.liveState}
                             deviceAlerts={contact.deviceAlerts}
                             onRemove={() => handleRemove(contact.jid)}
                             privacyMode={privacyMode}
