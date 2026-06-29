@@ -9,6 +9,13 @@ All notable changes to this project will be documented in this file.
 ### 🔧 Changes
 - WhatsApp/Baileys auth recovery now rotates stale `auth_info_baileys` data when the connection closes with `401/loggedOut`, allowing the backend to generate a fresh QR automatically.
 - Local startup script now sets UTF-8 console output and suppresses frontend Node deprecation warnings that appeared as red PowerShell error records even though the React server compiled successfully.
+- Runtime logging now suppresses Baileys/libsignal session internals such as ratchet keys, prekeys, identity keys, and buffer dumps during session close events.
+- Live presence now expires ephemeral `composing`/`recording` states and clears stale frontend typing indicators when WhatsApp stops sending realtime presence.
+- Baileys call events now resolve `@lid` identities through the local reverse LID map before updating live contact state, so `offer`/`ringing`/`accept`/`terminate` events appear on the tracked phone-number contact.
+- Added a minimal raw `CB:call` monitor to detect explicit `busy` call nodes/reasons when WhatsApp emits them but the installed Baileys version would otherwise coerce unknown call nodes to `ringing`.
+- Added `activity_events` persistence for high-value WhatsApp activity signals (`presence`, `call`, `message`) without duplicating RTT probe volume.
+- Stats now include a separate "Senales observadas" section for WhatsApp/presence/call/message activity while keeping RTT distribution unchanged.
+- OPSEC/privacy score now deducts presence, call, and message exposure only when those signal types were actually observed.
 
 ### 📚 Documentation
 - README documents the `401/loggedOut` auth recovery behavior and cleaner local terminal output.
@@ -17,6 +24,11 @@ All notable changes to this project will be documented in this file.
 - Backend TypeScript build passing.
 - Frontend production build passing.
 - PowerShell startup script syntax validated.
+- Security QA verified runtime logs no longer emit `privKey`, `rootKey`, `remoteIdentityKey`, `pendingPreKey`, `Closing session`, or raw `<Buffer>` session dumps.
+- Runtime QA verified stale `Escribiendo` no remains selected after the backend live-state falls back to fresh presence/RTT signals.
+- Runtime QA confirmed Baileys exposes call events through `sock.ev.on('call')` with statuses `offer`, `ringing`, `accept`, `reject`, `timeout`, and `terminate`; local logs showed `offer`, `ringing`, and `terminate` from an `@lid` identity resolved to the tracked number.
+- Runtime QA documents `busy` as a best-effort raw-node signal, not an official typed Baileys call status in this dependency version.
+- Backend, frontend, and unit tests pass after adding combined observed-activity stats.
 
 ---
 

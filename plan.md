@@ -1,6 +1,6 @@
 # Device Activity Tracker - Planner y Auditoria
 
-Ultima actualizacion: 2026-06-28
+Ultima actualizacion: 2026-06-29
 
 ## Objetivo
 
@@ -43,6 +43,11 @@ Nota tecnica: el sistema debe hablar de "trafico observado", "infraestructura", 
 - [x] Network Monitor profesionalizado: backend genera `ipInsights`, filtros consistentes de infraestructura/local, IP Tracker separa preliminares vs infraestructura y se corrigio auto-scroll que atrapaba la vista durante captura.
 - [x] Arranque local profesional: `pnpm run dev:local` y tareas VS Code levantan backend/frontend en 4000/4001 con terminales visibles, nombres y logs.
 - [x] Hotfix WhatsApp local: sesiones Baileys cerradas con `401/loggedOut` rotan `auth_info_baileys` y regeneran QR automaticamente.
+- [x] QA seguridad runtime: logs del backend suprimen dumps internos de Baileys/libsignal (`privKey`, `rootKey`, prekeys, identity keys y buffers) durante cierre de sesion.
+- [x] QA realtime: corregido estado `Escribiendo/Grabando` pegado con TTL efimero y limpieza frontend cuando live-state cambia.
+- [x] QA llamadas Baileys: eventos `offer/ringing/accept/reject/timeout/terminate` auditados; se resolvio `@lid` hacia el numero rastreado usando el mapa local inverso para que la UI vea llamadas en el contacto correcto.
+- [x] QA llamada ocupada: `busy` no existe como estado tipado oficial en esta version de Baileys, pero se agrego monitor crudo `CB:call` de bajo alcance para capturarlo si WhatsApp lo emite explicitamente.
+- [x] Estadisticas combinadas: se agrego coleccion `activity_events` para presencia, llamadas y mensajes; Stats muestra "Senales observadas" separadas de RTT y OPSEC descuenta esas exposiciones solo si fueron detectadas.
 - [ ] Resolver residuales de Baileys/libsignal/protobufjs/music-metadata en rama separada con smoke test real de WhatsApp antes de promover.
 
 ## Arquitectura Definida

@@ -28,6 +28,19 @@ export interface MeasurementDoc {
     timestamp: Date;
 }
 
+export type ActivityEventSource = 'presence' | 'call' | 'message' | 'rtt_probe' | 'system';
+
+export interface ActivityEventDoc {
+    jid: string;
+    source: ActivityEventSource;
+    type: string;
+    label: string;
+    confidence: 'none' | 'low' | 'medium' | 'high';
+    details?: Record<string, unknown>;
+    timestamp: Date;
+    timestampUtc: string;
+}
+
 export interface ContactDoc {
     jid: string;
     number: string;
@@ -220,6 +233,7 @@ let client: MongoClient | null = null;
 let db: Db | null = null;
 
 let measurements: Collection<MeasurementDoc>;
+let activityEvents: Collection<ActivityEventDoc>;
 let contacts: Collection<ContactDoc>;
 let sessions: Collection<SessionDoc>;
 let callAnalyses: Collection<CallAnalysisResult & { savedAt?: Date; updatedAt?: Date }>;
@@ -247,6 +261,7 @@ export async function connectDB(): Promise<boolean> {
         db = client.db(DB_NAME);
 
         measurements = db.collection<MeasurementDoc>('measurements');
+        activityEvents = db.collection<ActivityEventDoc>('activity_events');
         contacts = db.collection<ContactDoc>('contacts');
         sessions = db.collection<SessionDoc>('sessions');
         callAnalyses = db.collection<CallAnalysisResult & { savedAt?: Date; updatedAt?: Date }>('call_analyses');
@@ -258,6 +273,9 @@ export async function connectDB(): Promise<boolean> {
         // Create indexes for efficient queries
         await measurements.createIndex({ jid: 1, timestamp: -1 });
         await measurements.createIndex({ timestamp: 1 }, { expireAfterSeconds: 30 * 24 * 3600 }); // TTL: 30 days
+        await activityEvents.createIndex({ jid: 1, timestamp: -1 });
+        await activityEvents.createIndex({ source: 1, type: 1, timestamp: -1 });
+        await activityEvents.createIndex({ timestamp: 1 }, { expireAfterSeconds: 90 * 24 * 3600 }); // TTL: 90 days
         await contacts.createIndex({ jid: 1 }, { unique: true });
         await callAnalyses.createIndex({ callId: 1 });
         await callAnalyses.createIndex({ targetJid: 1, startTime: -1 });
@@ -301,6 +319,29 @@ export async function saveMeasurement(data: Omit<MeasurementDoc, 'timestamp'>): 
         });
     } catch (err) {
         console.error('[DB] Error saving measurement:', err);
+    }
+}
+
+/**
+ * Save a high-value observed activity event (presence, call, message).
+ * RTT probes remain in the measurements collection to avoid duplicate volume.
+ */
+export async function saveActivityEvent(data: Omit<ActivityEventDoc, 'timestamp' | 'timestampUtc'> & { timestamp?: Date | number | string }): Promise<void> {
+    if (!db) return;
+    try {
+        const timestamp = data.timestamp ? new Date(data.timestamp) : new Date();
+        await activityEvents.insertOne({
+            jid: data.jid,
+            source: data.source,
+            type: data.type,
+            label: data.label,
+            confidence: data.confidence,
+            details: data.details,
+            timestamp,
+            timestampUtc: timestamp.toISOString(),
+        });
+    } catch (err) {
+        console.error('[DB] Error saving activity event:', err);
     }
 }
 
@@ -651,6 +692,108 @@ export async function getActivityHistory(jid: string, limit: number = 50): Promi
     }
 }
 
+export async function getObservedActivitySummary(jid: string, days: number = 30): Promise<{
+    totalEvents: number;
+    activeEvents: number;
+    lastEvent: ActivityEventDoc | null;
+    lastPresence: ActivityEventDoc | null;
+    lastCall: ActivityEventDoc | null;
+    lastMessage: ActivityEventDoc | null;
+    bySource: Record<string, number>;
+    byType: Array<{ type: string; label: string; count: number; source: string }>;
+    confidence: Record<string, number>;
+    activeDays: number;
+    windowDays: number;
+}> {
+    const empty = {
+        totalEvents: 0,
+        activeEvents: 0,
+        lastEvent: null,
+        lastPresence: null,
+        lastCall: null,
+        lastMessage: null,
+        bySource: {},
+        byType: [],
+        confidence: {},
+        activeDays: 0,
+        windowDays: days,
+    };
+    if (!db) return empty;
+    try {
+        const since = new Date(Date.now() - days * 86_400_000);
+        const [events, grouped] = await Promise.all([
+            activityEvents
+                .find({ jid, timestamp: { $gte: since } })
+                .sort({ timestamp: -1 })
+                .limit(500)
+                .toArray(),
+            activityEvents.aggregate<{
+                _id: { source: string; type: string; label: string; confidence: string };
+                count: number;
+                activeDays: string[];
+            }>([
+                { $match: { jid, timestamp: { $gte: since } } },
+                {
+                    $group: {
+                        _id: { source: '$source', type: '$type', label: '$label', confidence: '$confidence' },
+                        count: { $sum: 1 },
+                        activeDays: { $addToSet: { $dateToString: { format: '%Y-%m-%d', date: '$timestamp' } } },
+                    },
+                },
+                { $sort: { count: -1 } },
+            ]).toArray(),
+        ]);
+
+        const bySource: Record<string, number> = {};
+        const confidence: Record<string, number> = {};
+        const daySet = new Set<string>();
+        let totalEvents = 0;
+        grouped.forEach(group => {
+            totalEvents += group.count;
+            bySource[group._id.source] = (bySource[group._id.source] || 0) + group.count;
+            confidence[group._id.confidence] = (confidence[group._id.confidence] || 0) + group.count;
+            group.activeDays.forEach(day => daySet.add(day));
+        });
+
+        const activeTypes = new Set([
+            'composing',
+            'recording',
+            'available',
+            'incoming',
+            'outgoing',
+            'offer',
+            'ringing',
+            'accept',
+            'busy',
+        ]);
+        const activeEvents = grouped
+            .filter(group => activeTypes.has(group._id.type))
+            .reduce((sum, group) => sum + group.count, 0);
+
+        return {
+            totalEvents,
+            activeEvents,
+            lastEvent: events[0] || null,
+            lastPresence: events.find(event => event.source === 'presence') || null,
+            lastCall: events.find(event => event.source === 'call') || null,
+            lastMessage: events.find(event => event.source === 'message') || null,
+            bySource,
+            byType: grouped.slice(0, 8).map(group => ({
+                type: group._id.type,
+                label: group._id.label,
+                source: group._id.source,
+                count: group.count,
+            })),
+            confidence,
+            activeDays: daySet.size,
+            windowDays: days,
+        };
+    } catch (err) {
+        console.error('[DB] Error fetching observed activity summary:', err);
+        return empty;
+    }
+}
+
 /**
  * Get state distribution (% time in each state)
  */
@@ -664,6 +807,7 @@ export async function getStateDistribution(jid: string): Promise<{
     lastOnline: Date | null;
     avgRtt: number;
     insights: StatsInsights;
+    observedActivity: Awaited<ReturnType<typeof getObservedActivitySummary>>;
 }> {
     const empty = {
         online: 0,
@@ -675,6 +819,19 @@ export async function getStateDistribution(jid: string): Promise<{
         lastOnline: null,
         avgRtt: 0,
         insights: buildStatsInsights([]),
+        observedActivity: {
+            totalEvents: 0,
+            activeEvents: 0,
+            lastEvent: null,
+            lastPresence: null,
+            lastCall: null,
+            lastMessage: null,
+            bySource: {},
+            byType: [],
+            confidence: {},
+            activeDays: 0,
+            windowDays: 30,
+        },
     };
     if (!db) return empty;
     try {
@@ -715,6 +872,8 @@ export async function getStateDistribution(jid: string): Promise<{
             .sort({ timestamp: 1 })
             .toArray();
 
+        const observedActivity = await getObservedActivitySummary(jid, 30);
+
         return {
             online: total > 0 ? Math.round((onlineCount / total) * 100) : 0,
             standby: total > 0 ? Math.round((standbyCount / total) * 100) : 0,
@@ -729,6 +888,7 @@ export async function getStateDistribution(jid: string): Promise<{
                 rtt: doc.rtt,
                 timestamp: doc.timestamp,
             }))),
+            observedActivity,
         };
     } catch (err) {
         console.error('[DB] Error fetching state distribution:', err);

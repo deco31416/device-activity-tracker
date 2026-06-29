@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, BarChart3, Clock, Database, History, Radio, Target, Timer, TrendingUp, Wifi } from 'lucide-react';
+import { Activity, BarChart3, Clock, Database, History, Keyboard, MessageSquare, PhoneCall, Radio, Target, Timer, TrendingUp, Wifi } from 'lucide-react';
 import clsx from 'clsx';
 
 export interface StatsData {
@@ -12,6 +12,29 @@ export interface StatsData {
     lastOnline: string | null;
     avgRtt: number;
     insights?: StatsInsights;
+    observedActivity?: ObservedActivitySummary;
+}
+
+interface ObservedActivityEvent {
+    source: 'presence' | 'call' | 'message' | 'rtt_probe' | 'system';
+    type: string;
+    label: string;
+    confidence: 'none' | 'low' | 'medium' | 'high';
+    timestamp: string;
+}
+
+interface ObservedActivitySummary {
+    totalEvents: number;
+    activeEvents: number;
+    lastEvent: ObservedActivityEvent | null;
+    lastPresence: ObservedActivityEvent | null;
+    lastCall: ObservedActivityEvent | null;
+    lastMessage: ObservedActivityEvent | null;
+    bySource: Record<string, number>;
+    byType: Array<{ type: string; label: string; count: number; source: string }>;
+    confidence: Record<string, number>;
+    activeDays: number;
+    windowDays: number;
 }
 
 interface StatsInsights {
@@ -102,6 +125,14 @@ export function StatsPanel({ stats, patterns, formatDateTime, timeAgo }: StatsPa
                 </div>
             </section>
 
+            {stats.observedActivity && stats.observedActivity.totalEvents > 0 && (
+                <ObservedActivityPanel
+                    observed={stats.observedActivity}
+                    formatDateTime={formatDateTime}
+                    timeAgo={timeAgo}
+                />
+            )}
+
             <section className="grid grid-cols-1 xl:grid-cols-[1.05fr_0.95fr] gap-4">
                 <div className="bg-surface-overlay rounded-xl border border-surface-border p-5">
                     <h6 className="text-[10px] text-txt-dim uppercase tracking-wider mb-4 flex items-center gap-1.5">
@@ -141,6 +172,77 @@ export function StatsPanel({ stats, patterns, formatDateTime, timeAgo }: StatsPa
                 </div>
             </section>
         </div>
+    );
+}
+
+function ObservedActivityPanel({
+    observed,
+    formatDateTime,
+    timeAgo,
+}: {
+    observed: ObservedActivitySummary;
+    formatDateTime: (value: string | null) => string;
+    timeAgo: (value: string | null) => string;
+}) {
+    const sourceCounts = {
+        presence: observed.bySource.presence || 0,
+        call: observed.bySource.call || 0,
+        message: observed.bySource.message || 0,
+    };
+    const activityConfidence = observed.totalEvents > 0
+        ? Math.round(((observed.confidence.high || 0) / observed.totalEvents) * 100)
+        : 0;
+
+    return (
+        <section className="bg-surface-overlay rounded-xl border border-surface-border p-5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between mb-4">
+                <div>
+                    <h6 className="text-[10px] text-txt-dim uppercase tracking-wider flex items-center gap-1.5">
+                        <Activity size={12} /> Senales observadas
+                    </h6>
+                    <p className="text-xs text-txt-muted mt-1">
+                        Actividad complementaria detectada por WhatsApp/presence, llamadas y mensajes; RTT se mantiene separado como medicion tecnica.
+                    </p>
+                </div>
+                <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-md border border-success/30 bg-success-muted text-success w-fit">
+                    {observed.activeEvents.toLocaleString()} activas
+                </span>
+            </div>
+
+            <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+                <MetricTile icon={<Radio size={15} />} label="Eventos" value={observed.totalEvents.toLocaleString()} />
+                <MetricTile icon={<Keyboard size={15} />} label="Presence" value={sourceCounts.presence.toLocaleString()} />
+                <MetricTile icon={<PhoneCall size={15} />} label="Llamadas" value={sourceCounts.call.toLocaleString()} />
+                <MetricTile icon={<MessageSquare size={15} />} label="Mensajes" value={sourceCounts.message.toLocaleString()} />
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-[0.9fr_1.1fr] gap-3 mt-3">
+                <div className="rounded-lg border border-surface-border bg-surface-hover p-3">
+                    <p className="text-[10px] text-txt-muted uppercase tracking-wider mb-2">Ultima senal</p>
+                    <p className="text-sm font-semibold text-txt-primary">{observed.lastEvent?.label || '-'}</p>
+                    <p className="text-[11px] text-txt-muted mt-1">
+                        {observed.lastEvent ? `${sourceLabel(observed.lastEvent.source)} · ${timeAgo(observed.lastEvent.timestamp)}` : 'Sin senales recientes'}
+                    </p>
+                    <p className="text-[10px] text-txt-dim mt-1">
+                        {observed.lastEvent ? formatDateTime(observed.lastEvent.timestamp) : '-'}
+                    </p>
+                </div>
+                <div className="rounded-lg border border-surface-border bg-surface-hover p-3">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                        <p className="text-[10px] text-txt-muted uppercase tracking-wider">Tipos principales</p>
+                        <span className="text-[10px] text-success">{activityConfidence}% alta confianza</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {observed.byType.slice(0, 4).map(item => (
+                            <div key={`${item.source}:${item.type}`} className="flex items-center justify-between gap-2 rounded-md border border-surface-border bg-surface-overlay px-3 py-2">
+                                <span className="text-xs text-txt-secondary truncate">{item.label}</span>
+                                <span className="text-xs font-bold text-txt-primary">{item.count.toLocaleString()}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </section>
     );
 }
 
@@ -316,6 +418,16 @@ function formatMinutes(minutes: number): string {
     if (!minutes || minutes <= 0) return '-';
     if (minutes < 60) return `${minutes}m`;
     return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+function sourceLabel(source: string): string {
+    switch (source) {
+        case 'presence': return 'Presence';
+        case 'call': return 'Llamada';
+        case 'message': return 'Mensaje';
+        case 'rtt_probe': return 'RTT';
+        default: return source || 'Sistema';
+    }
 }
 
 function padHour(hour: number): string {

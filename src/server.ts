@@ -10,15 +10,16 @@
 import 'dotenv/config';
 import express from 'express';
 import { createServer } from 'http';
+import { existsSync, readFileSync } from 'fs';
 import { mkdir, rename, rm, writeFile } from 'fs/promises';
 import path from 'path';
 import { Server } from 'socket.io';
 import cors from 'cors';
-import makeWASocket, { DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys';
+import makeWASocket, { DisconnectReason, getAllBinaryNodeChildren, useMultiFileAuthState, type BinaryNode } from '@whiskeysockets/baileys';
 import { pino } from 'pino';
 import { Boom } from '@hapi/boom';
 import { WhatsAppTracker, ProbeMethod } from './tracker.js';
-import { connectDB, isDBConnected, saveMeasurement, saveContact, removeContact, reactivateContact, getRecentMeasurements, getSavedContacts, getActiveContacts, getActivityHistory, getStateDistribution, updateContactProfile, updateCustomName, getContactProfile, getOnlinePatterns, generateReport, disconnectDB, saveCallAnalysis, getCallAnalyses, saveAuditEvent, getAuditEvents, createCase, getCase, updateCase, saveCaseEvidenceLink, deleteCaseEvidenceLink, getCaseEvidenceLinks, saveCheckInRequest, getCheckInByToken, updateCheckIn, completeCheckIn, deleteCheckIn, listCheckIns, CheckInDoc } from './db.js';
+import { connectDB, isDBConnected, saveMeasurement, saveActivityEvent, saveContact, removeContact, reactivateContact, getRecentMeasurements, getSavedContacts, getActiveContacts, getActivityHistory, getStateDistribution, getObservedActivitySummary, updateContactProfile, updateCustomName, getContactProfile, getOnlinePatterns, generateReport, disconnectDB, saveCallAnalysis, getCallAnalyses, saveAuditEvent, getAuditEvents, createCase, getCase, updateCase, saveCaseEvidenceLink, deleteCaseEvidenceLink, getCaseEvidenceLinks, saveCheckInRequest, getCheckInByToken, updateCheckIn, completeCheckIn, deleteCheckIn, listCheckIns, CheckInDoc } from './db.js';
 import { listInterfaces, startCapture, stopCapture, getCaptureStatus, getRecentPackets, updateFilter, exportJSON, exportCSV, CaptureFilter, PacketMeta } from './packet-capture.js';
 import { initAnalytics, getFullIntelligence, getDailyRoutine, getAvailabilityProfile, getSessionStats, getWeeklyHeatmap, getHabitProfile, getCorrelation } from './analytics.js';
 import { startCallCapture, stopCallCapture, getCallCaptureStatus, getCallAnalysisHistory, getLatestCallAnalysis, autoDetectInterface } from './call-analyzer.js';
@@ -30,6 +31,57 @@ import { registerReportRoutes } from './routes/reports.js';
 import { registerRuntimeRoutes, sendCaptureUnavailableIfNeeded } from './routes/runtime.js';
 import { buildRuntimeConfig, resolveTrustProxy, validateProductionSecurity } from './runtime.js';
 import { CASE_STATUSES, cleanText, normalizeOptionalJid, parseLimit, socketValidationError, validateCaseId, validateJid, validateRequiredText, validationError } from './validation.js';
+
+const originalConsoleLog = console.log.bind(console);
+const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+
+function shouldSuppressSensitiveRuntimeOutput(message: string): boolean {
+    const sensitiveFragments = [
+        'Closing session:',
+        'SessionEntry',
+        '_chains',
+        'registrationId',
+        'currentRatchet',
+        'ephemeralKeyPair',
+        'pendingPreKey',
+        'indexInfo',
+        'baseKey',
+        'remoteIdentityKey',
+        'lastRemoteEphemeralKey',
+        'previousCounter',
+        'rootKey',
+        'signedKeyId',
+        'preKeyId',
+        'privKey',
+        '<Buffer',
+    ];
+
+    return sensitiveFragments.some(fragment => message.includes(fragment));
+}
+
+function installSensitiveRuntimeLogGuard() {
+    console.log = (...args: any[]) => {
+        const rendered = args.map(arg => typeof arg === 'string' ? arg : String(arg)).join(' ');
+        if (!shouldSuppressSensitiveRuntimeOutput(rendered)) {
+            originalConsoleLog(...args);
+        }
+    };
+
+    process.stdout.write = ((chunk: any, encoding?: any, callback?: any): boolean => {
+        const message = String(chunk);
+        if (shouldSuppressSensitiveRuntimeOutput(message)) {
+            if (typeof encoding === 'function') {
+                encoding();
+            } else if (typeof callback === 'function') {
+                callback();
+            }
+            return true;
+        }
+        return originalStdoutWrite(chunk, encoding, callback);
+    }) as typeof process.stdout.write;
+}
+
+installSensitiveRuntimeLogGuard();
 
 // Configuration
 const ALLOWED_ORIGINS = process.env.ALLOWED_ORIGINS
@@ -547,6 +599,11 @@ const trackers: Map<string, TrackerEntry> = new Map(); // JID -> Tracker entry
 
 type LiveSignalSource = 'presence' | 'call' | 'message' | 'rtt_probe' | 'system';
 type LiveConfidence = 'none' | 'low' | 'medium' | 'high';
+const EPHEMERAL_PRESENCE_TTL_MS = 12_000;
+const AVAILABLE_PRESENCE_TTL_MS = 45_000;
+const UNAVAILABLE_PRESENCE_TTL_MS = 90_000;
+const ACTIVE_CALL_TTL_MS = 2 * 60_000;
+const ENDED_CALL_TTL_MS = 8_000;
 
 interface LiveSignal {
     source: LiveSignalSource;
@@ -571,6 +628,7 @@ interface ContactLiveState {
 
 const liveSignals: Map<string, Partial<Record<LiveSignalSource, LiveSignal>>> = new Map();
 const liveSignalHistory: Map<string, LiveSignal[]> = new Map();
+const persistedActivityEventKeys: Map<string, number> = new Map();
 
 interface CaptureAuditContext {
     caseId: string;
@@ -580,6 +638,7 @@ interface CaptureAuditContext {
 
 let activeNetworkAuditContext: (CaptureAuditContext & { captureSessionId: string }) | null = null;
 let activeCallAuditContext: (CaptureAuditContext & { targetJid: string; callId: string }) | null = null;
+const liveSignalExpiryTimers = new Map<string, NodeJS.Timeout>();
 
 function rejectCaptureUnavailable(res: express.Response): boolean {
     return sendCaptureUnavailableIfNeeded(RUNTIME_CONFIG, res);
@@ -662,11 +721,26 @@ async function auditEvent(
 function normalizeLiveJid(value: unknown): string | null {
     const text = cleanText(value, 140);
     if (!text) return null;
-    const base = text.split(':')[0] + (text.includes('@') ? `@${text.split('@')[1]}` : '');
     const candidate = text.includes('@') ? text : `${text}@s.whatsapp.net`;
-    const normalized = candidate.endsWith('@lid') ? base.replace('@lid', '@s.whatsapp.net') : candidate;
+    const normalized = candidate.endsWith('@lid') ? resolveLidToPhoneJid(candidate) : candidate;
+    if (!normalized) return null;
     const result = validateJid(normalized);
     return result.ok ? result.value! : null;
+}
+
+function resolveLidToPhoneJid(candidate: string): string | null {
+    const lid = cleanText(candidate.split('@')[0], 80).replace(/\D/g, '');
+    if (!lid) return null;
+    const reverseMapPath = path.join(WHATSAPP_AUTH_DIR, `lid-mapping-${lid}_reverse.json`);
+    if (!existsSync(reverseMapPath)) return null;
+    try {
+        const phone = JSON.parse(readFileSync(reverseMapPath, 'utf8'));
+        const digits = typeof phone === 'string' ? phone.replace(/\D/g, '') : '';
+        if (!digits) return null;
+        return `${digits}@s.whatsapp.net`;
+    } catch {
+        return null;
+    }
 }
 
 function signalAgeMs(signal?: LiveSignal): number | null {
@@ -688,11 +762,16 @@ function formatCallLabel(value: string): string {
         case 'offer': return 'Llamada entrante';
         case 'ringing': return 'Llamando';
         case 'accept': return 'Llamada activa';
+        case 'busy': return 'Ocupado en llamada';
         case 'reject': return 'Llamada rechazada';
         case 'timeout': return 'Llamada perdida';
         case 'terminate': return 'Llamada finalizada';
         default: return value || 'Evento de llamada';
     }
+}
+
+function isActiveCallStatus(value: string): boolean {
+    return ['offer', 'ringing', 'accept', 'busy'].includes(value);
 }
 
 function formatMessageLabel(direction: string, messageType: string): string {
@@ -717,6 +796,103 @@ function getMessageType(message: any): string {
     return Object.keys(payload)[0] || 'unknown';
 }
 
+function publishCallLiveState(call: any, source: 'baileys' | 'raw-node' = 'baileys') {
+    const resolvedCallJid = normalizeLiveJid(call.from) || normalizeLiveJid(call.chatId) || normalizeLiveJid(call.callerPn);
+    console.log(`[CALL] Event: ${call.status} | From: ${call.from} | Resolved: ${resolvedCallJid || 'unmapped'} | ID: ${call.id} | Video: ${call.isVideo || false} | Source: ${source}`);
+    if (resolvedCallJid) updateLiveSignal(resolvedCallJid, {
+        source: 'call',
+        value: call.status,
+        label: formatCallLabel(call.status),
+        confidence: isActiveCallStatus(call.status) ? 'high' : 'medium',
+        timestamp: call.date ? new Date(call.date).getTime() : Date.now(),
+        details: {
+            callId: call.id,
+            rawFrom: call.from,
+            chatId: call.chatId || null,
+            callerPn: call.callerPn || null,
+            detector: source,
+            isVideo: call.isVideo || false,
+            offline: call.offline,
+            latencyMs: call.latencyMs,
+        },
+    });
+
+    io.emit('call-event', {
+        callId: call.id,
+        from: resolvedCallJid || call.from,
+        rawFrom: call.from,
+        chatId: call.chatId || null,
+        callerPn: call.callerPn || null,
+        status: call.status,
+        isVideo: call.isVideo || false,
+        date: call.date,
+        offline: call.offline,
+        latencyMs: call.latencyMs,
+        detector: source,
+    });
+
+    return resolvedCallJid;
+}
+
+function installRawCallNodeMonitor(socket: any) {
+    socket?.ws?.on?.('CB:call', (node: BinaryNode) => {
+        try {
+            const [infoChild] = getAllBinaryNodeChildren(node);
+            if (!infoChild) return;
+            const reason = infoChild.attrs?.reason || infoChild.attrs?.status || '';
+            const rawStatus = infoChild.tag === 'busy' || reason === 'busy' ? 'busy' : '';
+            if (!rawStatus) return;
+
+            publishCallLiveState({
+                chatId: node.attrs?.from || null,
+                from: infoChild.attrs?.from || infoChild.attrs?.['call-creator'] || node.attrs?.from,
+                callerPn: infoChild.attrs?.caller_pn,
+                id: infoChild.attrs?.['call-id'] || node.attrs?.id || `raw-${Date.now()}`,
+                date: node.attrs?.t ? new Date(Number(node.attrs.t) * 1000) : new Date(),
+                offline: node.attrs?.offline === 'true' || node.attrs?.offline === '1',
+                status: rawStatus,
+                isVideo: getAllBinaryNodeChildren(infoChild).some(child => child.tag === 'video'),
+            }, 'raw-node');
+        } catch (err: any) {
+            console.log(`[CALL] Raw node monitor skipped event: ${err?.message || err}`);
+        }
+    });
+}
+
+function shouldPersistActivitySignal(jid: string, signal: LiveSignal): boolean {
+    if (signal.source === 'rtt_probe' || signal.source === 'system') return false;
+    const keyParts = [jid, signal.source, signal.value];
+    const details = signal.details || {};
+    if (signal.source === 'message' && details.messageId) keyParts.push(String(details.messageId));
+    if (signal.source === 'call' && details.callId) keyParts.push(String(details.callId));
+    const key = keyParts.join(':');
+    const now = Date.now();
+    const previous = persistedActivityEventKeys.get(key) || 0;
+    const minGap = signal.source === 'presence' ? 8_000 : signal.source === 'call' ? 2_000 : 0;
+    if (previous && now - previous < minGap) return false;
+    persistedActivityEventKeys.set(key, now);
+    if (persistedActivityEventKeys.size > 2000) {
+        const cutoff = now - 10 * 60_000;
+        for (const [eventKey, timestamp] of persistedActivityEventKeys) {
+            if (timestamp < cutoff) persistedActivityEventKeys.delete(eventKey);
+        }
+    }
+    return true;
+}
+
+function persistObservedActivitySignal(jid: string, signal: LiveSignal) {
+    if (!shouldPersistActivitySignal(jid, signal)) return;
+    saveActivityEvent({
+        jid,
+        source: signal.source,
+        type: signal.value,
+        label: signal.label,
+        confidence: signal.confidence,
+        details: signal.details,
+        timestamp: signal.timestamp,
+    }).catch(err => console.error('[ACTIVITY] Failed to persist observed activity:', err));
+}
+
 function updateLiveSignal(jidInput: unknown, signal: Omit<LiveSignal, 'timestamp'> & { timestamp?: number }) {
     const jid = normalizeLiveJid(jidInput);
     if (!jid) return null;
@@ -729,10 +905,52 @@ function updateLiveSignal(jidInput: unknown, signal: Omit<LiveSignal, 'timestamp
 
     const history = [complete, ...(liveSignalHistory.get(jid) || [])].slice(0, 200);
     liveSignalHistory.set(jid, history);
+    persistObservedActivitySignal(jid, complete);
 
     const state = buildContactLiveState(jid);
     io.emit('contact-live-state', state);
+    scheduleLiveSignalExpiry(jid, complete);
     return state;
+}
+
+function liveSignalMaxAge(signal: LiveSignal): number {
+    if (signal.source === 'presence') {
+        if (signal.value === 'composing' || signal.value === 'recording') return EPHEMERAL_PRESENCE_TTL_MS;
+        if (signal.value === 'available') return AVAILABLE_PRESENCE_TTL_MS;
+        return UNAVAILABLE_PRESENCE_TTL_MS;
+    }
+    if (signal.source === 'call') {
+        return isActiveCallStatus(signal.value) ? ACTIVE_CALL_TTL_MS : ENDED_CALL_TTL_MS;
+    }
+    if (signal.source === 'message') return 5 * 60_000;
+    if (signal.source === 'rtt_probe') return 2 * 60_000;
+    return 30_000;
+}
+
+function scheduleLiveSignalExpiry(jid: string, signal: LiveSignal) {
+    if (signal.source !== 'presence' && signal.source !== 'call') return;
+    const key = `${jid}:${signal.source}`;
+    const existing = liveSignalExpiryTimers.get(key);
+    if (existing) clearTimeout(existing);
+
+    const maxAge = liveSignalMaxAge(signal);
+    const timer = setTimeout(() => {
+        const signals = liveSignals.get(jid);
+        const current = signals?.[signal.source];
+        if (!current || current.timestamp !== signal.timestamp || current.value !== signal.value) return;
+        delete signals![signal.source];
+        if (Object.keys(signals!).length === 0) {
+            liveSignals.delete(jid);
+        } else {
+            liveSignals.set(jid, signals!);
+        }
+        liveSignalExpiryTimers.delete(key);
+        io.emit('contact-live-state', buildContactLiveState(jid));
+        if (signal.source === 'presence') {
+            io.emit('presence-change', { jid, presence: 'expired', timestamp: Date.now() });
+        }
+    }, maxAge + 250);
+    liveSignalExpiryTimers.set(key, timer);
 }
 
 function buildContactLiveState(jid: string): ContactLiveState {
@@ -743,15 +961,17 @@ function buildContactLiveState(jid: string): ContactLiveState {
         return signal && now - signal.timestamp <= maxAgeMs ? signal : null;
     };
 
-    const call = fresh('call', 2 * 60_000);
-    const presence = fresh('presence', 90_000);
+    const rawCall = signals.call;
+    const rawPresence = signals.presence;
+    const call = rawCall ? fresh('call', liveSignalMaxAge(rawCall)) : null;
+    const presence = rawPresence ? fresh('presence', liveSignalMaxAge(rawPresence)) : null;
     const message = fresh('message', 5 * 60_000);
     const rtt = fresh('rtt_probe', 2 * 60_000);
 
     let selected: LiveSignal | null = null;
     let explanation = 'Sin senales recientes suficientes para clasificar actividad.';
 
-    if (call && ['offer', 'ringing', 'accept'].includes(call.value)) {
+    if (call && isActiveCallStatus(call.value)) {
         selected = call;
         explanation = 'Evento de llamada recibido desde Baileys; esta senal tiene prioridad alta.';
     } else if (presence && ['composing', 'recording', 'available'].includes(presence.value)) {
@@ -1430,10 +1650,11 @@ async function connectToWhatsApp() {
 
     sock = makeWASocket({
         auth: state,
-        logger: pino({ level: 'warn' }),
+        logger: pino({ level: 'silent' }),
         markOnlineOnConnect: true,
         printQRInTerminal: false,
     });
+    installRawCallNodeMonitor(sock);
 
     sock.ev.on('connection.update', async (update: any) => {
         const { connection, lastDisconnect, qr } = update;
@@ -1584,31 +1805,7 @@ async function connectToWhatsApp() {
     // ── Listen to call events for Call IP Analyzer ──
     sock.ev.on('call', async (calls: any[]) => {
         for (const call of calls) {
-            console.log(`[CALL] Event: ${call.status} | From: ${call.from} | ID: ${call.id} | Video: ${call.isVideo || false}`);
-            updateLiveSignal(call.from, {
-                source: 'call',
-                value: call.status,
-                label: formatCallLabel(call.status),
-                confidence: ['offer', 'ringing', 'accept'].includes(call.status) ? 'high' : 'medium',
-                timestamp: call.date ? new Date(call.date).getTime() : Date.now(),
-                details: {
-                    callId: call.id,
-                    isVideo: call.isVideo || false,
-                    offline: call.offline,
-                    latencyMs: call.latencyMs,
-                },
-            });
-
-            // Emit call event to all connected clients
-            io.emit('call-event', {
-                callId: call.id,
-                from: call.from,
-                status: call.status,
-                isVideo: call.isVideo || false,
-                date: call.date,
-                offline: call.offline,
-                latencyMs: call.latencyMs,
-            });
+            publishCallLiveState(call, 'baileys');
 
             // Auto-start only when a default case context is configured.
             if (LOCAL_CAPTURE_ENABLED && (call.status === 'offer' || call.status === 'accept')) {
@@ -2094,7 +2291,10 @@ app.get('/api/intel/correlation', async (req, res) => {
 app.get('/api/privacy-score/:jid', async (req, res) => {
     const jid = req.params.jid;
     try {
-        const profile = await getContactProfile(jid);
+        const [profile, observedActivity] = await Promise.all([
+            getContactProfile(jid),
+            getObservedActivitySummary(jid, 30),
+        ]);
         let score = 100; // Perfect privacy = 100
         const deductions: { reason: string; points: number }[] = [];
 
@@ -2128,9 +2328,24 @@ app.get('/api/privacy-score/:jid', async (req, res) => {
         score -= 15;
         deductions.push({ reason: 'Actividad online rastreable via RTT', points: 15 });
 
-        // Presence trackable (typing/recording)
-        score -= 10;
-        deductions.push({ reason: 'Indicadores escribiendo/grabando detectables', points: 10 });
+        // Presence/call/message observability is deducted only when actually observed.
+        const typingSignals = observedActivity.byType
+            .filter(event => event.source === 'presence' && ['composing', 'recording'].includes(event.type))
+            .reduce((sum, event) => sum + event.count, 0);
+        const callSignals = observedActivity.bySource.call || 0;
+        const messageSignals = observedActivity.bySource.message || 0;
+        if (typingSignals > 0) {
+            score -= 10;
+            deductions.push({ reason: `Indicadores escribiendo/grabando detectables (${typingSignals})`, points: 10 });
+        }
+        if (callSignals > 0) {
+            score -= 10;
+            deductions.push({ reason: `Eventos de llamada observables (${callSignals})`, points: 10 });
+        }
+        if (messageSignals > 0) {
+            score -= 5;
+            deductions.push({ reason: `Actividad de mensajes observable (${messageSignals})`, points: 5 });
+        }
 
         // Multiple devices detectable
         const entry = trackers.get(jid);

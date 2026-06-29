@@ -326,7 +326,11 @@ export function Dashboard({ connectionState }: DashboardProps) {
                     const typing = (data.presence === 'composing' || data.presence === 'recording')
                         ? data.presence as 'composing' | 'recording'
                         : null;
-                    next.set(data.jid, { ...contact, typingState: typing, presence: data.presence });
+                    next.set(data.jid, {
+                        ...contact,
+                        typingState: typing,
+                        presence: data.presence === 'expired' ? null : data.presence,
+                    });
                 }
                 return next;
             });
@@ -341,12 +345,15 @@ export function Dashboard({ connectionState }: DashboardProps) {
                         ? 'composing'
                         : data.state === 'recording'
                             ? 'recording'
-                            : contact.typingState;
+                            : null;
+                    const presence = data.source === 'presence'
+                        ? (data.state === 'unknown' ? null : data.state)
+                        : (typing ? contact.presence : contact.presence === 'composing' || contact.presence === 'recording' ? null : contact.presence);
                     next.set(data.jid, {
                         ...contact,
                         liveState: data,
                         typingState: typing,
-                        presence: data.source === 'presence' ? data.state : contact.presence,
+                        presence,
                     });
                 }
                 return next;
