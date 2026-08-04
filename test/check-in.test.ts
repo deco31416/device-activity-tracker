@@ -11,7 +11,7 @@ function fixture(): CheckInDoc {
         operatorName: 'WP MONITOR',
         authorizationNote: 'Autorizado',
         label: 'Prueba autorizada',
-        targetName: 'Decode1010',
+        targetName: 'Test Contact',
         targetJid: null,
         status: 'pending',
         createdAt: now,

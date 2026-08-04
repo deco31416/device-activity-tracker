@@ -3,42 +3,34 @@ FROM node:20-alpine AS build
 
 WORKDIR /app
 
-# Install git and build dependencies
 RUN apk add --no-cache git python3 make g++
+RUN corepack enable
 
-# Copy package files
-COPY package*.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY client/package.json ./client/package.json
 
-# Install dependencies
-RUN npm install
+RUN pnpm install --frozen-lockfile --filter @deco31416/device-activity-tracker-client...
 
-# Copy source code and config
-COPY public ./public
-COPY src ./src
-COPY tsconfig.json ./
-COPY tailwind.config.js ./
-COPY postcss.config.js ./
+COPY client/public ./client/public
+COPY client/src ./client/src
+COPY client/tsconfig.json ./client/tsconfig.json
+COPY client/tailwind.config.js ./client/tailwind.config.js
+COPY client/postcss.config.js ./client/postcss.config.js
 
-# Build argument for API URL
 ARG REACT_APP_API_URL=http://localhost:4000
 ENV REACT_APP_API_URL=${REACT_APP_API_URL}
 
-# Build the app
-RUN npm run build
+WORKDIR /app/client
+RUN pnpm run build
 
-# Production stage with nginx
 FROM nginx:alpine
 
-# Copy custom nginx config
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY client/nginx.conf /etc/nginx/conf.d/default.conf
 
-# Copy built app
-COPY --from=build /app/build /usr/share/nginx/html
+COPY --from=build /app/client/build /usr/share/nginx/html
 
-# Expose port
 ARG PORT=4001
 ENV PORT=${PORT}
 EXPOSE ${PORT}
 
-# Start nginx with the specified port
 CMD sed -i "s/listen 80;/listen ${PORT};/g" /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'

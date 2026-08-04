@@ -3,28 +3,24 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install git and build dependencies
-RUN apk add --no-cache git python3 make g++
+RUN apk add --no-cache git python3 make g++ libpcap-dev linux-headers
+RUN corepack enable
 
-# Copy package files
-COPY package*.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY client/package.json ./client/package.json
 COPY tsconfig.json ./
 
-# Install dependencies (ignore postinstall script that tries to install client deps)
-RUN npm install --ignore-scripts
+RUN pnpm install --frozen-lockfile --filter @deco31416/device-activity-tracker...
 
-# Copy source code
 COPY src ./src
+COPY public ./public
 
-# Build TypeScript
-RUN npm run build
+RUN pnpm run build
 
-# Expose port (can be overridden by environment variable)
 ARG PORT=4000
 ENV PORT=${PORT}
 EXPOSE ${PORT}
 
-# Create directory for WhatsApp auth state
 RUN mkdir -p /app/auth_info_baileys
 
 CMD ["node", "dist/server.js"]

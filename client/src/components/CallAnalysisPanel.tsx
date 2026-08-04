@@ -56,7 +56,7 @@ export function CallAnalysisPanel({
                         value={callCaseId}
                         onChange={event => onCaseIdChange(event.target.value)}
                         disabled={callCapturing}
-                        placeholder="Case ID (ej. EDUARDO-SAINZ)"
+                        placeholder="Case ID (ej. CASE-001)"
                         className="input-field !text-xs"
                     />
                     <input

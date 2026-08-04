@@ -1,9 +1,13 @@
 {
   "name": "@deco31416/device-activity-tracker",
   "version": "2.9.4",
+  "packageManager": "pnpm@10.12.1",
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
   "description": "WhatsApp activity tracker with RTT analysis, real-time bitácora, contact history, report generation, and network monitoring",
-  "main": "dist/index.js",
+  "main": "dist/server.js",
   "keywords": [
     "whatsapp",
     "privacy",
@@ -31,17 +35,19 @@
   "homepage": "https://github.com/deco31416/device-activity-tracker#readme",
   "scripts": {
     "build": "tsc",
+    "build:all": "pnpm run build && pnpm --dir client run build",
     "test:unit": "tsx --test test/*.test.ts",
+    "test:client": "pnpm --dir client exec react-scripts test --watchAll=false",
     "qa:report-fixture": "tsx scripts/generate-report-fixture.ts",
-    "start": "npx tsx src/index.ts",
+    "start": "node dist/server.js",
     "start:server": "npx tsx src/server.ts",
-    "start:client": "cd client && npm start",
+    "start:client": "pnpm --dir client start",
     "dev": "npx tsx src/server.ts",
-    "dev:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-local.ps1 -Start -NoBrowser",
-    "postinstall": "cd client && npm install"
+    "dev:local": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-local.ps1 -Start -NoBrowser"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "github:WhiskeySockets/Baileys",
+    "@hapi/boom": "9.1.4",
+    "@whiskeysockets/baileys": "github:WhiskeySockets/Baileys#0af2386292907f7d9742d8d41f830d8c48208fa1",
     "cap": "^0.2.1",
     "cors": "^2.8.5",
     "dotenv": "^17.3.1",
@@ -49,30 +55,48 @@
     "geoip-lite": "^2.0.0",
     "mongodb": "^7.1.0",
     "pino": "^10.1.0",
-    "qrcode-terminal": "^0.12.0",
-    "socket.io": "^4.8.1",
-    "ws": "^8.18.3"
+    "socket.io": "^4.8.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/geoip-lite": "^1.4.4",
-    "@types/qrcode-terminal": "^0.12.2",
-    "@types/ws": "^8.18.1",
     "tailwindcss": "^3.4.18",
     "tsx": "^4.21.0",
     "typescript": "^5.7.2"
   },
-  "resolutions": {
-    "brace-expansion": "^5.0.6",
-    "lodash": "^4.18.1",
-    "path-to-regexp": "^8.4.0",
-    "picomatch": "^4.0.4",
-    "postcss": "^8.5.10",
-    "qs": "^6.15.2",
-    "socket.io-parser": "^4.2.6",
-    "tar": "^7.5.11",
-    "ws": "^8.21.0"
+  "pnpm": {
+    "overrides": {
+      "@babel/core": "^7.29.6",
+      "@babel/plugin-transform-modules-systemjs": "^7.29.4",
+      "@tootallnate/once": "^2.0.1",
+      "brace-expansion": "^2.0.2",
+      "fast-uri": "^3.1.2",
+      "flatted": "^3.4.2",
+      "follow-redirects": "^1.16.0",
+      "form-data": "^3.0.5",
+      "http-proxy-middleware": "^2.0.10",
+      "jsonpath": "^1.3.0",
+      "js-yaml": "^4.2.0",
+      "launch-editor": "^2.14.1",
+      "lodash": "^4.18.1",
+      "node-forge": "^1.3.4",
+      "nth-check": "^2.0.1",
+      "path-to-regexp": "^8.4.0",
+      "picomatch": "^4.0.4",
+      "postcss": "^8.5.10",
+      "qs": "^6.15.2",
+      "serialize-javascript": "^7.0.3",
+      "shell-quote": "^1.8.4",
+      "socket.io-parser": "^4.2.6",
+      "tar": "^7.5.11",
+      "underscore": "^1.13.8",
+      "uuid": "^11.1.1",
+      "webpack-dev-server": "^4.15.2",
+      "ws": "^8.21.0",
+      "yaml": "^1.10.3",
+      "resolve-url-loader>postcss": "^8.5.10"
+    }
   },
   "private": true
 }

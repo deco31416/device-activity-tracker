@@ -321,7 +321,7 @@ export function ContactCard({
         setCallCaptureError(null);
         const normalizedCaseId = normalizeCaptureCaseId(callCaseId);
         if (!normalizedCaseId || normalizedCaseId.length < 3) {
-            setCallCaptureError('Case ID debe tener minimo 3 caracteres validos. Ejemplo: EDUARDO-SAINZ');
+            setCallCaptureError('Case ID debe tener minimo 3 caracteres validos. Ejemplo: CASE-001');
             return;
         }
         if (normalizedCaseId !== callCaseId.trim()) {

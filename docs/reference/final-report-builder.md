@@ -71,7 +71,7 @@ Los eventos `*_requested` se registran antes de construir el archivo para que qu
 
 ## QA Automatizado
 
-El script `yarn qa:report-fixture` genera artefactos estables en `.runtime-logs/report-fixture/`:
+El script `pnpm run qa:report-fixture` genera artefactos estables en `.runtime-logs/report-fixture/`:
 
 - `final-report-fixture.json`
 - `final-report-fixture.html`
@@ -84,7 +84,7 @@ Validaciones actuales:
 - PDF multipagina.
 - Secciones HTML requeridas: estadisticas, hallazgos de IP candidata e integridad.
 - ZIP con `activity-stats.json` y `annexes/activity-stats.csv`.
-- Marca `Device Activity Tracker` / `Deco31416`.
+- Marca de producto `WP MONITOR`.
 - Limitaciones tecnicas presentes.
 - Texto clave presente dentro del PDF: titulo, estadisticas, hallazgos, integridad, limitaciones y marca de desarrollo.
 - Ausencia de placeholders visibles: `undefined`, `null`, `NaN`, `[object Object]`.

@@ -1,5 +1,5 @@
 /**
- * Device Activity Tracker - Web Server
+ * WP MONITOR - Web Server
  *
  * HTTP server with Socket.IO for real-time tracking visualization.
  * Provides REST API and WebSocket interface for the React frontend.
@@ -237,7 +237,7 @@ function buildOpenApiDocument() {
     return {
         openapi: '3.0.3',
         info: {
-            title: 'Device Activity Tracker API',
+            title: 'WP MONITOR API',
             version: APP_VERSION,
             description: 'Authorized activity monitoring, case management, audit trail, reports, and local capture API. WP MONITOR.',
         },
@@ -530,7 +530,7 @@ if (ENABLE_SWAGGER) {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Device Activity Tracker API Docs</title>
+  <title>WP MONITOR API Docs</title>
   <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
 </head>
 <body>

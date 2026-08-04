@@ -116,7 +116,7 @@ test('caps tiny samples and country mismatch as non-conclusive observations', ()
         direction: 'bidirectional',
         ports: [56000, 58000],
         durationSec: 38,
-        targetJid: '529611233361@s.whatsapp.net',
+        targetJid: '525500000000@s.whatsapp.net',
         observedCountryCode: 'CO',
     });
 

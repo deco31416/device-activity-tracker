@@ -79,7 +79,7 @@ Correccion aplicada:
 - Penalizacion de rangos cloud/CDN/relay/datacenter conocidos localmente.
 - UI muestra score, categoria, razones y nota de limitacion.
 - UI y reporte final muestran ASN/ORG cuando existe en reglas locales.
-- Metodologia documentada en `docs/ip-candidate-scoring.md`.
+- Metodologia documentada en `docs/reference/ip-candidate-scoring.md`.
 
 Pendiente profesional:
 

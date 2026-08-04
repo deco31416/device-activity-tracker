@@ -1,35 +1,56 @@
-# Documentacion Operativa
+# Documentacion de WP MONITOR
 
-Esta carpeta contiene la documentacion viva del proyecto.
+Este portal documenta la version `2.9.4` de WP MONITOR. Su objetivo es permitir que una persona nueva comprenda, instale, opere, audite y contribuya al proyecto sin depender de conocimiento informal del autor.
 
-## Lectura Recomendada
+La documentacion toma como referencia ISO/IEC/IEEE 42010 para describir arquitectura, ISO/IEC 25010 para calidad, ISO/IEC 27001 para gestion de riesgos e ISO/IEC 27037 para tratamiento de evidencia digital potencial. Esta referencia no implica certificacion ni conformidad formal.
 
-1. [Deployment Split](deployment-split.md)  
-   Define la separacion entre Railway dashboard y Local full.
+## Elegir un recorrido
 
-2. [Local Operation Guide](local-operation-guide.md)  
-   Procedimiento local para ejecutar capturas autorizadas, registrar metadata de auditoria y resolver problemas comunes.
+| Necesidad | Empieza aqui |
+| --- | --- |
+| Instalar y abrir WP MONITOR por primera vez | [Inicio rapido](getting-started/README.md) |
+| Comprender componentes, datos y flujos | [Arquitectura](architecture/README.md) |
+| Aprender cada pantalla del producto | [Guia de usuario](user-guide/README.md) |
+| Ejecutar localmente, desplegar o recuperar | [Operacion](operations/README.md) |
+| Revisar seguridad, privacidad y evidencia | [Seguridad y evidencia](security/README.md) |
+| Modificar codigo o ejecutar QA | [Desarrollo y calidad](development/README.md) |
+| Consultar API, scoring y formatos | [Referencia tecnica](reference/README.md) |
 
-3. [Railway Checklist](railway-checklist.md)  
-   Checklist de despliegue Railway con variables, volumen de WhatsApp, CORS, token y pruebas de humo.
+## Mapa documental
 
-4. [Scoring Tecnico de IP Candidata](ip-candidate-scoring.md)
-   Metodologia v1 para score 0-100, reason codes, categorias y limites tecnicos.
+```text
+docs/
+|-- README.md
+|-- getting-started/      Instalacion, configuracion minima y primer arranque
+|-- architecture/         Contexto, componentes, datos, eventos y despliegue
+|-- user-guide/           Procedimientos por pantalla y resultado esperado
+|-- operations/           Runbooks local, Docker, Railway, backup y fallos
+|-- security/             Seguridad, privacidad, uso responsable y evidencia
+|-- development/          Entorno de desarrollo, API, pruebas y contribucion
+|-- reference/            Metodologias y formatos tecnicos especializados
+|-- adr/                  Decisiones arquitectonicas aceptadas
+`-- internal/             Planes y auditorias historicas no normativas
+```
 
-5. [Final Report Builder](final-report-builder.md)
-   Informe final por caso en JSON/HTML, estructura UX, hashes y reglas de lenguaje.
+## Principios del producto
 
-6. [Planner y Auditoria](../plan.md)
-   Tablero de trabajo, estado actual, epicas, riesgos y verificacion recurrente.
+- Toda operacion sensible se relaciona con un `Case ID`, un operador y una base de autorizacion.
+- `local-full` habilita captura solamente en la maquina autorizada que posee la interfaz de red.
+- `railway-dashboard` ofrece dashboard, API, WhatsApp Tracker, Check-In, persistencia y reportes, pero no captura la red local del operador.
+- RTT, presencia, mensajes y llamadas son fuentes distintas; no deben presentarse como una unica certeza.
+- Una IP candidata es una observacion tecnica. No prueba identidad, domicilio, ubicacion exacta ni titularidad.
+- GeoIP describe de forma aproximada un bloque de red y puede diferir entre proveedores.
+- El GPS de Check-In solo se solicita con consentimiento y permiso del navegador.
+- Los hashes permiten detectar alteraciones; no demuestran por si mismos que el dato de origen sea verdadero.
 
-## Principios de Uso
+## Estado de los documentos
 
-- Railway sirve para dashboard, estadisticas, contactos, reportes, auditoria y persistencia.
-- La vista `Cases` es el punto de entrada operativo para crear, activar y cerrar casos.
-- Swagger se usa solo en entornos no productivos con `ENABLE_SWAGGER=true`.
-- La captura de paquetes se ejecuta en modo local, VM o VPS autorizado.
-- Toda captura manual debe incluir `caseId`, operador y nota de autorizacion.
-- El `Evidence Package` JSON es la salida canonica inicial para auditoria de caso.
-- El `Final Report` HTML/JSON resume el caso y referencia hashes del Evidence Package.
-- Los resultados de red se documentan como trafico observado, relays, infraestructura e IPs candidatas.
-- Una IP candidata no prueba identidad, ubicacion exacta ni titularidad de una persona.
+Los documentos dentro de los recorridos principales describen comportamiento operativo vigente. Los archivos de [internal](internal/README.md) son material de trabajo o historico y no deben citarse como contrato del producto.
+
+Cuando un cambio modifique endpoints, variables, almacenamiento, UI o una limitacion, la documentacion correspondiente debe actualizarse en el mismo pull request.
+
+## Soporte y reporte
+
+- Errores funcionales: utiliza el issue tracker del repositorio con datos sinteticos.
+- Vulnerabilidades: no publiques secretos, sesiones, IPs ni pruebas explotables en un issue abierto; consulta [Seguridad](security/README.md).
+- Dudas de operacion: revisa primero [Troubleshooting](operations/troubleshooting.md).

@@ -15,7 +15,7 @@ Nota tecnica: el sistema debe hablar de "trafico observado", "infraestructura", 
 
 ## Roadmap Producto Final 10/10
 
-Documento principal: `docs/product-final-roadmap.md`.
+Documento principal: `docs/internal/product-final-roadmap.md`.
 
 Estado actual: beta profesional avanzada / MVP operativo.
 
@@ -49,12 +49,12 @@ Prioridades antes de llamar al producto "final":
 - [x] Railway oculta/bloquea captura local.
 - [x] Frontend oculta `Network Monitor` si el backend no permite captura.
 - [x] Panel de llamada local muestra mapa visual de ruta observada.
-- [x] Documentacion inicial creada en `docs/deployment-split.md`.
+- [x] Documentacion inicial creada en `docs/operations/deployment-modes.md`.
 - [x] README, changelog, gitignore y documentacion actualizados con el split Railway/local.
 - [x] Docker y docker-compose persisten la sesion WhatsApp en `/app/auth_info_baileys`.
 - [x] Clasificacion de red privada `172.16.0.0/12` corregida.
 - [x] Guardado de analisis de llamada usa upsert por `callId`.
-- [x] Guia operativa local documentada en `docs/local-operation-guide.md`.
+- [x] Guia operativa local documentada en `docs/operations/local-runbook.md`.
 - [x] Auditoria severa 2026-06-24 iniciada con hardening de produccion, proxy trust, auth sin query string, rate limit de Check-In, GPS tratado como evidencia declarada y reportes con observaciones no concluyentes separadas.
 - [x] Auditoria de dependencias iniciada: overrides aplicados donde son compatibles, frontend prod audit limpio y riesgos residuales documentados.
 - [x] Auditoria de codigo pre-QA: corregido consentimiento personalizado en hash/evidencia, aviso tecnico minimo obligatorio no sobreescribible, version de manifest, parsing seguro de env/rate-limit y fallback local de backend a puerto 4000.
@@ -285,7 +285,7 @@ Pendiente:
 
 ### Epica 14 - Auditoria de Codigo Activa
 
-- [x] Crear auditoria de codigo inicial en `docs/code-audit-2026-06-18.md`.
+- [x] Crear auditoria de codigo inicial en `docs/internal/code-audit-2026-06-18.md`.
 - [x] Corregir token en URL para descargas autenticadas.
 - [x] Crear validacion centralizada de entrada v1 sin dependencias externas.
 - [x] Validar `caseId`, metadata de captura, alias, JID, limites y tags.
@@ -462,7 +462,7 @@ Antes de cerrar cada bloque de trabajo:
 - [x] Se bloqueo captura en modo Railway.
 - [x] Se oculto `Network Monitor` cuando no hay captura local.
 - [x] Se agrego mapa visual de ruta observada en panel local de llamada.
-- [x] Se creo `docs/deployment-split.md`.
+- [x] Se creo `docs/operations/deployment-modes.md`.
 - [x] Se actualizo `.env.example`.
 - [x] Backend validado con `yarn build`.
 - [x] Frontend validado con `pnpm run build`.
@@ -477,11 +477,11 @@ Antes de cerrar cada bloque de trabajo:
 - [x] Auditoria pre-continuacion: corregidos cierres de captura, guard de auto-stop y contador de paquetes.
 - [x] Agregada autenticacion opcional por `DASHBOARD_TOKEN` para local y Railway.
 - [x] Agregada exportacion de auditoria por `caseId` con hash SHA-256.
-- [x] Creado checklist Railway 10/10 en `docs/railway-checklist.md`.
+- [x] Creado checklist Railway 10/10 en `docs/operations/railway.md`.
 - [x] Tipados modelos frontend de llamada/auditoria y persistencia de analisis de llamada.
 - [x] Creada guia operativa local con requisitos, flujo, auditoria y limites.
 - [x] Actualizados `.gitignore`, `.dockerignore`, `CHANGELOG.md`, `README.md` y `docs/README.md`.
-- [x] Creada auditoria de codigo inicial en `docs/code-audit-2026-06-18.md`.
+- [x] Creada auditoria de codigo inicial en `docs/internal/code-audit-2026-06-18.md`.
 - [x] Agregadas epicas profesionales: Case Management, Evidence Package, scoring de IP candidata, reporte final y UX de centro de operaciones.
 - [x] Corregido hallazgo P1: descargas autenticadas ya no exponen token en query params.
 - [x] Agregado modelo formal `Case`, endpoints `/api/cases`, vista `Cases` y bloqueo de capturas en casos cerrados/archivados.

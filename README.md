@@ -1,362 +1,390 @@
-<h1 align="center">Device Activity Tracker v2.9.4</h1>
-<p align="center">WhatsApp Activity Tracker — RTT Analysis · Real-Time Bitácora · Behavior Intelligence · Audit Trail · Railway Dashboard · Local Network Monitor</p>
+<h1 align="center">WP MONITOR</h1>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.9.4-blue?style=flat" alt="Version 2.9.4"/>
-  <img src="https://img.shields.io/badge/Node.js-22+-339933?style=flat&logo=node.js&logoColor=white" alt="Node.js"/>
-  <img src="https://img.shields.io/badge/TypeScript-5.7+-3178C6?style=flat&logo=typescript&logoColor=white" alt="TypeScript"/>
-  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat&logo=react&logoColor=black" alt="React"/>
-  <img src="https://img.shields.io/badge/MongoDB-7.1-47A248?style=flat&logo=mongodb&logoColor=white" alt="MongoDB"/>
-  <img src="https://img.shields.io/badge/TailwindCSS-3.4-06B6D4?style=flat&logo=tailwindcss&logoColor=white" alt="TailwindCSS"/>
-  <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License MIT"/>
+  <strong>Authorized WhatsApp Activity Research, Network Metadata Analysis, Case Auditing, and Evidence-Oriented Reporting</strong>
 </p>
 
-> ⚠️ **DISCLAIMER**: Proof-of-concept for authorized security research, defensive analysis, training, and lab use only. Do not monitor people, accounts, devices, or traffic without explicit authorization. Network results are treated as observed infrastructure, relays, and IP candidates; they do not prove identity, exact location, or ownership by a person.
+<p align="center">
+  <a href="CHANGELOG.md">
+    <img src="https://img.shields.io/badge/version-2.9.4-2563EB?style=flat-square" alt="Version 2.9.4" />
+  </a>
+  <img src="https://img.shields.io/badge/Node.js-22%2B-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node.js 22+" />
+  <img src="https://img.shields.io/badge/TypeScript-5.7%2B-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript 5.7+" />
+  <img src="https://img.shields.io/badge/Express-5-000000?style=flat-square&logo=express&logoColor=white" alt="Express 5" />
+  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=111827" alt="React 19" />
+  <img src="https://img.shields.io/badge/MongoDB-7.1-47A248?style=flat-square&logo=mongodb&logoColor=white" alt="MongoDB 7.1" />
+  <img src="https://img.shields.io/badge/Socket.IO-4.8-010101?style=flat-square&logo=socket.io&logoColor=white" alt="Socket.IO 4.8" />
+  <img src="https://img.shields.io/badge/Docker-supported-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker supported" />
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-F59E0B?style=flat-square" alt="MIT License" />
+  </a>
+</p>
+
+<p align="center">
+  <a href="#overview">Overview</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#configuration">Configuration</a> ·
+  <a href="#api-reference">API Reference</a> ·
+  <a href="#ethical-and-legal-use">Ethical and Legal Use</a>
+</p>
+
+> ⚠️ **Authorized use only.** WP MONITOR is an experimental proof of concept for defensive research, training, digital forensics, and controlled laboratory environments. Do not monitor people, accounts, devices, communications, or network traffic without explicit authorization. RTT states, network observations, candidate IP addresses, GeoIP data, and consistency scores do not prove identity, exact physical location, or ownership by a person.
 
 ---
 
 ## Overview
 
-Originally forked from [gommzystudio/device-activity-tracker](https://github.com/gommzystudio/device-activity-tracker). Extensively redesigned, improved, and scaled by **[deco31416](https://www.deco31416.com)** — adding MongoDB persistence, contact history with auto-restore, human-readable activity bitácora, comprehensive report generation (JSON/HTML/PDF), profile enrichment, behavior intelligence analytics, custom contact aliases, a local Network Monitor module, local call traffic analysis, audit trail, and Railway/local deployment split.
+WP MONITOR is an open-source research platform that combines WhatsApp activity analysis, behavioral analytics, local network metadata capture, consent-based check-ins, case management, audit logging, and evidence-oriented reporting.
 
-Based on the paper **"Careless Whisper: Exploiting Silent Delivery Receipts to Monitor Users on Mobile Instant Messengers"** by Gabriel K. Gegenhuber et al. (University of Vienna & SBA Research).
+The project was originally forked from [gommzystudio/device-activity-tracker](https://github.com/gommzystudio/device-activity-tracker) and extensively redesigned by [deco31416](https://www.deco31416.com). The v2.x architecture adds MongoDB persistence, contact history and auto-restore, a human-readable activity bitácora, JSON/HTML/PDF reporting, behavior intelligence, local packet metadata analysis, call-window analysis, case records, audit exports, evidence packages, and separate local and Railway runtime modes.
 
-### What it does
+The RTT research foundation follows the paper **“Careless Whisper: Exploiting Silent Delivery Receipts to Monitor Users on Mobile Instant Messengers”** by Gabriel K. Gegenhuber et al. from the University of Vienna and SBA Research.
 
-| Module | Description |
-|--------|-------------|
-| **📱 WhatsApp Tracker** | Measures RTT of delivery receipts to detect device activity (online/standby/offline) |
-| **🧠 Behavior Intelligence** | OSINT analytics: routine detection, availability model, session stats, heatmap, habit profiling |
-| **🔍 SIGINT Detection** | Real-time typing/recording detection, device change alerts, WiFi vs Cellular inference |
-| **🛡️ Privacy Score** | OPSEC assessment: evaluates target's exposure level (profile pic, about, business data) |
-| **⚡ Anomaly Detection** | Flags unusual activity patterns: off-schedule hours, erratic behavior, session length outliers |
-| **📋 Activity Bitácora** | Human-readable timeline with military time (local + UTC), designed for non-technical stakeholders |
-| **📊 Reports & Stats** | Comprehensive report generation with profile, stats, patterns, and export to JSON/HTML/PDF |
-| **💾 Contact History** | Persistent contacts across restarts with auto-restore and one-click re-tracking |
-| **🌐 Network Monitor** | Real-time packet capture with protocol analysis, IP geolocation, and data export |
-| **📞 Call Traffic Analysis** | Local authorized packet capture during WhatsApp Web calls with route visualization, candidate IP classification, and optional IP enrichment |
-| **📍 Authorized Check-In** | Consent-based case link with editable Open Graph preview, uploaded preview image, observed IP, device/browser/network metadata, optional GPS, Maps links, audit event, and evidence hash |
-| **🗂️ Case Management** | Formal case records with status, operator, authorization note, audit linkage, and closure controls |
-| **🧾 Audit Trail** | Investigative case console with event filters, paginated custody timeline, readable summaries, SHA-256 audit export, and evidence package export |
-| **📑 Final Case Report** | Case-level JSON/HTML/PDF report with executive summary, activity stats, candidate IP scoring, timeline, hashes, and limitations |
-| **🚆 Railway Dashboard Mode** | Remote dashboard/statistics mode with local capture disabled for safe cloud deployment |
-| **🟢 Operational Health** | `/api/health` exposes operational/degraded status for MongoDB, WhatsApp, capture mode, and runtime dependencies without secrets |
+### Intended users
+
+- Authorized security researchers
+- Digital forensics teams and authorized technical investigators
+- Academic and controlled laboratory environments
+- Developers evaluating messaging metadata exposure
+- Operators managing consent-based technical investigations
+
+### Core capabilities
+
+| Area | Capability |
+|---|---|
+| Activity analysis | Measures delivery-receipt round-trip time and derives heuristic `online`, `standby`, and `offline` states |
+| Activity log | Converts technical state transitions into a paginated, human-readable bitácora with local and UTC timestamps |
+| Behavior intelligence | Calculates routines, availability probability, session statistics, weekly heatmaps, habit profiles, and multi-contact correlations |
+| Presence and device signals | Observes supported presence states, recording/typing indicators, device changes, and RTT-based connection-type inference |
+| Privacy and anomaly assessment | Produces an explainable OPSEC exposure score and flags deviations from historical activity baselines |
+| Network Monitor | Captures packet metadata through Npcap/libpcap, applies protocol filters, classifies IP observations, and exports CSV or JSON |
+| Call traffic analysis | Opens an authorized local capture window around an externally initiated WhatsApp Web/Desktop call or interaction |
+| Authorized Check-In | Creates consent-based links that record server-observed network metadata, browser/device context, optional GPS, and a SHA-256 evidence hash |
+| Case and audit management | Associates operations with a `caseId`, operator, authorization note, event timeline, and case status |
+| Reporting and evidence | Generates contact reports, final case reports, audit exports, CSV annexes, and JSON/ZIP evidence packages with integrity hashes |
+| Runtime separation | Supports `local-full` for local capture and `railway-dashboard` for remote dashboard, API, statistics, and reporting |
+| Operational controls | Exposes health and capability endpoints, token protection, production CORS controls, rate limits, and safe feature gating |
 
 ---
 
-## Features
+## Architecture
 
-### WhatsApp Activity Tracker
-- 🔍 Real-time RTT measurement via delivery receipts
-- 📊 Dynamic threshold-based device state detection (Online / Standby / Offline)
-- 📈 Historical RTT chart with persistent data from MongoDB (loads last 200 measurements on page load)
-- 🔄 Multiple probe methods (Delete / Reaction)
-- 📱 QR code authentication via Baileys
-- 👤 Contact profile enrichment (about, business profile, push name)
+### System architecture
 
-### Activity Bitácora (NEW in v2.1)
-- 📋 Human-readable activity log below the RTT chart
-- 🕐 Military time format (24h) with dual display: local + UTC
-- 📝 Plain-language descriptions: "📱 El contacto se CONECTÓ", "💤 Pasó a ESPERA", "🔴 Se DESCONECTÓ"
-- 📄 Paginated table (15 events/page) with numbered navigation
-- 💀 Skeleton loading while data loads
-- 🎨 Color-coded rows by state (green/yellow/red)
+```mermaid
+flowchart LR
+    subgraph Interfaces[Operator Interfaces]
+        Dashboard[React Dashboard]
+        CLI[CLI]
+    end
 
-### Report Generation & Export (NEW in v2.1)
-- 📤 Export bitácora to **JSON**, **HTML** (dark-themed), or **PDF** (print dialog)
-- 📊 Full report download (profile + stats + patterns + history + measurements + executive summary)
-- 📋 Executive summary: tracking duration, data points, avg RTT, online %, peak hour, daily usage estimate
+    subgraph Application[Application Core]
+        API[Express REST API]
+        Realtime[Socket.IO Realtime Layer]
+        Tracker[RTT and Presence Tracker]
+        Intelligence[Behavior and Anomaly Analytics]
+        Cases[Case and Audit Services]
+        Reports[Reporting and Evidence Services]
+    end
 
-### Contact History & Auto-Restore (NEW in v2.1)
-- 💾 Contacts persist across server restarts (soft-delete)
-- 📜 History panel shows all previously tracked contacts
-- 🔄 One-click re-activation from history
-- ⚡ Auto-restore: active contacts resume tracking automatically on reconnection
+    subgraph LocalServices[Local Capture Services]
+        Network[Network Monitor]
+        Calls[Call Traffic Analyzer]
+        IPIntel[IP Classification and Enrichment]
+    end
 
-### Behavior Intelligence (NEW in v2.2)
-- 🧠 OSINT analytics engine based on Schnitzler et al. (NDSS 2023)
-- 📅 **Daily Routine Detection** — wake/sleep estimation, session count, peak hours
-- 🎯 **Availability Probability** — 24-hour online probability curve per contact
-- ⏱️ **Session Statistics** — total/avg/median/max sessions, intensity score (0-100)
-- 📊 **Weekly Heatmap** — 7×24 day×hour activity matrix with color intensity
-- 🦉 **Habit Profiling** — Night Owl/Early Bird/Regular/Irregular classification, timezone inference
-- 🔗 **Multi-Contact Correlation** — Pearson correlation, simultaneous online detection, follow-delay
-- 📈 All analytics accessible via Intel tab and REST API (`/api/intel/*`)
+    WhatsApp[WhatsApp Session via Baileys]
+    Mongo[(MongoDB)]
+    Exports[JSON / CSV / HTML / PDF / ZIP]
 
-### SIGINT Detection (NEW in v2.4)
-- ✍️ **Typing Detection** — Real-time `composing` state via Baileys presence events, animated ✍️ indicator on card
-- 🎙️ **Recording Detection** — Detects `recording` (audio) state, animated 🎙️ indicator on card
-- 📱 **Device Change Alerts** — Tracks known device JIDs; alerts when a new device connects (new phone, WhatsApp Web/Desktop)
-- 📶 **WiFi vs Cellular Inference** — Analyzes RTT variance (coefficient of variation) to classify connection type:
-  - Low RTT + low CV → WiFi 📶
-  - High RTT + high CV → Celular 📱
-- 🏷️ Real-time connection type badge on each contact card
+    Dashboard --> API
+    Dashboard <--> Realtime
+    CLI --> Tracker
 
-### Privacy / OPSEC Score (NEW in v2.4)
-- 🛡️ Calculates a **privacy exposure score (0–100)** for each contact
-- Evaluates: profile picture visibility, about/status text, business account data, push name, RTT trackability, typing/recording detectability, multi-device fingerprint
-- Visual score card with color-coded level (Alto ≥70 / Medio 40–69 / Bajo <40)
-- Detailed deduction breakdown showing exactly what data is exposed
-- Available in the **Profile tab** and via REST API (`GET /api/privacy-score/:jid`)
+    API --> Tracker
+    API --> Intelligence
+    API --> Cases
+    API --> Reports
 
-### Anomaly Detection (NEW in v2.4)
-- ⚡ Detects **unusual behavior patterns** compared to historical baselines:
-  - 🕐 **Unusual Hours** — Online during normally inactive hours (with probability %)
-  - ⏱️ **Long Sessions** — Session max 3× above average duration
-  - 🦉 **Night Owl Pattern** — Elevated nocturnal activity score
-  - 🔀 **Erratic Behavior** — Low consistency score (<30%)
-  - 📅 **Schedule Shifts** — Large weekday vs weekend usage difference (>2h)
-- Severity levels: info (ℹ️), warning (🟡), critical (🔴)
-- Visual anomaly alerts in the **Intel tab**
-- Available via REST API (`GET /api/anomalies/:jid`)
+    Tracker <--> WhatsApp
+    Tracker --> Mongo
+    Intelligence --> Mongo
+    Cases --> Mongo
+    Reports --> Mongo
 
-### Custom Name / Alias (NEW in v2.2)
-- ✏️ Per-contact custom alias with inline editing (pencil icon)
-- 🏷️ Alias input when adding new contacts
-- 💾 Persisted in MongoDB with REST API (`PUT /api/contact/:jid/custom-name`)
-- 📡 Real-time sync across all connected clients
-- 🔤 Display priority: customName > pushName (WhatsApp) > number
+    Network --> IPIntel
+    Calls --> IPIntel
+    Network --> Cases
+    Calls --> Cases
+    Reports --> Exports
+```
 
-### Stats & Profile Panels
-- 📊 State distribution bar (% online/standby/offline)
-- 📈 Activity timeline with state transitions
-- 👤 Full profile: about, business info, push name, custom alias, account type
-- 🕐 Activity patterns: hourly bar chart, peak hour, avg session length, total online minutes
+### Runtime deployment model
+
+```mermaid
+flowchart TB
+    Operator[Authorized Operator]
+
+    subgraph LocalFull[local-full]
+        LocalUI[Local Dashboard]
+        LocalAPI[Backend API and Socket.IO]
+        Adapter[Authorized Local Network Adapter]
+        Capture[Packet Metadata Capture]
+        Analysis[Network and Call Analysis]
+
+        LocalUI --> LocalAPI
+        LocalAPI --> Adapter
+        Adapter --> Capture
+        Capture --> Analysis
+    end
+
+    subgraph RailwayMode[railway-dashboard]
+        RemoteUI[Remote Dashboard]
+        RemoteAPI[Dashboard API and Realtime Services]
+        Session[Persisted WhatsApp Session]
+
+        RemoteUI --> RemoteAPI
+        RemoteAPI --> Session
+    end
+
+    Mongo[(MongoDB)]
+
+    Operator --> LocalUI
+    Operator --> RemoteUI
+    LocalAPI --> Mongo
+    Analysis --> Mongo
+    RemoteAPI --> Mongo
+
+    RemoteAPI -. Local packet capture disabled .-> Adapter
+```
+
+`railway-dashboard` cannot inspect the operator’s local network adapter. Packet capture and call-window analysis must run in `local-full` on the authorized machine, VM, VPS, or laboratory host where the relevant traffic is visible.
+
+### Authorized operational workflow
+
+```mermaid
+sequenceDiagram
+    actor Operator as Authorized Operator
+    participant Dashboard
+    participant API as Backend API
+    participant WhatsApp as WhatsApp / Baileys
+    participant Capture as Local Capture Service
+    participant MongoDB
+    participant Reports as Report Engine
+
+    Operator->>Dashboard: Select or create an authorized case
+    Dashboard->>API: caseId, operatorName, authorizationNote
+    API->>MongoDB: Save case and audit event
+
+    Operator->>Dashboard: Start an authorized operation
+    Dashboard->>API: Tracking or capture request
+
+    alt RTT activity research
+        API->>WhatsApp: Send configured probe
+        WhatsApp-->>API: Delivery acknowledgement
+        API->>MongoDB: Store RTT measurement and heuristic state
+    else Local network or call analysis
+        API->>Capture: Open bounded capture window
+        Capture-->>API: Packet metadata and IP observations
+        API->>MongoDB: Store analysis and audit metadata
+    end
+
+    Operator->>Dashboard: Generate report or evidence package
+    Dashboard->>Reports: Export request
+    Reports->>MongoDB: Read case artifacts
+    Reports-->>Dashboard: JSON, CSV, HTML, PDF, or ZIP
+```
+
+---
+
+## Interpretation and Technical Limits
+
+WP MONITOR intentionally uses conservative terminology. Its outputs are investigative aids and research observations, not conclusive attribution.
+
+| Output | Correct interpretation |
+|---|---|
+| RTT state | A heuristic activity state derived from measured response timing |
+| Presence signal | A supported session event observed through the current WhatsApp/Baileys integration |
+| Candidate IP | A public IP observed during an authorized capture window and prioritized for manual review |
+| Infrastructure IP | A known or likely relay, CDN, cloud, hosting, STUN/TURN, Meta/WhatsApp, Google, or other provider address |
+| GeoIP result | An approximate network/provider registration or routing hint; not GPS and not verified physical location |
+| Optional GPS | Client-declared browser location available only after explicit permission during an Authorized Check-In |
+| Consistency score | An explainable correlation of network and browser signals; not proof of identity or fraud |
+| SHA-256 hash | An integrity reference for exported data; it does not independently prove the truth or origin of the underlying observation |
+
+Results can be affected by VPNs, proxies, carrier-grade NAT, mobile networks, CDNs, cloud relays, firewalls, routing changes, shared IP addresses, inaccurate third-party data, platform updates, and incomplete packet samples. The software may produce false positives, false negatives, incomplete results, or no result at all.
+
+---
+
+## Feature Details
+
+### Activity tracking and contact history
+
+- Real-time RTT measurement from supported delivery acknowledgements
+- Dynamic threshold-based state classification
+- Historical chart backed by MongoDB, including the latest 200 measurements on initial load
+- Delete and reaction probe methods
+- QR authentication through Baileys
+- Contact profile enrichment, custom aliases, and display precedence
+- Soft-delete contact history, one-click reactivation, and automatic restoration of active contacts
+
+### Activity bitácora and reports
+
+- Human-readable state timeline with local and UTC timestamps
+- Paginated event table with loading states and visual state differentiation
+- Bitácora export to JSON, HTML, and PDF
+- Full contact report with profile, statistics, patterns, measurements, history, and executive summary
+- Case-level final reports in JSON, HTML, and native PDF
+
+### Behavior intelligence
+
+- Daily routine estimation
+- Twenty-four-hour availability probability curve
+- Session count, average, median, maximum, and intensity score
+- Seven-day by twenty-four-hour activity heatmap
+- Habit profile classification and timezone inference
+- Multi-contact Pearson correlation, simultaneous activity, and follow-delay analysis
+- REST access through the `/api/intel/*` routes implemented by the project
+
+### Presence, device, privacy, and anomaly signals
+
+- Supported typing and recording presence events
+- New-device observation and device-count changes
+- RTT variance analysis for Wi-Fi versus cellular inference
+- Explainable privacy/OPSEC exposure score from `0` to `100`
+- Historical-baseline anomaly checks for unusual hours, long sessions, nocturnal behavior, low consistency, and weekday/weekend shifts
 
 ### Network Monitor
-- 🔬 Smart Packet Capture via Npcap (metadata only — no payload)
-- 🌍 IP Geolocation with country, region, city, coordinates (GeoIP-Lite)
-- 📡 Live monitoring with real-time packet table and auto-scroll
-- 🎯 BPF Filters by protocol (TCP/UDP/ICMP), port, IP
-- ⚠️ Severity classification: info, warning, danger
-- 📊 Statistics: protocol distribution pie chart, top IPs bar chart
-- 📤 Export to CSV and JSON
-- 🧾 Requires `caseId`, operator, and authorization note before starting manual capture
-- 🗂️ Active case selector auto-fills operator and authorization context so captures are linked as case evidence
-- 🧭 Backend-generated IP intelligence separates candidate public IPs from local/private ranges, Meta/WhatsApp relays, Google STUN/TURN, Cloudflare, GitHub, Akamai/CDN, and cloud/hosting ranges
-- 🧾 IP Tracker cards include role, verdict, packet counts, direction, ASN/ORG when known, GeoIP hints, DB-IP/DNSChecker links, and Maps links when coordinates exist
-- 🧹 Optional table filters hide known infrastructure/local traffic or show UDP-only traffic without changing the original exportable capture
-- ⚠️ Network Monitor is for baseline and raw local evidence; call-specific conclusions should be reviewed in the contact `Llamada` tab because it applies call-window scoring, relay filtering, enrichment, and correlation limits
 
-#### Network Monitor IP Intelligence
+- Npcap/libpcap packet metadata capture without payload inspection
+- TCP, UDP, ICMP, port, and IP BPF filters
+- Real-time packet table and operational statistics
+- CSV and JSON export
+- Required `caseId`, operator, and authorization note for manual capture
+- Backend-generated `ipInsights` rather than frontend-only heuristics
+- Conservative classification of private/local ranges, infrastructure, preliminary public candidates, and weak observations requiring review
+- Optional filters that hide known infrastructure or local traffic without modifying the original exportable capture
 
-The Network Monitor now receives `ipInsights` from the backend instead of relying only on frontend display heuristics. During capture, the backend recomputes top source/destination IPs and classifies them as:
+### Call traffic analysis
 
-- `Descartada`: private, local, CGNAT, reserved, multicast, or documentation ranges.
-- `Infraestructura`: known Meta/WhatsApp, Google STUN/TURN, Cloudflare, GitHub, Akamai/CDN, AWS/Azure/DigitalOcean-style cloud or hosting ranges.
-- `Candidata preliminar`: public unknown IP with bidirectional flow and enough packet volume for manual review.
-- `Revisar`: public unknown IP with weak, one-way, or low-volume context.
+WP MONITOR does not programmatically initiate or control WhatsApp calls. The authorized operator starts the call or interaction from WhatsApp Web/Desktop on the same machine; the local service observes the bounded traffic window.
 
-This classification is deliberately conservative. It helps operators filter noise and prioritize review, but it does not identify a person, prove exact location, or establish ownership of an IP address.
+The call-analysis view can include:
 
-### Call Traffic Analysis (Local Full Mode)
-- 📞 Manual authorized capture window during WhatsApp Web calls or interactions
-- 🧭 The app does **not** initiate WhatsApp calls directly; the operator starts the call from WhatsApp Web/Desktop on the same machine and WP MONITOR observes the local traffic window
-- 🗺️ Visual route map: local host → local network/ISP → WhatsApp/Meta infrastructure → relays/cloud → candidate IPs
-- 🧭 Provider classification for Meta/WhatsApp, Google, Cloudflare, private ranges, and unknown public IPs
-- 🧮 Candidate IP scoring 0-100 with explainable reason codes and technical limitations
-- 📊 Packet counters, ports, directions, geolocation hints, external IP enrichment, and historical call analysis
-- 🗺️ Optional DB-IP-first enrichment adds estimated city/region/country and complements with ip-api for coordinates, ISP, organization, ASN, mobile/proxy/hosting flags, and Google Maps links when needed
-- 🧹 Enriched CDN/cloud/hosting/proxy networks are demoted after lookup so AWS CloudFront, Akamai, Fastly, Google Cloud, Cloudflare, and similar infrastructure are not treated as user IP candidates
-- ⚠️ Candidate IP language by design: observed IPs are not treated as verified person identity
+- Local host, network/ISP path, provider infrastructure, relays, and public IP observations
+- Explainable candidate scoring from `0` to `100`
+- Packet counts, ports, directions, and reason codes
+- DB-IP-first enrichment with optional `ip-api` complement
+- ISP, organization, ASN, mobile/proxy/hosting flags, and approximate network coordinates when available
+- Automatic demotion of CDN, cloud, hosting, or proxy infrastructure after enrichment
+- Persistent analysis history by `callId`
 
-> **Why calls are started outside the app:** Baileys is reliable for WhatsApp session/authentication events, messaging and presence-style observations, but programmatically initiating and controlling WhatsApp calls from a backend is not a stable official surface. For professional operation, WP MONITOR treats calls as an external authorized action performed in WhatsApp Web/Desktop, while the local capture service records the visible network metadata from the same host/interface.
+Candidate scoring is deliberately limited by sample size, directionality, infrastructure detection, and other correlation constraints. An observed address must never be presented as a verified person’s IP or exact location.
 
 ### Authorized Check-In
-- 📍 Protected dashboard tab to generate consent-based check-in links tied to an active case
-- 🧩 Case selector supports existing monitored cases or a new Case ID for authorized intake
-- 🖼️ Editable public page title/description plus optional uploaded Open Graph preview image
-- 🎨 Landing builder with brand name, layout (`classic`, `hero`, `compact`), accent/background/panel/text colors, and GPS request toggle
-- 🧾 Client policy builder with editable metadata labels, consent/policy text, submit button text, completion message, and optional post-check-in redirect URL
-- ✅ Public page requires explicit user acceptance before submission
-- 🌐 Records server-observed IP, user agent, language, timezone, device type, OS/browser, CPU/RAM hints, screen/viewport, browser network hints, and optional browser GPS if the user grants permission
-- 🗺️ Adds optional IP enrichment with ISP/organization/ASN, estimated network coordinates, and Google Maps links
-- 🧭 Calculates a transparent consistency score from IP reputation flags, timezone/language alignment, GPS-vs-IP distance, referer, mobile/hosting/proxy flags, and browser metadata
-- 🔐 Stores SHA-256 evidence hash and links the result to the case evidence timeline
-- 🧾 Emits audit events for creation, completion, edit, revocation, and administrative deletion
-- 🧯 Public submit endpoint has a built-in per-IP/per-token rate limit to reduce abuse of open consent links
-- 🔄 Dashboard updates automatically through Socket.IO events with a short polling fallback; no manual refresh required for completed check-ins
-- 🗑️ Administrative delete removes the check-in record and related case evidence link from MongoDB
-- 🔗 `PUBLIC_BASE_URL` must be a public HTTPS URL for third-party previews and external recipients; `127.0.0.1` only works on the local machine
-- ⚠️ GeoIP is estimated network/ISP location. GPS is only available when the browser/user explicitly permits it and is treated as client-declared corroborative evidence, not independent proof of identity or exact physical location.
 
-### Audit Trail & Evidence Metadata
-- 🧾 Required capture metadata: `caseId`, `operatorName`, `authorizationNote`
-- 🕐 UTC timestamps for local capture and call-capture events
-- 🔎 Audit Trail tab with active case selector, manual Case ID search, scope/action filters, free-text search, and paginated timeline/table views
-- 🧭 Investigative summary cards for operators, event range, check-ins, calls, network captures, and report/export activity
-- 🧱 Collapsible desktop sidebar and mobile drawer navigation keep audit views usable on narrow screens
-- 📤 JSON audit export via `/api/audit/:caseId/export`
-- 🔐 SHA-256 hash included with audit export payload
-- 📦 Evidence Package ZIP with JSON artifacts, CSV annexes, and SHA-256 integrity manifest
-- 📑 Final case report export via `/api/reports/:caseId/final` and `/api/reports/:caseId/final.html`
-- 🖨️ Native PDF export via `/api/reports/:caseId/final.pdf`
+- Case-bound, consent-based public links
+- Editable title, description, branding, layout, colors, and completion behavior
+- Explicit acceptance before submission
+- Server-observed IP, user agent, language, timezone, device type, operating system, browser, screen, viewport, and supported browser network hints
+- Optional GPS only when the user grants browser permission
+- Optional IP enrichment and Maps links
+- Explainable consistency score
+- SHA-256 evidence hash and case timeline association
+- Audit events for creation, completion, editing, revocation, and administrative deletion
+- Per-IP and per-token/IP rate limiting
+- Socket.IO updates with a polling fallback
 
-### Runtime Modes
-- 🚆 `railway-dashboard`: dashboard, contacts, reports, activity, audit lookup, and WhatsApp session persistence without local packet capture
-- 💻 `local-full`: complete local/VM/VPS mode with packet capture, Network Monitor, and call traffic analysis
-- 🧠 `/api/runtime-capabilities` lets the frontend show or hide capture features automatically
-- 🟢 `/api/health` reports `operational` or `degraded` without printing secrets
-- 🔐 `DASHBOARD_TOKEN` protects REST API, Socket.IO, dashboard access, and download links; required when `NODE_ENV=production`
+### Cases, audit trail, and evidence
 
-### MongoDB Persistence
-- 💾 Measurements stored with 30-day TTL auto-cleanup
-- 📇 Contacts with full profile data (soft-delete enabled)
-- 📊 Aggregation queries for stats, patterns, and reports
-- 🔄 Graceful shutdown with connection cleanup
-- 📞 Call analyses persisted by `callId`
-- 🧾 Audit events persisted by `caseId`
+- Formal case records with `draft`, `authorized`, `active`, `closed`, and `archived` states
+- Capture rejection for closed or archived cases
+- Required operator and authorization context
+- UTC timestamps and case-linked audit events
+- Timeline and technical-table views with filters, search, and pagination
+- JSON audit export with SHA-256 hash
+- Evidence package in JSON or ZIP
+- Spreadsheet-ready CSV annexes and per-file integrity hashes
+- Direct case links for contacts, network captures, call analyses, check-ins, and generated reports
 
 ---
 
-## Tech Stack
+## Technology Stack
 
 | Layer | Technology |
-|-------|-----------|
-| **Runtime** | Node.js 22 + TypeScript 5.7 |
-| **Backend** | Express 5 + Socket.IO 4.8 |
-| **Frontend** | React 19 + TailwindCSS 3.4 + Recharts 3.5 + Lucide React |
-| **Database** | MongoDB 7.1 (Atlas or local) |
-| **WhatsApp** | @whiskeysockets/baileys (latest from GitHub) |
-| **Packet Capture** | cap 0.2.1 (libpcap binding) + Npcap (Windows) |
-| **Geolocation** | geoip-lite 2.0 (offline MaxMind DB) |
-| **Package Managers** | Yarn 4 (backend) / pnpm (frontend) |
+|---|---|
+| Runtime | Node.js 22, TypeScript 5.7 |
+| Backend | Express 5, Socket.IO 4.8 |
+| Frontend | React 19, Tailwind CSS 3.4, Recharts 3.5, Lucide React |
+| Database | MongoDB 7.1, local or Atlas |
+| WhatsApp integration | `@whiskeysockets/baileys` from GitHub |
+| Packet capture | `cap` 0.2.1 with Npcap/libpcap |
+| Offline geolocation | `geoip-lite` 2.0 |
+| Optional IP enrichment | DB-IP with `ip-api` complement |
+| Package managers | Yarn 4 for the backend, pnpm for the frontend |
+| Packaging and deployment | Docker Compose, local runtime, Railway dashboard mode |
 
-### Dependency Audit Status
+### Dependency audit status
 
-The project keeps lockfiles for backend and frontend dependencies and uses package-manager overrides to pin patched transitive packages where compatibility is safe. The current hardening pass leaves the frontend production audit clean. The remaining frontend advisories are development-server findings from CRA `react-scripts` / `webpack-dev-server`; they should be eliminated by a future Vite migration instead of forcing an incompatible Webpack Dev Server major version.
+The project keeps backend and frontend lockfiles and uses compatible overrides for patched transitive dependencies. The frontend production audit is clean in the documented hardening pass; remaining frontend development advisories are associated with Create React App development tooling and should be resolved through a controlled Vite migration rather than an incompatible forced upgrade.
 
-Backend audit still reports upstream/transitive advisories through the WhatsApp stack (`@whiskeysockets/baileys`, `libsignal`, `protobufjs`, `music-metadata`). Those are tracked as residual risk because force-overriding them can break WhatsApp session/call behavior. The recommended production path is a separate compatibility branch that upgrades or replaces those packages, runs QR login, contact restore, call capture, reports, Railway mode, and local packet capture smoke tests, then promotes only after manual verification.
+The backend retains upstream/transitive risk through the WhatsApp dependency chain, including Baileys-related libraries. Upgrades should be tested on a compatibility branch with QR authentication, contact restoration, call capture, reporting, Railway mode, and local packet-capture smoke tests before promotion.
 
 ---
 
-## Installation
+## Quick Start
 
 ### Prerequisites
 
-- **Node.js** 22+
-- **MongoDB** (local or [Atlas](https://www.mongodb.com/atlas))
-- **Npcap** (Windows only — required for Network Monitor)
-  - Download from [npcap.com](https://npcap.com/)
-  - Install with **"Install Npcap in WinPcap API-compatible Mode"** checked
-- **WhatsApp account** for tracker authentication
+- Node.js `22+`
+- Yarn `4`
+- pnpm
+- MongoDB, local or Atlas
+- A WhatsApp account for QR authentication
+- Npcap on Windows when using Network Monitor or local call analysis
+- Administrator/root permissions for packet capture
 
-### Setup
+On Windows, install Npcap with **WinPcap API-compatible Mode** enabled.
+
+### Clone and install
 
 ```bash
-# Clone repository
 git clone https://github.com/deco31416/device-activity-tracker.git
 cd device-activity-tracker
 
-# Install backend dependencies
 yarn install
+cd client
+pnpm install
+cd ..
 
-# Install frontend dependencies
-cd client && pnpm install && cd ..
-
-# Configure environment
 cp .env.example .env
-# Edit .env with your MongoDB URI and settings
 ```
 
-### Environment Variables
+Edit `.env` before starting the application.
 
-```env
-# Server / frontend defaults
-BACKEND_PORT=4000
-CLIENT_PORT=4001
-BACKEND_URL=http://127.0.0.1:4000
-ALLOWED_ORIGINS=http://localhost:4001,http://127.0.0.1:4001
-PUBLIC_BASE_URL=http://127.0.0.1:4000
+### Recommended local startup
 
-# MongoDB
-MONGODB_URI=mongodb://localhost:27017       # or mongodb+srv://... for Atlas
-MONGODB_DB=device-tracker
-
-# Runtime
-NODE_ENV=development
-DEPLOYMENT_MODE=local-full                  # local-full | railway-dashboard
-LOCAL_CAPTURE_ENABLED=true                  # false in Railway dashboard mode
-
-# Optional locally, required in production. Use 32+ characters.
-# DASHBOARD_TOKEN=change-this-long-random-token-with-32-plus-chars
-
-# Client IP handling. Local default: false. Railway default: one trusted proxy hop.
-# TRUST_PROXY=false
-
-# Public Check-In submit rate limits.
-# CHECKIN_SUBMIT_RATE_WINDOW_MS=600000
-# CHECKIN_SUBMIT_RATE_MAX_PER_IP=60
-# CHECKIN_SUBMIT_RATE_MAX_PER_TOKEN_IP=8
-
-# API docs. Served only when true and NODE_ENV is not production.
-ENABLE_SWAGGER=false
-
-# Optional IP enrichment for call-analysis candidates.
-# Default: DB-IP as primary GeoIP source, ip-api as technical fallback/complement.
-ENABLE_IP_ENRICHMENT=true
-IP_ENRICHMENT_PRIMARY_PROVIDER=db-ip          # db-ip | ip-api
-DB_IP_API_KEY=free                            # use paid key for DB-IP extended fields
-IP_ENRICHMENT_CACHE_TTL_SEC=604800
-IP_ENRICHMENT_TIMEOUT_MS=3500
-
-# Optional automatic call-capture defaults
-DEFAULT_CASE_ID=CASO-2026-001
-DEFAULT_OPERATOR_NAME=Operator name
-DEFAULT_AUTHORIZATION_NOTE=Authorization reference
-```
-
-For Authorized Check-In previews outside the local machine, set `PUBLIC_BASE_URL` to the public HTTPS backend URL. Open Graph images and shared links cannot resolve from `localhost` or `127.0.0.1` on another device.
-
-For Railway, use `DEPLOYMENT_MODE=railway-dashboard` and `LOCAL_CAPTURE_ENABLED=false`.
-
-### Swagger / OpenAPI
-
-Swagger UI is available only when:
-
-```env
-ENABLE_SWAGGER=true
-NODE_ENV!=production
-```
-
-Local route:
-
-```txt
-http://127.0.0.1:4000/docs
-```
-
-In production, `/docs` is not registered.
-
-Startup logs validate operational configuration without printing secrets:
-
-- `🟢` OK / operational
-- `🟠` warning / degraded
-- `🔴` critical
-- `🔵` info / process
-
----
-
-## Usage
-
-### Web Interface (Recommended)
-
-From VS Code, the easiest operational start is one command:
+From PowerShell or the VS Code terminal:
 
 ```powershell
 pnpm run dev:local
 ```
 
-This opens two visible PowerShell terminals:
+The command opens visible backend and frontend terminals:
 
-- `WP MONITOR Backend 4000` → `http://127.0.0.1:4000`
-- `WP MONITOR Frontend 4001` → `http://127.0.0.1:4001`
+| Service | Address |
+|---|---|
+| Backend | `http://127.0.0.1:4000` |
+| Frontend | `http://127.0.0.1:4001` |
+| Health check | `http://127.0.0.1:4000/api/health` |
 
-Live logs are also written to:
+Runtime logs are written to:
 
-- `.runtime-logs/backend-local.log`
-- `.runtime-logs/frontend-local.log`
-
-To keep everything inside VS Code integrated terminals, use **Terminal → Run Task... → WP MONITOR: Start Local Full Stack**. VS Code will create named terminal panels for backend and frontend.
+```text
+.runtime-logs/backend-local.log
+.runtime-logs/frontend-local.log
+```
 
 Safe local controls:
 
@@ -365,74 +393,123 @@ pnpm run dev:local -- -Status
 pnpm run dev:local -- -Restart
 ```
 
-`-Status` only reports current local state. `-Restart` intentionally stops known local owners of `4000/4001` before relaunching. Accidental repeated starts are ignored for a short cooldown window to avoid duplicate terminals.
+The direct `scripts/start-local.ps1` entry point does not launch services unless `-Start` or `-Restart` is provided.
 
-Direct execution of `scripts/start-local.ps1` is safe by default: it will not start services unless `-Start` or `-Restart` is provided. The official command `pnpm run dev:local` passes `-Start` explicitly.
-
-Manual startup is still supported:
+### Manual startup
 
 ```bash
-# Terminal 1: Start backend (requires admin for packet capture)
+# Terminal 1
+# Administrator/root privileges are required for packet capture.
 yarn start:server
 
-# Terminal 2: Start frontend
-cd client && pnpm start
+# Terminal 2
+cd client
+pnpm start
 ```
 
-Open [http://127.0.0.1:4001](http://127.0.0.1:4001).
-
-Recommended local ports for this project are `4000/4001` so it does not collide with other local apps using `3000`:
-
-```powershell
-# Backend
-$env:PORT='4000'; $env:BACKEND_PORT='4000'; $env:DEPLOYMENT_MODE='local-full'; $env:LOCAL_CAPTURE_ENABLED='true'; yarn start:server
-
-# Frontend
-$env:PORT='4001'; $env:REACT_APP_API_URL='http://127.0.0.1:4000'; cd client; npm start
-```
-
-Then open [http://127.0.0.1:4001](http://127.0.0.1:4001) and verify backend status at [http://127.0.0.1:4000/api/health](http://127.0.0.1:4000/api/health).
-
-1. **📱 WhatsApp Tracker tab** — Scan QR, add contacts, monitor RTT + bitácora
-2. **🌐 Network Monitor tab** — Select interface, add audit metadata, apply filters, capture packets
-3. **🧾 Audit Trail tab** — Select a case, filter/paginate custody events, and export hashed audit/evidence packages
-4. **📞 Call panel** — In a contact card, use local call traffic analysis when Local full mode is enabled
-
-> **Note:** Packet capture requires **administrator/root privileges** and only works on the local machine, VM, or authorized host where the traffic is visible.
-
-### Contact Tracking Workflow
-
-1. Scan the WhatsApp QR code
-2. Enter a phone number and click **Add**
-3. The RTT chart shows real-time activity detection
-4. Below the chart, the **Bitácora** shows state changes in plain language
-5. Export the bitácora via JSON / HTML / PDF buttons
-6. Download a full report with the **Report** button
-7. Stop tracking — the contact is saved to history
-8. Click **History** to see all saved contacts and re-track with one click
-
-### CLI Interface (WhatsApp only)
+### CLI mode
 
 ```bash
 yarn start
 ```
 
-### Docker
+### Docker Compose
 
 ```bash
 cp .env.example .env
 docker compose up --build
 ```
 
-- Frontend: [http://127.0.0.1:4001](http://127.0.0.1:4001)
-- Backend: [http://127.0.0.1:4000](http://127.0.0.1:4000)
-- WhatsApp auth is persisted at `/app/auth_info_baileys`
+The containerized defaults expose the frontend on `4001`, the backend on `4000`, and persist WhatsApp authentication at `/app/auth_info_baileys`.
 
-### Railway Dashboard Deployment
+---
 
-Railway should be used for the dashboard/API/statistics side, not for local packet capture.
+## Configuration
 
-Required production shape:
+### Environment variables
+
+<details>
+<summary>Show the complete example configuration</summary>
+
+```env
+# Server and frontend
+BACKEND_PORT=4000
+CLIENT_PORT=4001
+BACKEND_URL=http://127.0.0.1:4000
+ALLOWED_ORIGINS=http://localhost:4001,http://127.0.0.1:4001
+PUBLIC_BASE_URL=http://127.0.0.1:4000
+
+# MongoDB
+MONGODB_URI=mongodb://localhost:27017
+MONGODB_DB=device-tracker
+
+# Runtime mode
+NODE_ENV=development
+DEPLOYMENT_MODE=local-full
+LOCAL_CAPTURE_ENABLED=true
+
+# Optional locally; required in production. Use at least 32 characters.
+# DASHBOARD_TOKEN=change-this-long-random-token-with-32-plus-chars
+
+# Client IP handling
+# Local default: false
+# Railway default: one trusted proxy hop
+# TRUST_PROXY=false
+
+# Public Check-In submit rate limits
+# CHECKIN_SUBMIT_RATE_WINDOW_MS=600000
+# CHECKIN_SUBMIT_RATE_MAX_PER_IP=60
+# CHECKIN_SUBMIT_RATE_MAX_PER_TOKEN_IP=8
+
+# Swagger/OpenAPI; never registered in production
+ENABLE_SWAGGER=false
+
+# Optional call-analysis IP enrichment
+ENABLE_IP_ENRICHMENT=true
+IP_ENRICHMENT_PRIMARY_PROVIDER=db-ip
+DB_IP_API_KEY=free
+IP_ENRICHMENT_CACHE_TTL_SEC=604800
+IP_ENRICHMENT_TIMEOUT_MS=3500
+
+# Optional default audit context
+DEFAULT_CASE_ID=CASE-2026-001
+DEFAULT_OPERATOR_NAME=Authorized operator
+DEFAULT_AUTHORIZATION_NOTE=Authorization reference
+```
+
+</details>
+
+### Runtime modes
+
+| Variable | Local full mode | Railway dashboard mode |
+|---|---|---|
+| `DEPLOYMENT_MODE` | `local-full` | `railway-dashboard` |
+| `LOCAL_CAPTURE_ENABLED` | `true` | `false` |
+| Local adapter access | Available with OS privileges | Not available |
+| Network Monitor | Enabled | Disabled |
+| Call traffic analysis | Enabled | Disabled |
+| Dashboard, API, reports, audit | Enabled | Enabled |
+
+### Swagger / OpenAPI
+
+Swagger UI is available only when both conditions are satisfied:
+
+```env
+ENABLE_SWAGGER=true
+NODE_ENV!=production
+```
+
+Local route:
+
+```text
+http://127.0.0.1:4000/docs
+```
+
+The `/docs` route is not registered in production.
+
+### Railway dashboard deployment
+
+Use Railway for the dashboard, API, statistics, reports, audit lookup, and persisted WhatsApp session. Do not treat Railway as a local packet-capture host.
 
 ```env
 DEPLOYMENT_MODE=railway-dashboard
@@ -444,453 +521,379 @@ MONGODB_DB=activity-tracker
 ALLOWED_ORIGINS=https://your-frontend.up.railway.app
 DASHBOARD_TOKEN=change-this-long-random-token-with-32-plus-chars
 TRUST_PROXY=1
+PUBLIC_BASE_URL=https://your-backend.up.railway.app
 ```
 
-Attach a Railway volume to:
+Attach persistent Railway volumes to:
 
-```txt
+```text
 /app/auth_info_baileys
-```
-
-For Authorized Check-In preview images and other generated public uploads, attach a second Railway volume to:
-
-```txt
 /app/public/uploads
 ```
 
-This keeps uploaded preview assets available after restarts/redeploys. Without this volume, generated files under `/uploads/checkins/*` may disappear because Railway containers use ephemeral filesystem storage.
+The first volume preserves WhatsApp authentication. The second preserves Authorized Check-In preview assets across restarts and redeployments.
 
-See [docs/railway-checklist.md](docs/railway-checklist.md) for the full deployment checklist.
+See [docs/operations/railway.md](docs/operations/railway.md) for the deployment checklist.
 
 ---
 
-## API Endpoints
+## Usage
 
-### Runtime & Audit
+### Recommended workflow
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/runtime-capabilities` | Public runtime capability check for dashboard/local mode |
-| `GET` | `/api/health` | Public operational/degraded health check for MongoDB, WhatsApp, local capture, and runtime mode |
-| `GET` | `/api/audit/:caseId` | Audit events for a Case ID |
-| `GET` | `/api/audit/:caseId/export` | Export audit JSON with SHA-256 hash |
-| `GET` | `/api/evidence/:caseId/package` | Export JSON evidence package with manifest and SHA-256 hashes |
-| `GET` | `/api/evidence/:caseId/package.zip` | Export ZIP evidence package with separated JSON artifacts |
-| `GET` | `/api/reports/:caseId/final` | Export final case report JSON |
-| `GET` | `/api/reports/:caseId/final.html` | Export final case report HTML |
-| `GET` | `/api/reports/:caseId/final.pdf` | Export final case report PDF |
+1. Confirm written or otherwise valid authorization for the account, device, traffic, or case.
+2. Start `local-full` when local packet metadata is required, or `railway-dashboard` for remote dashboard and reporting functions.
+3. Open the dashboard and provide the configured `DASHBOARD_TOKEN` when enabled.
+4. Authenticate the project session through the WhatsApp QR flow.
+5. Create or select a case and provide `caseId`, `operatorName`, and `authorizationNote` before manual capture.
+6. Add an authorized contact and review RTT measurements, state history, profile data, statistics, and behavior analytics.
+7. For call analysis, start the WhatsApp Web/Desktop call outside WP MONITOR on the same authorized host, then open and close the bounded local capture window.
+8. Review candidate and infrastructure classifications conservatively.
+9. Export contact reports, final case reports, audit data, or evidence packages as required.
+10. Stop tracking and close or archive the case when the authorized work is complete.
 
-### Case Management
+### Production authentication
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/cases` | List cases, optionally filtered by status |
-| `POST` | `/api/cases` | Create or update a formal case record |
-| `GET` | `/api/cases/:caseId` | Get one case |
-| `PATCH` | `/api/cases/:caseId` | Update case metadata/status |
-| `POST` | `/api/cases/:caseId/close` | Close a case and register audit event |
-| `GET` | `/api/cases/:caseId/evidence` | List direct evidence links for a case |
+When `DASHBOARD_TOKEN` is set:
 
-### WhatsApp Tracker
+- REST requests require `Authorization: Bearer <token>`.
+- Socket.IO clients must send the same token in the authentication payload.
+- Dashboard access and protected download links use the same control.
+- `DASHBOARD_TOKEN` is required when `NODE_ENV=production`.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/contacts` | List all tracked contacts |
-| `GET` | `/api/contacts/history` | All saved contacts (active + inactive) |
-| `GET` | `/api/history/:jid` | RTT measurement history for a contact |
-| `GET` | `/api/activity/:jid` | State transition history |
-| `GET` | `/api/stats/:jid` | State distribution (% online/standby/offline) |
-| `GET` | `/api/profile/:jid` | Full contact profile (stored + live WhatsApp data) |
-| `GET` | `/api/patterns/:jid` | Hourly activity patterns |
-| `GET` | `/api/report/:jid` | Comprehensive report (JSON) |
-| `GET` | `/api/report/:jid/download` | Download report as file |
-| `GET` | `/api/privacy-score/:jid` | Privacy/OPSEC exposure score (0–100) with deductions |
-| `GET` | `/api/anomalies/:jid` | Anomaly detection (unusual hours, erratic behavior, etc.) |
+---
 
-### Network Monitor
+## API Reference
+
+### Runtime, health, audit, evidence, and reports
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/network/interfaces` | List available network interfaces |
-| `GET` | `/api/network/status` | Capture status and statistics |
-| `GET` | `/api/network/packets` | Recent captured packets (up to 2000) |
-| `GET` | `/api/network/export/json` | Export packets as JSON file |
-| `GET` | `/api/network/export/csv` | Export packets as CSV file |
+|---|---|---|
+| `GET` | `/api/runtime-capabilities` | Returns public runtime capability flags for dashboard/local mode |
+| `GET` | `/api/health` | Returns operational or degraded status without exposing secrets |
+| `GET` | `/api/audit/:caseId` | Returns audit events for a case |
+| `GET` | `/api/audit/:caseId/export` | Exports audit JSON with a SHA-256 hash |
+| `GET` | `/api/evidence/:caseId/package` | Exports the JSON evidence package |
+| `GET` | `/api/evidence/:caseId/package.zip` | Exports a ZIP evidence package with separated artifacts |
+| `GET` | `/api/reports/:caseId/final` | Exports the final case report as JSON |
+| `GET` | `/api/reports/:caseId/final.html` | Exports the final case report as HTML |
+| `GET` | `/api/reports/:caseId/final.pdf` | Exports the final case report as PDF |
 
-### Call Traffic Analysis
+<details>
+<summary>Case management endpoints</summary>
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/call-analysis/:jid` | Latest call traffic analysis for a contact |
-| `GET` | `/api/call-history/:jid` | Call traffic analysis history for a contact |
-| `GET` | `/api/call-capture/status` | Current call-capture status |
-| `POST` | `/api/call-capture/start` | Start manual call capture with audit metadata |
-| `POST` | `/api/call-capture/stop` | Stop manual call capture |
+|---|---|---|
+| `GET` | `/api/cases` | Lists cases, optionally filtered by status |
+| `POST` | `/api/cases` | Creates or updates a formal case record |
+| `GET` | `/api/cases/:caseId` | Returns one case |
+| `PATCH` | `/api/cases/:caseId` | Updates case metadata or status |
+| `POST` | `/api/cases/:caseId/close` | Closes a case and records an audit event |
+| `GET` | `/api/cases/:caseId/evidence` | Lists direct evidence links for a case |
 
-### Socket.IO Events
+</details>
+
+<details>
+<summary>WhatsApp tracker endpoints</summary>
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/contacts` | Lists active tracked contacts |
+| `GET` | `/api/contacts/history` | Lists active and inactive saved contacts |
+| `GET` | `/api/history/:jid` | Returns RTT measurement history |
+| `GET` | `/api/activity/:jid` | Returns state transition history |
+| `GET` | `/api/stats/:jid` | Returns online, standby, and offline distribution |
+| `GET` | `/api/profile/:jid` | Returns stored and live profile data |
+| `GET` | `/api/patterns/:jid` | Returns hourly activity patterns |
+| `GET` | `/api/report/:jid` | Generates the comprehensive contact report |
+| `GET` | `/api/report/:jid/download` | Downloads the contact report |
+| `GET` | `/api/privacy-score/:jid` | Returns the explainable OPSEC exposure score |
+| `GET` | `/api/anomalies/:jid` | Returns historical-baseline anomaly findings |
+
+</details>
+
+<details>
+<summary>Network Monitor endpoints</summary>
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/network/interfaces` | Lists available network interfaces |
+| `GET` | `/api/network/status` | Returns capture status and statistics |
+| `GET` | `/api/network/packets` | Returns up to 2,000 recent packet metadata entries |
+| `GET` | `/api/network/export/json` | Exports packet metadata as JSON |
+| `GET` | `/api/network/export/csv` | Exports packet metadata as CSV |
+
+</details>
+
+<details>
+<summary>Call traffic analysis endpoints</summary>
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/call-analysis/:jid` | Returns the latest call traffic analysis for a contact |
+| `GET` | `/api/call-history/:jid` | Returns call-analysis history for a contact |
+| `GET` | `/api/call-capture/status` | Returns current call-capture status |
+| `POST` | `/api/call-capture/start` | Starts a bounded manual capture with audit metadata |
+| `POST` | `/api/call-capture/stop` | Stops the current manual capture and runs analysis |
+
+</details>
+
+### Socket.IO events
+
+<details>
+<summary>Show realtime event contracts</summary>
 
 | Event | Direction | Description |
-|-------|-----------|-------------|
-| `add-contact` | Client → Server | Start tracking a phone number |
-| `remove-contact` | Client → Server | Stop tracking (soft-delete) |
-| `reactivate-contact` | Client → Server | Re-activate a saved contact |
-| `get-tracked-contacts` | Client → Server | Request active trackers |
-| `set-probe-method` | Client → Server | Change probe method (delete/reaction) |
-| `tracker-update` | Server → Client | Real-time RTT + state data |
-| `contact-added` | Server → Client | Contact successfully added |
-| `contact-profile` | Server → Client | Enriched profile data |
-| `network-start` | Client → Server | Start packet capture |
-| `network-stop` | Client → Server | Stop packet capture |
-| `network-packet` | Server → Client | New packet captured |
-| `start-call-capture` | Client → Server | Start call traffic capture with audit metadata |
-| `stop-call-capture` | Client → Server | Stop call traffic capture |
-| `call-capture-started` | Server → Client | Call capture started confirmation |
-| `call-capture-stopped` | Server → Client | Call capture stopped with analysis result |
-| `call-packet` | Server → Client | New packet observed during call capture |
-| `presence-change` | Server → Client | Typing/recording/available state change |
-| `device-alert` | Server → Client | New device detected for a contact |
+|---|---|---|
+| `add-contact` | Client to server | Starts tracking an authorized phone number |
+| `remove-contact` | Client to server | Stops tracking and soft-deletes the contact |
+| `reactivate-contact` | Client to server | Reactivates a saved contact |
+| `get-tracked-contacts` | Client to server | Requests active trackers |
+| `set-probe-method` | Client to server | Changes the delete/reaction probe method |
+| `tracker-update` | Server to client | Sends real-time RTT and state data |
+| `contact-added` | Server to client | Confirms a contact was added |
+| `contact-profile` | Server to client | Sends enriched profile data |
+| `network-start` | Client to server | Starts authorized network capture |
+| `network-stop` | Client to server | Stops network capture |
+| `network-packet` | Server to client | Sends a newly captured packet metadata entry |
+| `start-call-capture` | Client to server | Starts call-window capture with audit metadata |
+| `stop-call-capture` | Client to server | Stops call-window capture |
+| `call-capture-started` | Server to client | Confirms capture start |
+| `call-capture-stopped` | Server to client | Returns the completed analysis |
+| `call-packet` | Server to client | Sends a packet observed during the call window |
+| `presence-change` | Server to client | Sends supported composing, recording, or availability changes |
+| `device-alert` | Server to client | Reports a newly observed device |
 
-When `DASHBOARD_TOKEN` is set, REST requests require `Authorization: Bearer <token>` and Socket.IO connects with the same token in auth payload.
-
----
-
-## Project Structure
-
-```
-device-activity-tracker/
-├── src/
-│   ├── server.ts              # Express + Socket.IO backend (APIs + auto-restore + privacy/anomaly)
-│   ├── tracker.ts             # WhatsApp RTT analysis engine + SIGINT detection
-│   ├── packet-capture.ts      # Network packet capture service (Npcap/cap)
-│   ├── call-analyzer.ts       # Local call traffic analysis and route/candidate classification
-│   ├── meta-ip-ranges.ts      # Meta/WhatsApp infrastructure CIDR helpers
-│   ├── db.ts                  # MongoDB persistence + report generation
-│   ├── index.ts               # CLI interface
-│   └── types/
-│       └── cap.d.ts           # TypeScript declarations for cap module
-├── client/
-│   ├── src/
-│   │   ├── App.tsx            # Root component with tab navigation
-│   │   ├── auth.ts            # Dashboard token helpers and authenticated fetch/download URLs
-│   │   ├── types.ts           # Shared frontend models for call/audit views
-│   │   └── components/
-│   │       ├── Dashboard.tsx      # Tracker dashboard + contact history panel
-│   │       ├── Login.tsx          # WhatsApp QR authentication
-│   │       ├── ContactCard.tsx    # Contact card: chart, bitácora, stats, profile, intel, SIGINT
-│   │       ├── NetworkMonitor.tsx # Network monitor UI
-│   │       └── AuditTrail.tsx     # Case-based audit lookup and export
-│   ├── tailwind.config.js
-│   └── package.json
-├── docs/
-│   ├── deployment-split.md
-│   ├── local-operation-guide.md
-│   └── railway-checklist.md
-├── plan.md
-├── CHANGELOG.md
-├── .env.example
-├── docker-compose.yml
-├── Dockerfile
-└── package.json
-```
+</details>
 
 ---
 
 ## How It Works
 
-### WhatsApp RTT Analysis
+### RTT activity analysis
 
-The tracker sends probe messages and measures the Round-Trip Time (RTT) to detect device activity:
+The tracker sends the configured probe and measures the interval until the supported client acknowledgement is observed.
 
-| Probe Method | Description |
-|-------------|-------------|
-| **Delete** (Default) | Sends a "delete" request for a non-existent message ID |
-| **Reaction** | Sends a reaction emoji to a non-existent message ID |
+| Probe method | Description |
+|---|---|
+| Delete | Sends a delete request referencing a non-existent message identifier |
+| Reaction | Sends a reaction referencing a non-existent message identifier |
 
-The time between sending the probe and receiving the CLIENT ACK (Status 3) is measured as RTT. Device state uses a dynamic threshold at 90% of median RTT — values below = active, values above = standby.
+The project calculates a dynamic threshold from the median RTT. Measurements below or above that threshold contribute to heuristic activity-state classification. These states depend on current platform behavior and must not be treated as direct proof that a person is actively using a device.
 
-### Bitácora Translation
+### Network packet metadata pipeline
 
-The bitácora translates technical RTT data into plain language for stakeholders:
+```mermaid
+flowchart LR
+    Adapter[Authorized Network Adapter]
+    Capture[Npcap / libpcap Capture]
+    Decode[IPv4 and TCP/UDP Metadata Decode]
+    Filter[BPF and Runtime Filters]
+    Classify[Infrastructure and Candidate Classification]
+    Enrich[Optional IP Enrichment]
+    Stream[Socket.IO Stream]
+    Store[Case Audit and MongoDB]
+    Export[CSV / JSON]
 
-| Technical State | Bitácora Output |
-|----------------|----------------|
-| `Online (1 device)` | 📱 El contacto se CONECTÓ — Dispositivo activo (respuesta: 1124ms) |
-| `Standby` | 💤 El contacto pasó a ESPERA — App abierta en segundo plano (respuesta: 1350ms) |
-| `OFFLINE` | 🔴 El contacto se DESCONECTÓ — No hay actividad detectada |
-
-### Report Generation
-
-The `/api/report/:jid` endpoint generates a comprehensive report:
-
-```json
-{
-  "summary": {
-    "trackingDuration": "2h 19m",
-    "totalDataPoints": 3053,
-    "avgResponseTime": 1350,
-    "onlinePercentage": 24,
-    "peakActivityHour": "1:00 - 2:00",
-    "estimatedDailyUsage": "28m"
-  },
-  "contact": { "..." },
-  "stats": { "..." },
-  "patterns": { "..." },
-  "activityHistory": [ "..." ],
-  "recentMeasurements": [ "..." ]
-}
+    Adapter --> Capture --> Decode --> Filter --> Classify
+    Classify --> Enrich
+    Classify --> Stream
+    Enrich --> Stream
+    Stream --> Store
+    Store --> Export
 ```
 
-### Report Types And When To Use Them
+Only packet metadata is analyzed by this module; payload/content inspection is outside the documented design.
 
-WP MONITOR has several exports because each one answers a different operational question:
+### Evidence package
 
-| Export | Where | Scope | Includes | Best use |
-|--------|-------|-------|----------|----------|
-| **Activity Bitácora JSON/HTML/PDF** | Contact card → `RTT Chart` → `Bitácora de Actividad` buttons | One contact, activity timeline only | State changes, local time, UTC time, RTT, plain-language description, event count and activity summary | Fast chronological review for an operator or stakeholder |
-| **Full Contact Report** | Contact card → `Full` / `/api/report/:jid/download` | One contact, complete tracker profile | Contact/profile data, RTT stats, state distribution, activity history, behavior patterns, recent measurements and executive summary | Technical report for one monitored contact |
-| **Call Analysis History** | Contact card → `Llamada` tab | One contact, local call-capture sessions | Observed route map, packet count, relays/infrastructure, candidate IP scoring, non-conclusive observations, GeoIP/provider hints and limitations | Review authorized WhatsApp Web/Desktop call or interaction captures |
-| **Final Case Report JSON/HTML/PDF** | `Cases` / `Audit Trail` → final report exports | Full case | Case record, authorization, audit timeline, evidence links, activity stats, call analyses, candidate/non-conclusive IP observations, hashes and limitations | Formal case-level investigative report |
-| **Evidence Package JSON/ZIP** | `Cases` / `Audit Trail` → evidence package exports | Full case, archival package | Manifest, case, audit events, evidence links, call analysis, network summary, final report, CSV annexes and SHA-256 integrity hashes | Chain-of-custody archive and external review package |
+A case evidence package can include:
 
-The contact-level **Full** report is not the same as the case-level **Final Case Report**. The Full report explains what is known about one contact inside WhatsApp Tracker; the Final Case Report and Evidence Package consolidate the broader investigation, including call captures, check-ins, network captures, audit trail, exports and evidence hashes.
+- Manifest with software version, generation timestamp, case identifier, and limitations
+- Case record and direct evidence links
+- Audit events
+- Call analyses linked through audited `callId` values
+- Activity statistics and coverage/reliability information
+- Network summary derived from capture audit events
+- Final report artifacts
+- SHA-256 hash per section and package-level integrity hash
+- CSV annexes for audit events, evidence links, call analyses, candidate IP observations, activity statistics, and network captures
 
-### Network Packet Capture
+Expected ZIP artifacts include:
 
-Captures packet **metadata only** (no payload/content inspection):
-
-1. **Capture** → Npcap captures raw Ethernet frames via BPF filters
-2. **Decode** → IPv4 headers → TCP/UDP ports → protocol classification
-3. **Geolocate** → Public IPs via offline MaxMind database
-4. **Classify** → Severity based on port (danger: 22, 3389; warning: 80, 53)
-5. **Stream** → Socket.IO real-time to UI
-6. **Store** → Buffer of 2000 packets with export
-
-### Call Traffic Analysis
-
-In Local full mode, the call analyzer opens a bounded capture window while an authorized WhatsApp Web call or interaction is performed on the same machine.
-
-The UI presents a route map and packet summary using cautious language:
-
-1. **Local host** → machine running WhatsApp Web and the capture service
-2. **Local network / ISP** → observed outbound path
-3. **WhatsApp / Meta infrastructure** → known provider ranges when matched
-4. **Relays / cloud providers** → infrastructure that may proxy traffic
-5. **Candidate IPs** → non-verified observed IPs for further authorized analysis
-
-The result is an investigative aid, not proof that an IP belongs to a person. When enabled, IP enrichment uses DB-IP as the primary GeoIP source and complements with `ip-api.com` for coordinates, ISP, organization, ASN, mobile/proxy/hosting flags, and a Google Maps URL when those fields are unavailable from DB-IP free tier. These values describe provider/network registration or routing hints, not GPS or verified user location. After enrichment, CDN/cloud/hosting/proxy networks are recategorized as infrastructure and their candidate score is capped even if the packet flow was bidirectional.
-
-### Audit Flow
-
-Manual capture flows require:
-
-- `caseId`
-- `operatorName`
-- `authorizationNote`
-
-Audit events are saved in MongoDB and can be reviewed from the `Audit Trail` tab. Audit export returns a JSON payload plus SHA-256 hash so the exported package can be referenced later.
-
-### Evidence Package
-
-The first evidence package format is JSON and includes:
-
-- manifest with software version, generated timestamp, case ID, and limitations
-- case record
-- direct evidence links
-- audit events
-- call analyses linked by audited `callId`
-- observed activity statistics with 24h/7d/30d trends, coverage, and reliability
-- network summary from capture audit events
-- SHA-256 hash per section
-- SHA-256 package hash
-
-Endpoint:
-
-```txt
-GET /api/evidence/:caseId/package
+```text
+manifest.json
+case.json
+audit.json
+evidence-links.json
+call-analysis.json
+network-summary.json
+final-report.json
+final-report.html
+final-report.pdf
+integrity.json
+full-package.json
+annexes/
 ```
 
-ZIP export is also available with separated JSON artifacts: `manifest.json`, `case.json`, `audit.json`, `evidence-links.json`, `call-analysis.json`, `network-summary.json`, `final-report.json`, `final-report.html`, `final-report.pdf`, `integrity.json`, and `full-package.json`.
-
-The ZIP includes spreadsheet-ready CSV annexes under `annexes/`: `audit-events.csv`, `evidence-links.csv`, `call-analysis.csv`, `candidate-ips.csv`, `activity-stats.csv`, `network-captures.csv`, plus `csv-integrity.json` with SHA-256 hashes for each CSV. Contacts, network captures, call analyses, and generated evidence packages are linked directly to the case through `case_evidence_links`.
-
-Report/evidence QA fixtures can be generated with:
+Report and evidence QA fixtures can be generated with:
 
 ```bash
 yarn qa:report-fixture
 ```
 
-The fixture validates required HTML/PDF/ZIP sections, PDF page count, developer branding, technical limitations, activity statistics, and absence of visible placeholder tokens.
+The fixture checks required report sections, PDF generation, ZIP contents, integrity metadata, technical limitations, developer branding, and visible placeholder leakage.
 
-### Deployment Split
+---
 
-The project intentionally separates cloud dashboard features from local packet capture:
+## Reports and Exports
 
-- **Railway dashboard mode**: API, dashboard, WhatsApp session, contacts, reports, audit lookup, and statistics.
-- **Local full mode**: full capture stack, Network Monitor, call traffic analysis, and route visualization.
+| Export | Scope | Includes | Recommended use |
+|---|---|---|---|
+| Activity Bitácora JSON/HTML/PDF | One contact and its activity timeline | State changes, local/UTC timestamps, RTT, readable descriptions, activity summary | Fast chronological review |
+| Full Contact Report | One contact | Profile, RTT statistics, state distribution, behavior patterns, history, measurements, executive summary | Technical contact-level review |
+| Call Analysis History | One contact | Capture windows, route view, packet counts, infrastructure, candidate scoring, GeoIP/provider hints, limitations | Review of authorized local call/interaction captures |
+| Final Case Report JSON/HTML/PDF | Entire case | Case record, authorization, audit timeline, evidence links, activity statistics, call analyses, IP observations, hashes, limitations | Formal case-level reporting |
+| Evidence Package JSON/ZIP | Entire case and archival artifacts | Manifest, case, audit, evidence links, analyses, reports, CSV annexes, SHA-256 integrity metadata | Chain-of-custody archive and external review |
 
-Railway containers cannot see your local network adapter, so packet capture belongs on the local machine, VM, or authorized lab host where the traffic is generated.
+The Full Contact Report and Final Case Report are different products. The contact report summarizes one authorized contact inside the tracker; the final case report consolidates the broader case, including audit events, check-ins, local captures, call analyses, evidence links, and integrity metadata.
 
-### Case Management
+---
 
-Cases are formal records used to group capture metadata, audit events, contact observations, and future evidence packages.
+## Project Structure
 
-Supported states:
+<details>
+<summary>Show the main repository structure</summary>
 
-- `draft`
-- `authorized`
-- `active`
-- `closed`
-- `archived`
+```text
+device-activity-tracker/
+├── src/
+│   ├── server.ts
+│   ├── tracker.ts
+│   ├── packet-capture.ts
+│   ├── call-analyzer.ts
+│   ├── meta-ip-ranges.ts
+│   ├── db.ts
+│   ├── index.ts
+│   └── types/
+│       └── cap.d.ts
+├── client/
+│   ├── src/
+│   │   ├── App.tsx
+│   │   ├── auth.ts
+│   │   ├── types.ts
+│   │   └── components/
+│   │       ├── Dashboard.tsx
+│   │       ├── Login.tsx
+│   │       ├── ContactCard.tsx
+│   │       ├── NetworkMonitor.tsx
+│   │       └── AuditTrail.tsx
+│   ├── tailwind.config.js
+│   └── package.json
+├── docs/
+│   ├── getting-started/
+│   ├── architecture/
+│   ├── user-guide/
+│   ├── operations/
+│   ├── security/
+│   ├── development/
+│   ├── reference/
+│   ├── adr/
+│   └── internal/
+├── scripts/
+├── plan.md
+├── CHANGELOG.md
+├── .env.example
+├── docker-compose.yml
+├── Dockerfile
+├── LICENSE
+└── package.json
+```
 
-Manual capture flows can automatically create or activate a case from `caseId`, `operatorName`, and `authorizationNote`. Captures are rejected when the case is `closed` or `archived`.
+</details>
 
 ---
 
 ## Documentation
 
 | Document | Purpose |
-|----------|---------|
-| [plan.md](plan.md) | Planner/audit board for current work and next steps |
-| [docs/README.md](docs/README.md) | Documentation index and operating principles |
-| [docs/deployment-split.md](docs/deployment-split.md) | Architecture split between Railway dashboard and Local full mode |
-| [docs/local-operation-guide.md](docs/local-operation-guide.md) | Local operating procedure, prerequisites, audit metadata, and troubleshooting |
-| [docs/railway-checklist.md](docs/railway-checklist.md) | Railway deployment checklist with env vars, volume, CORS, and smoke tests |
+|---|---|
+| [plan.md](plan.md) | Current planner and audit board |
+| [docs/README.md](docs/README.md) | Complete documentation portal by audience and task |
+| [docs/getting-started/README.md](docs/getting-started/README.md) | Installation, validation, first start, health and QR |
+| [docs/architecture/README.md](docs/architecture/README.md) | System context, components, data, events and trust boundaries |
+| [docs/user-guide/README.md](docs/user-guide/README.md) | Cases, Tracker, Network Monitor, Check-In, Audit and reports |
+| [docs/operations/README.md](docs/operations/README.md) | Local, Docker, Railway, backup, recovery and troubleshooting |
+| [docs/security/README.md](docs/security/README.md) | Security model, privacy, responsible use and evidence |
+| [docs/development/README.md](docs/development/README.md) | Development workflow, API contracts and quality controls |
+| [CHANGELOG.md](CHANGELOG.md) | Complete version history |
 
 ---
 
-## How to Protect Yourself
+## Security and Data Handling
 
-For **WhatsApp tracking**: Enable "Block unknown account messages" in WhatsApp under Settings → Privacy → Advanced. Disabling read receipts helps with regular messages but does not protect against this specific RTT attack.
+- Use `DASHBOARD_TOKEN` for every production deployment.
+- Restrict `ALLOWED_ORIGINS` to the actual frontend origins.
+- Configure `TRUST_PROXY` only for the known reverse-proxy topology.
+- Use HTTPS for every public deployment and every externally shared Authorized Check-In URL.
+- Keep MongoDB credentials, dashboard tokens, DB-IP keys, and other secrets outside version control.
+- Never commit `auth_info_baileys/`, packet captures, generated reports, audit exports, uploaded check-in assets, or evidence packages.
+- Run local packet capture only with the minimum required OS privileges and only on an authorized interface.
+- Treat SHA-256 values as integrity references, not proof that collected information is accurate or legally admissible.
+- Review upstream dependency advisories before production upgrades and validate WhatsApp session compatibility on a separate branch.
+- Report security vulnerabilities privately rather than publishing exploitable details in a public issue.
 
-For **network monitoring**: Use a VPN to encrypt and tunnel all traffic.
+### Defensive guidance
 
-> As of March 2026, the WhatsApp RTT vulnerability remains exploitable.
+The project demonstrates metadata exposure described in the cited research. Users should independently validate current WhatsApp behavior because platform changes can alter or remove the observed conditions.
 
----
-
-## Common Issues
-
-| Problem | Solution |
-|---------|----------|
-| **Not connecting to WhatsApp** | Delete `auth_info_baileys/` folder and re-scan QR |
-| **Baileys 405 error** | Install from GitHub, not npm |
-| **Packet capture not working** | Run as Administrator; verify Npcap with WinPcap mode |
-| **Network Monitor hidden** | Backend is likely in `railway-dashboard` mode or `LOCAL_CAPTURE_ENABLED=false` |
-| **401 Unauthorized** | `DASHBOARD_TOKEN` is set; enter the correct token in the dashboard |
-| **No useful call packets** | Confirm WhatsApp Web/call is running on the same machine/interface being captured |
-| **Railway does not capture traffic** | Expected behavior; Railway mode is for dashboard/statistics, not local adapter capture |
-| **Yarn PnP errors** | `.yarnrc.yml` must have `nodeLinker: node-modules` |
-| **MongoDB connection failed** | Check `MONGODB_URI` in `.env`; verify Atlas IP whitelist |
-| **Contact not auto-restoring** | Ensure contact was active (not stopped) before restart |
+For network privacy, a properly configured VPN can reduce direct network exposure by tunneling traffic, but it does not guarantee protection against every form of metadata correlation.
 
 ---
 
-## Changelog
+## Troubleshooting
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history.
-
-### v2.9.4 (June 2026) — Current
-- 🔐 **WhatsApp auth recovery** — stale Baileys sessions that close with `401/loggedOut` are rotated automatically so a fresh QR can be generated
-- 🧼 **Cleaner local terminals** — local startup sets UTF-8 output and suppresses frontend deprecation warnings that looked like runtime failures
-
-### v2.9.3 (June 2026)
-- 🟢 **One-command local startup** — `pnpm run dev:local` opens visible backend/frontend terminals on ports `4000/4001`
-- 🧩 **VS Code tasks** — `WP MONITOR: Start Local Full Stack` launches dedicated integrated terminals for backend and frontend
-- 🧾 **Startup logs** — local logs are written to `.runtime-logs/backend-local.log` and `.runtime-logs/frontend-local.log`
-
-### v2.9.2 (June 2026)
-- 🧭 **Network IP Intelligence** — backend-generated `ipInsights` classify local/private, Meta/WhatsApp, Google, Cloudflare, GitHub, Akamai/CDN, cloud/hosting, and public IPs to review
-- 🧾 **Professional IP Tracker** — separates preliminary public IPs from infrastructure, showing direction, packet counts, ASN/ORG, GeoIP hints, and DB-IP/DNSChecker/Maps links
-- 🧷 **Network Monitor UX** — page no longer jumps to the packet table during active capture, and empty states are scoped to the active tab
-
-### v2.9.1 (June 2026)
-- 🧮 **Call-analysis correlation** — tiny packet samples, one-way flows, and phone-country/GeoIP mismatch now apply hard score caps
-- 🧭 **Non-conclusive observations** — weak unknown IPs are preserved for audit but separated from true candidate IPs
-- 🛡️ **OPSEC score explanation** — privacy score now shows the formula, deductions, and plain-language reason
-- 📚 **Call workflow documentation** — README and local guide explain why calls are started from WhatsApp Web/Desktop outside WP MONITOR
-
-### v2.9.0 (June 2026)
-- 🧾 **Audit Trail console** — active case selector, operational summary, scope/action/search filters, paginated custody timeline, readable event cards, and technical table
-- 🧷 **Call audit consistency** — call-capture stop now snapshots active audit context before async enrichment to reduce mismatched `callId` evidence entries
-- 🧭 **Navigation UX** — collapsible desktop sidebar, mobile drawer menu, persistent sidebar state, and cleaner WP MONITOR branding with drone icon
-- 🔌 **Local ports** — frontend fallback API now points to `http://localhost:4000`, with docs recommending backend `4000` and frontend `4001`
-- 📄 **Audit pagination** — timeline/table render only the current page, with page-size controls and filter reset behavior
-
-### v2.8.0 (June 2026)
-- 🖼️ **Check-In Open Graph preview** — uploaded preview image, editable title/description, and public meta tags for authorized shared links
-- 🎨 **Authorized landing builder** — configurable brand, layout, colors, preview image, and GPS permission request per link
-- 🧾 **Client policy customization** — editable field labels, consent/policy text, submit button, success message, and redirect URL while preserving a minimum technical disclosure
-- 🔄 **Realtime Check-In dashboard** — create/update/complete/delete events refresh the Check-In list automatically with a polling fallback
-- 🧭 **Case-bound check-ins** — existing case dropdown, new-case mode, operator/authorization relation, and active tab persistence after refresh
-- 💻 **Extended device evidence** — OS/browser/device type, CPU/RAM hints, screen/viewport, network hints, language/timezone, optional GPS, Maps links, and SHA-256 hash
-- 🧭 **Consistency analysis** — compares IP GeoIP, proxy/hosting/mobile flags, browser timezone/language, GPS distance, referer, and privacy signals into an explainable score
-- 🛠️ **Check-In administration** — edit pending links, revoke links, delete completed records from MongoDB, and clean related evidence links with audit logging
-- ✅ **Frontend robustness** — safer JSON parsing for backend/HTML errors and 3MB upload limit for preview assets
-
-### v2.7.0 (June 2026)
-- 📍 **Authorized Check-In** — consent-based public link with observed IP, browser metadata, optional browser GPS, GeoIP enrichment, Maps links, audit events, case evidence link, and SHA-256 receipt hash
-- 🧾 **Check-In dashboard** — protected tab to create, copy, open, and review check-ins by case
-- ✅ **Check-In QA** — token/hash/render normalization covered by unit tests
-
-### v2.6.0 (June 2026)
-- 🚆 **Railway/local split** — `railway-dashboard` mode disables local capture; `local-full` keeps the complete capture stack
-- 🟢 **Operational health** — `/api/health` reports MongoDB, WhatsApp, local capture, runtime mode, and degraded reasons without secrets
-- 📚 **Swagger/OpenAPI** — `/docs` available only outside production when `ENABLE_SWAGGER=true`
-- 🔐 **Dashboard token auth** — `DASHBOARD_TOKEN` for REST, Socket.IO, dashboard, and downloads; required in production
-- 📞 **Call Traffic Analysis** — local authorized capture window, observed route map, relays/providers, and candidate IP classification
-- 🌍 **IP enrichment** — optional DB-IP-first lookup for candidate/infrastructure IPs with estimated network location, ISP/ORG/ASN, flags, caching, and Maps links
-- 🧾 **Case audit/evidence** — required capture metadata, Case ID event lookup, SHA-256 audit export, Evidence ZIP, CSV annexes, and final report JSON/HTML/PDF
-- 📊 **Activity insights** — 24h/7d/30d trends, coverage, reliability, report integration, and Evidence ZIP annexes
-- ✅ **QA automation** — `test:unit`, `qa:report-fixture`, HTTP runtime contracts, and local CORS coverage for ports `4000/4001`
-
-### v2.5.0 (March 2026)
-- 🐛 **Network Monitor fixes** — `cap.open()` buffer arg order, `geoip-lite` CJS interop, `linkType: undefined` en Wi-Fi (Windows)
-- 📄 **Network Monitor pagination** — 8 paquetes/página con controles «‹ N/Total ›» y auto-scroll a última página
-- 🐛 **Recharts height fix** — `ResponsiveContainer` en `ContactCard` usa píxeles fijos en vez de % para evitar warnings
-
-### v2.4.0 (March 2026)
-- ✍️ **SIGINT Detection** — Real-time typing/recording detection via presence events with animated indicators
-- 📱 **Device Change Alerts** — Detects when a new device connects; visual warning badge with device count
-- 📶 **WiFi vs Cellular Inference** — Classifies connection type from RTT variance; dynamic badge on contact card
-- 🛡️ **Privacy Score (OPSEC)** — Calculates 0–100 exposure score; evaluates pic, about, business, push name, trackability
-- ⚡ **Anomaly Detection** — Flags unusual hours, long sessions, night owl patterns, erratic behavior, schedule shifts
-- 🔧 Refactored `wireTrackerCallbacks()` — centralized callback wiring eliminates 3 duplicate code blocks
-- 🆕 New API endpoints: `/api/privacy-score/:jid`, `/api/anomalies/:jid`
-- 🆕 New Socket.IO events: `presence-change`, `device-alert`
-
-### v2.3.0 (March 2026)
-- 📈 Historical RTT chart — loads last 200 measurements from MongoDB on page load (charts no longer start empty)
-- 🐛 Fix: `saveContact` conflict with duplicate `customName` in `$set` and `$setOnInsert` — new contacts now persist correctly
-- 🐛 Fix: `deviceCount` incorrectly counted LID JIDs — now uses actual `devices.length`
-
-### v2.2.0 (March 2026)
-- ✨ Activity Bitácora with military time (local + UTC)
-- 📤 Export to JSON / HTML / PDF
-- 📊 Comprehensive report generation
-- 💾 Contact history with auto-restore
-- 👤 Profile enrichment + stats panels
-- 📄 Pagination + skeleton loading
-
-### v2.0.0 (March 2026)
-- 🌐 Network Monitor with packet capture
-- 💾 MongoDB persistence
-- 🎨 Dark theme UI
-- 🔒 Security hardening
-- ❌ Signal support removed
+| Problem | Resolution |
+|---|---|
+| WhatsApp session does not connect | Remove the stale `auth_info_baileys/` directory and scan a new QR code |
+| Baileys returns HTTP 405 | Install the documented GitHub version rather than an incompatible npm release |
+| Packet capture does not start | Run with administrator/root privileges and verify Npcap WinPcap compatibility mode on Windows |
+| Network Monitor is hidden | Confirm `DEPLOYMENT_MODE=local-full` and `LOCAL_CAPTURE_ENABLED=true` |
+| API returns `401 Unauthorized` | Provide the configured `DASHBOARD_TOKEN` in the dashboard or Bearer header |
+| Call analysis contains no useful packets | Confirm the WhatsApp Web/Desktop interaction runs on the same host and selected interface |
+| Railway captures no local traffic | Expected behavior; Railway mode has no access to the operator’s local adapter |
+| Yarn Plug'n'Play errors occur | Ensure `.yarnrc.yml` uses `nodeLinker: node-modules` |
+| MongoDB connection fails | Validate `MONGODB_URI`, credentials, network access, and Atlas allow-list settings |
+| Contact does not auto-restore | Confirm the contact remained active rather than being manually stopped before restart |
 
 ---
 
-## Ethical & Legal Considerations
+## Release Highlights
 
-⚠️ **For authorized research, defensive analysis, training, and lab use only.** Never track people, accounts, devices, or traffic without explicit authorization; doing so may violate privacy, computer misuse, wiretap, or data protection laws in your jurisdiction.
+### v2.9.4
 
-Authentication data (`auth_info_baileys/`), packet captures, audit exports, evidence packages, and generated reports must not be committed to version control.
+- Automatically rotates stale Baileys sessions that close with `401/loggedOut`, allowing a fresh QR flow
+- Uses UTF-8 local terminal output and suppresses misleading frontend deprecation noise
+
+### v2.9.3
+
+- Adds one-command local startup on ports `4000/4001`
+- Adds VS Code tasks for separate backend and frontend terminals
+- Writes local runtime logs under `.runtime-logs/`
+
+### v2.9.2
+
+- Moves Network Monitor IP intelligence to backend-generated `ipInsights`
+- Separates local/private ranges, known infrastructure, preliminary public candidates, and weak observations
+- Improves IP review cards and capture-table behavior
+
+See [CHANGELOG.md](CHANGELOG.md) for the complete history from v2.0.0 onward.
 
 ---
 
-## Citation
+## Research Basis and Citation
 
-Based on research by Gegenhuber et al., University of Vienna & SBA Research:
+WP MONITOR builds on the research by Gegenhuber et al. from the University of Vienna and SBA Research.
 
 ```bibtex
 @inproceedings{gegenhuber2024careless,
@@ -901,28 +904,56 @@ Based on research by Gegenhuber et al., University of Vienna & SBA Research:
 }
 ```
 
+Behavior-intelligence features also reference the research framing documented in the existing project for routine and activity inference.
+
 ---
 
-## Author
+## Ethical and Legal Use
 
-**deco31416** — [deco31416@gmail.com](mailto:deco31416@gmail.com) · [www.deco31416.com](https://www.deco31416.com)
+WP MONITOR must be used only in environments where the operator has explicit authorization or another valid legal basis for the specific activity performed.
 
-All v2.x improvements, architecture redesign, MongoDB integration, Network Monitor, report system, and UI overhaul by **deco31416**.
+The project is not intended to support:
+
+- Unauthorized surveillance or tracking
+- Stalking, harassment, intimidation, or coercion
+- Interception of communications without lawful authority
+- Unauthorized account, device, or network access
+- Identification or exact geolocation claims based only on IP observations
+- Decisions that treat experimental output as conclusive legal, investigative, employment, financial, or personal evidence
+- Violations of privacy, data-protection, telecommunications, computer-misuse, or platform rules
+
+The software is experimental and may fail, become incompatible with third-party services, produce inaccurate results, or stop working after platform changes. Every operator is responsible for applicable laws, authorization records, data minimization, retention, access control, interpretation, and disclosure.
+
+The software is provided under the warranty and liability limitations stated in the MIT License. No documentation, score, map, report, or export removes the user’s responsibility for lawful and ethical operation.
+
+This project is independent and is not affiliated with, endorsed by, or sponsored by WhatsApp or Meta. Product and company names are used only to describe the project’s technical context and interoperability.
+
+---
+
+## Author and Professional Support
+
+**deco31416**
+Website: [www.deco31416.com](https://www.deco31416.com)
+Email: [deco31416@gmail.com](mailto:deco31416@gmail.com)
+
+The v2.x redesign, MongoDB integration, Network Monitor, case and audit architecture, report system, evidence exports, deployment split, and user-interface overhaul were developed by deco31416.
+
+Professional support, authorized integrations, deployment assistance, architecture consulting, maintenance, and custom development are available through the author’s website.
 
 ---
 
 ## Acknowledgments
 
-- Original concept by [gommzystudio](https://github.com/gommzystudio/device-activity-tracker)
-- Research by Gegenhuber et al. (University of Vienna & SBA Research)
-- Built with [@whiskeysockets/baileys](https://github.com/WhiskeySockets/Baileys)
+- Original concept and repository by [gommzystudio](https://github.com/gommzystudio/device-activity-tracker)
+- RTT research by Gegenhuber et al., University of Vienna and SBA Research
+- WhatsApp integration through [@whiskeysockets/baileys](https://github.com/WhiskeySockets/Baileys)
 
 ---
 
 ## License
 
-MIT License — See [LICENSE](LICENSE) file.
+Copyright (c) 2025-2026 deco31416 and WP MONITOR contributors.
 
----
+Distributed under the [MIT License](LICENSE).
 
-**Use responsibly. This tool demonstrates real security vulnerabilities that affect millions of users.**
+Use, modification, redistribution, sublicensing, and commercial distribution are permitted under the terms of the license. Retain the copyright and permission notice in copies or substantial portions of the software.

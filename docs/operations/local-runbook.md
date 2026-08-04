@@ -8,17 +8,17 @@ El objetivo tecnico es registrar actividad, capturas autorizadas, auditoria y ru
 
 ### Windows
 
-- Node.js compatible con el proyecto.
-- Dependencias instaladas en backend y frontend.
+- Node.js 20 o superior.
+- Dependencias del workspace instaladas con `pnpm install --frozen-lockfile` desde la raiz.
 - MongoDB accesible si se requiere persistencia completa y auditoria.
 - Npcap instalado.
 - PowerShell o terminal ejecutada como Administrador para captura de paquetes.
-- WhatsApp Web o navegador de llamada ejecutandose en la misma maquina donde corre la captura.
+- WhatsApp Web o WhatsApp Desktop ejecutandose en la misma maquina donde corre la captura.
 
 ### Linux, VM o VPS
 
-- Node.js compatible con el proyecto.
-- Dependencias instaladas en backend y frontend.
+- Node.js 20 o superior.
+- Dependencias del workspace instaladas con pnpm desde la raiz.
 - MongoDB accesible si se requiere persistencia completa y auditoria.
 - `libpcap` disponible.
 - Permisos `root` o capabilities equivalentes para captura de paquetes.
@@ -117,14 +117,13 @@ Esto levanta backend y frontend en terminales integradas separadas dentro de VS 
 Backend:
 
 ```powershell
-yarn start:server
+pnpm run start:server
 ```
 
 Frontend:
 
 ```powershell
-cd client
-pnpm start
+pnpm run start:client
 ```
 
 Abrir:

@@ -51,7 +51,7 @@ Generated preview assets are served from `/uploads/checkins/*`. Without this vol
 
 Railway is not the right place for packet capture because the container cannot see the local network adapter where WhatsApp Web traffic is generated.
 
-Use `docs/railway-checklist.md` for the step-by-step Railway deployment checklist.
+Use [railway.md](railway.md) for the step-by-step Railway deployment checklist.
 
 ## Local full mode
 
@@ -80,7 +80,7 @@ Run the backend locally with administrator/root permissions when packet capture 
 
 The call traffic analyzer reports observed IPs, relays, providers, ports, packet counts, direction, and geolocation hints. Treat non-infrastructure IPs as candidates only; WhatsApp/WebRTC may use relays, and the analysis should not claim that an observed IP identifies a person.
 
-Use `docs/local-operation-guide.md` for the local operating procedure, capture prerequisites, audit metadata, troubleshooting, and known limitations.
+Use [local-runbook.md](local-runbook.md) for the local operating procedure, capture prerequisites, audit metadata, troubleshooting, and known limitations.
 
 Swagger/OpenAPI documentation is available at `/docs` only when `ENABLE_SWAGGER=true` and `NODE_ENV` is not `production`.
 

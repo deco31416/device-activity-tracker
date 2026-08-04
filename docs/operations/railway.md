@@ -85,7 +85,7 @@ Expected capabilities response:
 
 ## Frontend Service
 
-Create a Railway service from `/client` using `client/Dockerfile`.
+Create the Railway client service from the repository root and select `client/Dockerfile`. The Docker build context must remain the repository root because the Dockerfile copies the root workspace files and lockfile.
 
 Build argument or environment for build:
 

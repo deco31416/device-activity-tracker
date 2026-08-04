@@ -9,21 +9,24 @@ services:
       - "localhost:host-gateway"
     ports:
       - "${BACKEND_PORT:-4000}:${BACKEND_PORT:-4000}"
+    env_file:
+      - .env
     environment:
       - PORT=${BACKEND_PORT:-4000}
-      - SIGNAL_API_URL=${SIGNAL_API_URL:-http://localhost:8080}
       - NODE_ENV=${NODE_ENV:-production}
     volumes:
       # Persist WhatsApp auth state
       - baileys_auth:/app/auth_info_baileys
+      # Persist Authorized Check-In preview uploads
+      - checkin_uploads:/app/public/uploads
     networks:
       - app-network
     restart: unless-stopped
 
   client:
     build:
-      context: ./client
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: client/Dockerfile
       args:
         - PORT=${CLIENT_PORT:-4001}
         - REACT_APP_API_URL=${BACKEND_URL:-http://localhost:4000}
@@ -37,18 +40,10 @@ services:
       - app-network
     restart: unless-stopped
 
-  signal-api:
-    image: bbernhard/signal-cli-rest-api:0.80
-    ports:
-      - "127.0.0.1:8080:8080"
-    environment:
-      - MODE=json-rpc
-    restart: unless-stopped
-    networks:
-      - app-network
-
 volumes:
   baileys_auth:
+    driver: local
+  checkin_uploads:
     driver: local
 
 networks:
