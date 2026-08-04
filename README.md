@@ -8,7 +8,7 @@
   <a href="CHANGELOG.md">
     <img src="https://img.shields.io/badge/version-2.9.4-2563EB?style=flat-square" alt="Version 2.9.4" />
   </a>
-  <img src="https://img.shields.io/badge/Node.js-22%2B-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node.js 22+" />
+  <img src="https://img.shields.io/badge/Node.js-20%2B-339933?style=flat-square&logo=node.js&logoColor=white" alt="Node.js 20+" />
   <img src="https://img.shields.io/badge/TypeScript-5.7%2B-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript 5.7+" />
   <img src="https://img.shields.io/badge/Express-5-000000?style=flat-square&logo=express&logoColor=white" alt="Express 5" />
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=111827" alt="React 19" />
@@ -74,9 +74,9 @@ The RTT research foundation follows the paper **“Careless Whisper: Exploiting 
 
 ```mermaid
 flowchart LR
-    subgraph Interfaces[Operator Interfaces]
+    subgraph Interfaces[User Interfaces]
         Dashboard[React Dashboard]
-        CLI[CLI]
+        CheckIn[Authorized Check-In Landing]
     end
 
     subgraph Application[Application Core]
@@ -100,7 +100,7 @@ flowchart LR
 
     Dashboard --> API
     Dashboard <--> Realtime
-    CLI --> Tracker
+    CheckIn --> API
 
     API --> Tracker
     API --> Intelligence
@@ -314,7 +314,7 @@ Candidate scoring is deliberately limited by sample size, directionality, infras
 
 | Layer | Technology |
 |---|---|
-| Runtime | Node.js 22, TypeScript 5.7 |
+| Runtime | Node.js 20+ (Node.js 22 recommended), TypeScript 5.7 |
 | Backend | Express 5, Socket.IO 4.8 |
 | Frontend | React 19, Tailwind CSS 3.4, Recharts 3.5, Lucide React |
 | Database | MongoDB 7.1, local or Atlas |
@@ -322,7 +322,7 @@ Candidate scoring is deliberately limited by sample size, directionality, infras
 | Packet capture | `cap` 0.2.1 with Npcap/libpcap |
 | Offline geolocation | `geoip-lite` 2.0 |
 | Optional IP enrichment | DB-IP with `ip-api` complement |
-| Package managers | Yarn 4 for the backend, pnpm for the frontend |
+| Package manager | pnpm 10 workspace for backend and frontend |
 | Packaging and deployment | Docker Compose, local runtime, Railway dashboard mode |
 
 ### Dependency audit status
@@ -337,9 +337,8 @@ The backend retains upstream/transitive risk through the WhatsApp dependency cha
 
 ### Prerequisites
 
-- Node.js `22+`
-- Yarn `4`
-- pnpm
+- Node.js `20+`
+- pnpm `10+`
 - MongoDB, local or Atlas
 - A WhatsApp account for QR authentication
 - Npcap on Windows when using Network Monitor or local call analysis
@@ -353,10 +352,7 @@ On Windows, install Npcap with **WinPcap API-compatible Mode** enabled.
 git clone https://github.com/deco31416/device-activity-tracker.git
 cd device-activity-tracker
 
-yarn install
-cd client
 pnpm install
-cd ..
 
 cp .env.example .env
 ```
@@ -400,17 +396,10 @@ The direct `scripts/start-local.ps1` entry point does not launch services unless
 ```bash
 # Terminal 1
 # Administrator/root privileges are required for packet capture.
-yarn start:server
+pnpm run start:server
 
 # Terminal 2
-cd client
-pnpm start
-```
-
-### CLI mode
-
-```bash
-yarn start
+pnpm run start:client
 ```
 
 ### Docker Compose
@@ -739,10 +728,10 @@ annexes/
 Report and evidence QA fixtures can be generated with:
 
 ```bash
-yarn qa:report-fixture
+pnpm run qa:report-fixture
 ```
 
-The fixture checks required report sections, PDF generation, ZIP contents, integrity metadata, technical limitations, developer branding, and visible placeholder leakage.
+The fixture checks required report sections, PDF generation, ZIP contents, integrity metadata, technical limitations, product branding, and visible placeholder leakage.
 
 ---
 
@@ -772,9 +761,19 @@ device-activity-tracker/
 │   ├── tracker.ts
 │   ├── packet-capture.ts
 │   ├── call-analyzer.ts
+│   ├── call-scoring.ts
+│   ├── check-in.ts
+│   ├── analytics.ts
+│   ├── runtime.ts
+│   ├── ip-enrichment.ts
 │   ├── meta-ip-ranges.ts
 │   ├── db.ts
-│   ├── index.ts
+│   ├── evidence-package.ts
+│   ├── routes/
+│   │   ├── audit.ts
+│   │   ├── cases.ts
+│   │   ├── reports.ts
+│   │   └── runtime.ts
 │   └── types/
 │       └── cap.d.ts
 ├── client/
@@ -787,6 +786,9 @@ device-activity-tracker/
 │   │       ├── Login.tsx
 │   │       ├── ContactCard.tsx
 │   │       ├── NetworkMonitor.tsx
+│   │       ├── CallAnalysisPanel.tsx
+│   │       ├── CheckIns.tsx
+│   │       ├── Cases.tsx
 │   │       └── AuditTrail.tsx
 │   ├── tailwind.config.js
 │   └── package.json
@@ -822,6 +824,7 @@ device-activity-tracker/
 | [docs/README.md](docs/README.md) | Complete documentation portal by audience and task |
 | [docs/getting-started/README.md](docs/getting-started/README.md) | Installation, validation, first start, health and QR |
 | [docs/architecture/README.md](docs/architecture/README.md) | System context, components, data, events and trust boundaries |
+| [docs/diagrams/README.md](docs/diagrams/README.md) | Catalog of system, deployment, security, data and runtime Mermaid diagrams |
 | [docs/user-guide/README.md](docs/user-guide/README.md) | Cases, Tracker, Network Monitor, Check-In, Audit and reports |
 | [docs/operations/README.md](docs/operations/README.md) | Local, Docker, Railway, backup, recovery and troubleshooting |
 | [docs/security/README.md](docs/security/README.md) | Security model, privacy, responsible use and evidence |
@@ -862,7 +865,7 @@ For network privacy, a properly configured VPN can reduce direct network exposur
 | API returns `401 Unauthorized` | Provide the configured `DASHBOARD_TOKEN` in the dashboard or Bearer header |
 | Call analysis contains no useful packets | Confirm the WhatsApp Web/Desktop interaction runs on the same host and selected interface |
 | Railway captures no local traffic | Expected behavior; Railway mode has no access to the operator’s local adapter |
-| Yarn Plug'n'Play errors occur | Ensure `.yarnrc.yml` uses `nodeLinker: node-modules` |
+| Dependency installation is inconsistent | Use pnpm 10 and run `pnpm install` from the repository root so the workspace installs backend and frontend together |
 | MongoDB connection fails | Validate `MONGODB_URI`, credentials, network access, and Atlas allow-list settings |
 | Contact does not auto-restore | Confirm the contact remained active rather than being manually stopped before restart |
 
