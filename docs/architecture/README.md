@@ -6,6 +6,19 @@ Documento canonico de arquitectura de WP MONITOR `2.9.4`, inspirado en los punto
 
 WP MONITOR es una aplicacion TypeScript para organizar casos autorizados, observaciones de actividad de WhatsApp, metadata de red local, Check-Ins consentidos, auditoria e informes. No es un proveedor oficial de WhatsApp ni una fuente de ubicacion fisica exacta.
 
+## Vistas disponibles
+
+| Vista | Pregunta que responde |
+| --- | --- |
+| [Contexto](../diagrams/01-system-context.md) | Quienes usan el sistema y que dependencias existen? |
+| [Contenedores](../diagrams/02-container-view.md) | Que unidades ejecutan cada responsabilidad? |
+| [Despliegue](../diagrams/03-deployment-topologies.md) | Donde corre cada capacidad? |
+| [Componentes](component-catalog.md) | Que archivo/modulo es propietario de cada funcion? |
+| [Flujos](runtime-flows.md) | Como se procesa una accion end-to-end? |
+| [Datos](data-and-events.md) | Que se persiste, expira y relaciona? |
+| [Calidad](quality-attributes.md) | Como se verifica comportamiento no funcional? |
+| [Confianza](../diagrams/13-trust-boundaries.md) | Donde se validan entradas y protegen secretos? |
+
 ## Interesados
 
 | Interesado | Preocupacion principal |
@@ -18,6 +31,8 @@ WP MONITOR es una aplicacion TypeScript para organizar casos autorizados, observ
 | Responsable de seguridad | Secretos, acceso, retencion y exposicion de red |
 
 ## Vista de contexto
+
+La version independiente, con alcance y lectura, esta en [Diagrama 01](../diagrams/01-system-context.md).
 
 ```mermaid
 flowchart LR
@@ -42,6 +57,8 @@ flowchart LR
 ```
 
 ## Contenedores logicos
+
+La vista ampliada esta en [Diagrama 02](../diagrams/02-container-view.md).
 
 ```mermaid
 flowchart TB
@@ -110,6 +127,8 @@ flowchart TB
 
 ## Limites de confianza
 
+Consulta tambien [Diagrama 13](../diagrams/13-trust-boundaries.md).
+
 ```mermaid
 flowchart LR
     Public[Internet no confiable]
@@ -146,8 +165,11 @@ Consulta [Deployment modes](../operations/deployment-modes.md). La regla central
 
 ## Lecturas relacionadas
 
+- [Catalogo de componentes](component-catalog.md)
+- [Flujos de ejecucion](runtime-flows.md)
+- [Atributos de calidad](quality-attributes.md)
+- [Biblioteca de diagramas](../diagrams/README.md)
 - [Datos y eventos](data-and-events.md)
 - [Decisiones arquitectonicas](../adr/README.md)
 - [Seguridad](../security/README.md)
 - [API](../development/api-reference.md)
-

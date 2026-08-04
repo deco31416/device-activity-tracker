@@ -1,5 +1,7 @@
 # Datos y Eventos
 
+Vistas independientes: [modelo MongoDB](../diagrams/11-mongodb-data-model.md), [maquinas de estado](../diagrams/12-state-machines.md) y [pipeline de actividad](../diagrams/06-activity-pipeline.md).
+
 ## Persistencia MongoDB
 
 | Entidad | Indice principal | Retencion implementada |
@@ -104,4 +106,3 @@ sequenceDiagram
 - Los eventos deben incluir caso y operador cuando la operacion lo exige.
 - Un hash se calcula sobre una representacion canonica o archivo concreto; cualquier regeneracion produce un nuevo hash.
 - La procedencia debe viajar con el dato, no depender de memoria del operador.
-

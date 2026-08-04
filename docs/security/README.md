@@ -96,3 +96,9 @@ Contacta al mantenedor por un canal privado indicado por el repositorio. Incluye
 - [ ] Aviso de privacidad y autorizacion revisados.
 - [ ] Logs y reportes sin secretos.
 
+## Documentos relacionados
+
+- [Uso responsable y limitaciones](responsible-use.md)
+- [Gobierno de datos y retencion](data-governance.md)
+- [Evidencia y cadena de custodia](evidence-and-chain-of-custody.md)
+- [Limites de confianza](../diagrams/13-trust-boundaries.md)

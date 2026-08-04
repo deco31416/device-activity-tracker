@@ -2,7 +2,11 @@
 
 Estas funciones solo estan disponibles cuando el backend corre en `local-full` con `LOCAL_CAPTURE_ENABLED=true`. Necesitan autorizacion sobre la maquina y su trafico.
 
+Diagramas relacionados: [captura local](../diagrams/07-network-capture.md) y [analisis de llamada](../diagrams/08-call-analysis.md).
+
 ## Requisitos
+
+Si el equipo todavia no esta preparado, completa [Instalacion del motor de captura local](../operations/packet-capture-setup.md).
 
 - WhatsApp Web o Desktop en la misma computadora de captura.
 - Interfaz Wi-Fi/Ethernet correcta.
@@ -11,6 +15,48 @@ Estas funciones solo estan disponibles cuando el backend corre en `local-full` c
 - Case ID, operador y motivo completos.
 
 WP MONITOR no inicia la llamada. El operador la realiza desde WhatsApp Web/Desktop para que el trafico pase por la interfaz capturada.
+
+## Se puede obtener una IP solamente con un numero de WhatsApp?
+
+No. Un numero telefonico no ofrece una consulta directa que devuelva la IP actual de su usuario. WP MONITOR tampoco convierte un numero en una IP.
+
+Lo que el producto puede hacer, dentro de una practica autorizada, es observar la metadata de red generada en la computadora local durante una comunicacion de WhatsApp y clasificar las direcciones que aparecen. El numero sirve para seleccionar el contacto y relacionar la ventana con un caso; no es la fuente tecnica de la IP.
+
+El flujo correcto es:
+
+1. crear o seleccionar un caso autorizado;
+2. relacionar el numero propio o expresamente autorizado;
+3. ejecutar WP MONITOR en `local-full` sobre la misma computadora donde corre WhatsApp Web/Desktop;
+4. capturar una linea base sin llamada;
+5. iniciar una ventana nueva y realizar la llamada desde WhatsApp;
+6. detener la captura al finalizar;
+7. separar red local, Meta/relays, cloud/CDN/STUN-TURN y direcciones publicas por revisar;
+8. puntuar las observaciones segun volumen, direccion, proveedor y tamano de muestra;
+9. enriquecer las candidatas con ASN/ISP y GeoIP aproximado;
+10. conservar resultado, limitaciones y auditoria dentro del caso.
+
+### Resultado que si puede entregar
+
+```text
+Numero observado: contexto del caso
+Ventana: inicio y fin UTC
+Infraestructura: Meta, Google, Cloudflare, CDN o relay
+IP publica candidata: direccion observada, paquetes, flujo y score
+ASN/ISP: propietario aproximado del bloque
+GeoIP: pais/region/ciudad aproximados de la red
+Veredicto: directa, relay, mixta o evidencia insuficiente
+```
+
+### Resultado que no puede garantizar
+
+- que una candidata pertenezca al contacto;
+- que el dispositivo se encuentre en la ciudad GeoIP;
+- domicilio, GPS o torre celular;
+- identidad o titularidad de la conexion;
+- una candidata cuando WhatsApp utiliza solamente relays;
+- cobertura total si la llamada ocurrio en otra maquina o interfaz.
+
+La red puede utilizar relay, VPN, CGNAT, proxy, roaming o infraestructura compartida. Por eso el informe debe escribir `IP publica observada como candidata tecnica`, incluir confianza y exigir corroboracion independiente para cualquier conclusion formal.
 
 ## Network Monitor
 
@@ -93,4 +139,3 @@ Significa que la ventana observo infraestructura o que ninguna IP alcanzo criter
 - infraestructura no borrada del paquete;
 - candidatas descritas como no concluyentes;
 - exportacion y auditoria revisadas.
-

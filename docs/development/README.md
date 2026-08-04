@@ -71,3 +71,8 @@ Todo cambio de entidad debe considerar:
 
 Incluye objetivo, archivos, riesgo, pruebas, capturas anonimizadas si cambia UI, variables nuevas sin valores y plan de rollback. Consulta [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
+## Referencias
+
+- [API y eventos](api-reference.md)
+- [Calidad y pruebas](quality-testing.md)
+- [Proceso de release](release-process.md)

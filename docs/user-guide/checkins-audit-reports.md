@@ -1,5 +1,7 @@
 # Check-In, Audit Trail e Informes
 
+Diagramas relacionados: [Check-In autorizado](../diagrams/09-checkin-consent.md) y [evidencia/reportes](../diagrams/10-evidence-reporting.md).
+
 ## Authorized Check-In
 
 Check-In permite solicitar de manera transparente IP observada, metadata basica del navegador y GPS opcional. No debe utilizarse para ocultar la finalidad ni para fingerprinting invasivo.
@@ -79,4 +81,3 @@ Un evento faltante se documenta; no se inventa ni se elimina evidencia para mejo
 Exporta primero. Verifica el paquete. Registra responsable y hora. Luego usa `Cerrar`. El evento `case_closed` debe ser la ultima accion operativa, salvo exportaciones o archivo posteriores expresamente permitidos.
 
 Consulta [Evidencia y cadena de custodia](../security/evidence-and-chain-of-custody.md) para preservacion y transferencia.
-

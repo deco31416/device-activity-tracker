@@ -1,25 +1,40 @@
-# Indice de Diagramas
+# Biblioteca de Diagramas Mermaid
 
-Los diagramas Mermaid viven junto al documento canonico que explican para evitar duplicacion.
+Esta carpeta contiene vistas independientes y renderizables de WP MONITOR `2.9.4`. Cada archivo explica proposito, alcance, lectura y decisiones. Los documentos funcionales enlazan estas vistas en lugar de copiar diagramas divergentes.
 
-| Diagrama | Documento |
-| --- | --- |
-| Contexto general | [Arquitectura](../architecture/README.md#vista-de-contexto) |
-| Contenedores logicos | [Arquitectura](../architecture/README.md#contenedores-logicos) |
-| Limites de confianza | [Arquitectura](../architecture/README.md#limites-de-confianza) |
-| Datos y estados | [Datos y eventos](../architecture/data-and-events.md) |
-| Actividad hasta dashboard | [Datos y eventos](../architecture/data-and-events.md#flujo-de-actividad-al-dashboard) |
-| Captura y analisis | [Datos y eventos](../architecture/data-and-events.md#flujo-de-captura-y-analisis) |
-| Recorrido operativo | [Guia de usuario](../user-guide/README.md#secuencia-operativa-recomendada) |
-| Backup/restauracion | [Backup](../operations/backup-recovery.md#procedimiento-de-restauracion) |
-| Troubleshooting | [Troubleshooting](../operations/troubleshooting.md#arbol-inicial) |
-| Evidencia/custodia | [Cadena de custodia](../security/evidence-and-chain-of-custody.md#ciclo-de-evidencia) |
+## Arquitectura
+
+1. [Contexto del sistema](01-system-context.md)
+2. [Contenedores y responsabilidades](02-container-view.md)
+3. [Topologias de despliegue](03-deployment-topologies.md)
+4. [Secuencia de arranque](04-startup-sequence.md)
+5. [Conexion QR y sesion WhatsApp](05-whatsapp-session.md)
+6. [Pipeline de actividad](06-activity-pipeline.md)
+
+## Operacion
+
+7. [Captura de red local](07-network-capture.md)
+8. [Analisis de trafico de llamada](08-call-analysis.md)
+9. [Check-In autorizado](09-checkin-consent.md)
+10. [Evidencia e informes](10-evidence-reporting.md)
+
+## Datos y seguridad
+
+11. [Modelo MongoDB](11-mongodb-data-model.md)
+12. [Maquinas de estado](12-state-machines.md)
+13. [Limites de confianza](13-trust-boundaries.md)
+14. [Fallos y recuperacion](14-failure-recovery.md)
 
 ## Convenciones
 
-- Los nodos externos se nombran por funcion, no por persona real.
-- Las flechas indican direccion logica, no necesariamente un protocolo unico.
-- MongoDB y volumenes se representan como almacenamiento durable.
-- Memoria del proceso no se presenta como persistencia.
-- Todo cambio arquitectonico debe actualizar el diagrama y la fecha/version del documento relacionado.
+- Los diagramas representan comportamiento logico, no certificacion.
+- Flechas solidas indican comunicacion o flujo implementado.
+- Flechas discontinuas expresan una prohibicion, limitacion o relacion no transaccional.
+- Cilindros representan persistencia; nodos comunes pueden vivir en memoria.
+- No se incluyen numeros, IPs, tokens ni nombres reales.
+- Todo cambio de arquitectura, estado o contrato debe actualizar el diagrama relacionado.
+
+## Validacion
+
+Los bloques utilizan sintaxis Mermaid compatible con el renderizador de GitHub. Antes de publicar, revisa visualmente etiquetas, direcciones, saltos y contraste en tema claro/oscuro.
 

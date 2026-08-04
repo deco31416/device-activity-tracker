@@ -7,9 +7,12 @@ Runbooks para administrar WP MONITOR en desarrollo, laboratorio autorizado y das
 | Escenario | Documento |
 | --- | --- |
 | Ejecutar en Windows/Linux con captura local | [Runbook local](local-runbook.md) |
+| Instalar Npcap/libpcap y validar `cap` | [Motor de captura](packet-capture-setup.md) |
+| Construir y validar contenedores | [Docker](docker.md) |
 | Elegir capacidades local frente a cloud | [Modos de despliegue](deployment-modes.md) |
 | Desplegar backend/frontend en Railway | [Railway](railway.md) |
 | Respaldar y restaurar datos | [Backup y recuperacion](backup-recovery.md) |
+| Leer logs, health y metricas | [Observabilidad](observability.md) |
 | Diagnosticar fallos | [Troubleshooting](troubleshooting.md) |
 
 ## Matriz de capacidades
@@ -42,4 +45,3 @@ Runbooks para administrar WP MONITOR en desarrollo, laboratorio autorizado y das
 - `Info`: modo, puerto, proceso o transicion.
 
 La salida visual de PowerShell puede mostrar warnings de Node en rojo aunque el frontend compile. Usa exit code y mensaje final, no el color aislado.
-

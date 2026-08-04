@@ -98,6 +98,7 @@ common/temp/
 
 .env
 .env.*
+*.env
 .envrc
 .envrc.local
 .direnv/
@@ -109,6 +110,9 @@ common/temp/
 !.env.*.example
 !.env.*.sample
 !.env.*.template
+!*.env.example
+!*.env.sample
+!*.env.template
 !.envrc.example
 
 
@@ -223,6 +227,11 @@ kubeconfig.*
 
 # CLI authentication files
 .netrc
+.npmrc
+.pnpmrc
+.pypirc
+.yarnrc.local.yml
+pip.conf
 .sentryclirc
 .vault-token
 
@@ -281,6 +290,14 @@ chrome-profile/
 chromium-profile/
 puppeteer-data/
 playwright-data/
+playwright/.auth/
+playwright-auth/
+
+# Browser session exports may contain cookies and authenticated state.
+storageState.json
+storage-state.json
+cookies.json
+cookies.txt
 
 .puppeteer/
 .chromium/
@@ -638,6 +655,8 @@ database-backups/
 
 # Development agent local state
 .agents/
+.codex/
+.claude/settings.local.json
 .aider*
 .continue/cache/
 .cursor/index/

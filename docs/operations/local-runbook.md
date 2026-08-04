@@ -6,6 +6,8 @@ El objetivo tecnico es registrar actividad, capturas autorizadas, auditoria y ru
 
 ## Requisitos
 
+La instalacion paso a paso del driver, dependencias nativas, verificacion de `cap` e interfaces se encuentra en [Instalacion del motor de captura](packet-capture-setup.md). Completa esa guia antes de diagnosticar Network Monitor.
+
 ### Windows
 
 - Node.js 20 o superior.

@@ -10,6 +10,7 @@ La documentacion toma como referencia ISO/IEC/IEEE 42010 para describir arquitec
 | --- | --- |
 | Instalar y abrir WP MONITOR por primera vez | [Inicio rapido](getting-started/README.md) |
 | Comprender componentes, datos y flujos | [Arquitectura](architecture/README.md) |
+| Ver todos los diagramas Mermaid | [Biblioteca de diagramas](diagrams/README.md) |
 | Aprender cada pantalla del producto | [Guia de usuario](user-guide/README.md) |
 | Ejecutar localmente, desplegar o recuperar | [Operacion](operations/README.md) |
 | Revisar seguridad, privacidad y evidencia | [Seguridad y evidencia](security/README.md) |
@@ -23,6 +24,7 @@ docs/
 |-- README.md
 |-- getting-started/      Instalacion, configuracion minima y primer arranque
 |-- architecture/         Contexto, componentes, datos, eventos y despliegue
+|-- diagrams/             14 vistas Mermaid independientes
 |-- user-guide/           Procedimientos por pantalla y resultado esperado
 |-- operations/           Runbooks local, Docker, Railway, backup y fallos
 |-- security/             Seguridad, privacidad, uso responsable y evidencia

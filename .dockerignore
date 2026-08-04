@@ -6,6 +6,13 @@ README.md
 .env
 .env.local
 .env.*
+*.env
+.envrc
+.npmrc
+.pnpmrc
+.pypirc
+.yarnrc.local.yml
+pip.conf
 dist
 build
 client/node_modules
@@ -14,6 +21,12 @@ auth_info_baileys
 auth_info_baileys.*
 auth_info_multi
 .wwebjs_auth
+playwright/.auth
+playwright-auth
+storageState.json
+storage-state.json
+cookies.json
+cookies.txt
 .runtime-logs
 logs
 public/uploads
@@ -31,6 +44,8 @@ secrets
 *.pcapng
 *.log
 .agents
+.codex
+.claude/settings.local.json
 .vscode
 .yarn/install-state.gz
 .DS_Store

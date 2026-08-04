@@ -14,7 +14,7 @@ Esta guia instala WP MONITOR desde un clon limpio y valida backend, frontend, Mo
 | libpcap | Linux, opcional | Captura local con permisos adecuados |
 | Docker Desktop | Opcional | Validacion en contenedores |
 
-No mezcles npm, Yarn y pnpm. El archivo `pnpm-lock.yaml` de la raiz es la fuente reproducible de dependencias.
+No mezcles npm, Yarn y pnpm. El archivo `pnpm-lock.yaml` de la raiz es la fuente reproducible de dependencias. Para Network Monitor sigue despues la [instalacion completa de Npcap/libpcap](../operations/packet-capture-setup.md).
 
 ## 2. Clonar e instalar
 
@@ -129,4 +129,3 @@ Continua con la [Guia de usuario](../user-guide/README.md). Para habilitar captu
 - Cuenta propia vinculada o QR diagnosticado.
 - Caso sintetico creado y visible en auditoria.
 - Ningun secreto agregado a Git.
-
