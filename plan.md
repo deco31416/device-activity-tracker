@@ -13,6 +13,25 @@ El proyecto se divide en dos modos:
 
 Nota tecnica: el sistema debe hablar de "trafico observado", "infraestructura", "relays" e "IPs candidatas". No debe afirmar que una IP identifica con certeza a una persona.
 
+## Roadmap Producto Final 10/10
+
+Documento principal: `docs/product-final-roadmap.md`.
+
+Estado actual: beta profesional avanzada / MVP operativo.
+
+Prioridades antes de llamar al producto "final":
+
+- [ ] P0 - Matriz de capacidades observables y limites tecnicos en UI/reportes.
+- [ ] P0 - Autenticacion fuerte y roles por operador/admin/auditor.
+- [ ] P0 - Health operacional avanzado para MongoDB, WhatsApp, captura local, permisos e interfaz.
+- [ ] P0 - Flujo guiado de caso/captura/reporte para operador no tecnico.
+- [ ] P0 - Reporte ejecutivo institucional con metodologia, limites, hallazgos, anexos y hashes.
+- [ ] P0 - Timeline unificado de RTT, presence, llamadas, mensajes, check-ins, capturas y reportes.
+- [ ] P0 - Correlacion de IPs por ventana exacta de llamada.
+- [ ] P0 - Suite Playwright E2E y smoke test Local Full.
+- [ ] P0 - QA operacional con escenarios reales controlados.
+- [ ] P0 - Railway dashboard production-ready sin captura local.
+
 ## Estado Actual
 
 - [x] Backend TypeScript compila con `yarn build`.
