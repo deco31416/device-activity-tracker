@@ -1,4 +1,13 @@
 <h1 align="center">Device Activity Tracker v2.9.4</h1>
+
+<p align="center">
+  <img
+    src="https://res.cloudinary.com/deco31416/image/upload/v1794083722/cover-deco31416_bga9qj.png"
+    alt="DECO31416 — software, inteligencia artificial e ingeniería"
+    width="100%"
+  />
+</p>
+
 <p align="center">WhatsApp Activity Tracker — RTT Analysis · Real-Time Bitácora · Behavior Intelligence · Audit Trail · Railway Dashboard · Local Network Monitor</p>
 
 <p align="center">
