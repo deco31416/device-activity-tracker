@@ -920,6 +920,12 @@ All v2.x improvements, architecture redesign, MongoDB integration, Network Monit
 
 ---
 
+Public Research Prototype — DECO31416
+
+This repository showcases selected architectural components and research implementations. The complete commercial implementation, proprietary modules, and advanced capabilities are not publicly distributed.
+
+---
+
 ## Acknowledgments
 
 - Original concept by [gommzystudio](https://github.com/gommzystudio/device-activity-tracker)
